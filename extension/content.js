@@ -488,6 +488,12 @@ function injectYoutubePillIfNeeded() {
                 data = player.getPlayerResponse()?.streamingData;
               } else if (window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.streamingData) {
                 data = window.ytInitialPlayerResponse.streamingData;
+              } else if (window.ytplayer && window.ytplayer.config && window.ytplayer.config.args) {
+                try {
+                  const raw = window.ytplayer.config.args.raw_player_response || window.ytplayer.config.args.player_response;
+                  if (typeof raw === 'string') data = JSON.parse(raw)?.streamingData;
+                  else if (typeof raw === 'object') data = raw?.streamingData;
+                } catch {}
               }
               window.postMessage({ type: 'EDM_STREAM_DATA_RESPONSE', payload: data }, '*');
             } catch (e) {
@@ -622,8 +628,8 @@ function injectYoutubePillIfNeeded() {
       );
     }
     const f1080 = findFormat((f) => f.height >= 1080 && f.height < 1440 || f.qualityLabel && f.qualityLabel.includes("1080"));
-    if (f1080 || !streamData) {
-      const sizeStr = f1080 ? formatBytes(f1080.contentLength) : "";
+    if (f1080) {
+      const sizeStr = formatBytes(f1080.contentLength);
       const sub = sizeStr ? `Crisp 1080p MP4 (${sizeStr})` : "Crisp 1080p MP4 with merged audio";
       menu.appendChild(
         createMenuItem(videoIcon, "1080p Full HD", sub, () => {
@@ -632,8 +638,8 @@ function injectYoutubePillIfNeeded() {
       );
     }
     const f720 = findFormat((f) => f.height >= 720 && f.height < 1080 || f.qualityLabel && f.qualityLabel.includes("720"));
-    if (f720 || !streamData) {
-      const sizeStr = f720 ? formatBytes(f720.contentLength) : "";
+    if (f720) {
+      const sizeStr = formatBytes(f720.contentLength);
       const sub = sizeStr ? `Standard 720p MP4 (${sizeStr})` : "Standard 720p MP4 (Fast download)";
       menu.appendChild(
         createMenuItem(videoIcon, "720p HD", sub, () => {
@@ -641,13 +647,24 @@ function injectYoutubePillIfNeeded() {
         })
       );
     }
-    const f480 = findFormat((f) => f.height >= 360 && f.height < 720 || f.qualityLabel && (f.qualityLabel.includes("480") || f.qualityLabel.includes("360")));
-    if (f480 || !streamData) {
-      const sizeStr = f480 ? formatBytes(f480.contentLength) : "";
+    const f480 = findFormat((f) => f.height >= 480 && f.height < 720 || f.qualityLabel && f.qualityLabel.includes("480"));
+    if (f480) {
+      const sizeStr = formatBytes(f480.contentLength);
+      const sub = sizeStr ? `Standard 480p MP4 (${sizeStr})` : "Standard 480p MP4";
+      menu.appendChild(
+        createMenuItem(videoIcon, "480p Standard", sub, () => {
+          triggerDownload("480p", " [480p]");
+        })
+      );
+    }
+    const f360 = findFormat((f) => f.height < 480 && f.height >= 144 || f.qualityLabel && (f.qualityLabel.includes("360") || f.qualityLabel.includes("240") || f.qualityLabel.includes("144")));
+    if (f360) {
+      const labelText = f360.height ? `${f360.height}p Low Quality` : "360p / Low Quality";
+      const sizeStr = formatBytes(f360.contentLength);
       const sub = sizeStr ? `Compressed MP4 (${sizeStr})` : "Compressed MP4 (Data saver)";
       menu.appendChild(
-        createMenuItem(videoIcon, "480p / 360p", sub, () => {
-          triggerDownload("480p", " [480p]");
+        createMenuItem(videoIcon, labelText, sub, () => {
+          triggerDownload(f360.height ? `${f360.height}p` : "360p", ` [${f360.height || 360}p]`);
         })
       );
     }

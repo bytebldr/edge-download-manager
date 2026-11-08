@@ -77,8 +77,8 @@ class PopupController {
     __publicField(this, "notifyFail", true);
     __publicField(this, "youtubePillEnabled", true);
     __publicField(this, "auditLogs", ["Popup initialized"]);
-    __publicField(this, "currentVersion", "0.0.8");
-    __publicField(this, "expectedVersion", "0.0.8");
+    __publicField(this, "currentVersion", "0.0.9");
+    __publicField(this, "expectedVersion", "0.0.9");
     __publicField(this, "updateStatus", "latest");
     __publicField(this, "detectedBrowser", "browser");
     __publicField(this, "pollInterval", null);

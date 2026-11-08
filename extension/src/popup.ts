@@ -113,8 +113,8 @@ class PopupController {
   private notifyFail: boolean = true;
   private youtubePillEnabled: boolean = true;
   private auditLogs: string[] = ["Popup initialized"];
-  private currentVersion: string = "0.0.8";
-  private expectedVersion: string = "0.0.8";
+  private currentVersion: string = "0.0.9";
+  private expectedVersion: string = "0.0.9";
   private updateStatus: string = "latest";
   private detectedBrowser: string = "browser";
 

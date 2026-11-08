@@ -160,19 +160,15 @@ export async function tauriStartDownload(params: {
   maxConnections?: number;
 }): Promise<{ status: string; id: string }> {
   if (isTauri()) {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return await invoke<{ status: string; id: string }>("start_download", {
-        url: params.url,
-        filename: params.filename,
-        saveDir: params.saveDir,
-        save_dir: params.saveDir,
-        maxConnections: params.maxConnections,
-        max_connections: params.maxConnections,
-      });
-    } catch (err) {
-      console.warn("Tauri start_download failed, using client task:", err);
-    }
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<{ status: string; id: string }>("start_download", {
+      url: params.url,
+      filename: params.filename,
+      saveDir: params.saveDir,
+      save_dir: params.saveDir,
+      maxConnections: params.maxConnections,
+      max_connections: params.maxConnections,
+    });
   }
 
   return {
@@ -470,7 +466,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
     }
   }
 
-  const currentVersion = "0.0.8";
+  const currentVersion = "0.0.9";
 
   // Web fallback: query GitHub releases API directly
   try {

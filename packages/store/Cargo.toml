@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-edm-ipc = { path = "../edm-ipc" }
+edm-ipc = { path = "../ipc" }
 rusqlite.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

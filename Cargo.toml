@@ -1,17 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/edm-core",
-    "crates/edm-store",
-    "crates/edm-ipc",
-    "crates/edm-nmh",
-    "crates/edm-cli",
-    "crates/edm-testsrv",
+    "packages/engine",
+    "packages/store",
+    "packages/ipc",
+    "packages/browser-host",
+    "packages/cli",
+    "packages/mock-server",
     "apps/desktop/src-tauri",
 ]
 
 [workspace.package]
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 authors = ["Suvesh"]
 license = "GPL-3.0-only"

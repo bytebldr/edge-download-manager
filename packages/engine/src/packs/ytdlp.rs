@@ -322,9 +322,10 @@ impl YtDlpPack {
 
         if url.contains("youtube.com") || url.contains("youtu.be") {
             args.push("--extractor-args".to_string());
-            args.push("youtube:player_client=android_vr,android,web".to_string());
+            args.push("youtube:player_client=ios,web,default".to_string());
         }
 
+        args.push("--".to_string());
         args.push(url.to_string());
 
         let mut cmd = configure_hidden_command(bin, &args);
@@ -490,7 +491,7 @@ impl YtDlpPack {
             if let Some(h) = height_pref {
                 args.push("-f".to_string());
                 if ffmpeg_opt.is_some() {
-                    args.push(format!("bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"));
+                    args.push(format!("bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/bestvideo[height<={h}]+bestaudio[ext=m4a]/best[height<={h}][ext=mp4]/best[height<={h}]/best"));
                     args.push("--merge-output-format".to_string());
                     args.push("mp4".to_string());
                 } else {
@@ -499,7 +500,7 @@ impl YtDlpPack {
             } else {
                 args.push("-f".to_string());
                 if ffmpeg_opt.is_some() {
-                    args.push("bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best".to_string());
+                    args.push("bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/bestvideo+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string());
                     args.push("--merge-output-format".to_string());
                     args.push("mp4".to_string());
                 } else {
@@ -525,11 +526,12 @@ impl YtDlpPack {
 
         if clean_url.contains("youtube.com") || clean_url.contains("youtu.be") {
             args.push("--extractor-args".to_string());
-            args.push("youtube:player_client=android_vr,android,web".to_string());
+            args.push("youtube:player_client=ios,web,default".to_string());
             args.push("--http-chunk-size".to_string());
             args.push("10M".to_string());
         }
 
+        args.push("--".to_string());
         args.push(clean_url);
 
         let mut cmd = configure_hidden_command(bin, &args);

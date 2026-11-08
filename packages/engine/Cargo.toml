@@ -6,8 +6,8 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-edm-ipc = { path = "../edm-ipc" }
-edm-store = { path = "../edm-store" }
+edm-ipc = { path = "../ipc" }
+edm-store = { path = "../store" }
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -20,6 +20,8 @@ chrono.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
 sha2.workspace = true
+md-5.workspace = true
+sha1.workspace = true
 hex.workspace = true
 url.workspace = true
 urlencoding = "2.1"

@@ -27,6 +27,7 @@ function detectCurrentBrowser() {
   if (navigator.brave && typeof navigator.brave.isBrave === "function") return "brave";
   return "chrome";
 }
+let lastReloadAttemptTime = 0;
 function checkAndPerformAutoReload(expectedVersion) {
   if (!expectedVersion) return;
   const currentVersion = chrome.runtime.getManifest().version;
@@ -42,6 +43,12 @@ function checkAndPerformAutoReload(expectedVersion) {
     console.log("[EDM Extension] Update available, deferring reload until active handoff/wake completes");
     return;
   }
+  const now = Date.now();
+  if (now - lastReloadAttemptTime < 6e4) {
+    console.warn(`[EDM Extension] Skipping reload loop; tried reloading less than 60s ago (${currentVersion} vs expected ${expectedVersion})`);
+    return;
+  }
+  lastReloadAttemptTime = now;
   console.log(`[EDM Extension] App update detected (${currentVersion} -> ${expectedVersion}). Reloading extension...`);
   try {
     chrome.runtime.reload();
@@ -412,17 +419,17 @@ async function connectWebSocket() {
               const notifyComplete = st.edm_notify_complete !== false;
               const notifyFail = st.edm_notify_fail !== false;
               for (const t of latestTasks) {
+                const currentStatus = t.status || t.state;
                 const prev = previousTaskStates.get(t.id);
-                if (prev && prev !== t.state) {
-                  const state = t.state;
-                  if (state === "completed" && notifyComplete) {
+                if (prev && prev !== currentStatus) {
+                  if (currentStatus === "completed" && notifyComplete) {
                     chrome.notifications.create({
                       type: "basic",
                       iconUrl: "logo.png",
                       title: "EDM: Download Completed",
                       message: `${t.filename || "File"} has finished downloading.`
                     });
-                  } else if ((state === "error" || state === "failed") && notifyFail) {
+                  } else if ((currentStatus === "error" || currentStatus === "failed") && notifyFail) {
                     chrome.notifications.create({
                       type: "basic",
                       iconUrl: "logo.png",
@@ -431,7 +438,7 @@ async function connectWebSocket() {
                     });
                   }
                 }
-                previousTaskStates.set(t.id, t.state);
+                previousTaskStates.set(t.id, currentStatus);
               }
             });
           }

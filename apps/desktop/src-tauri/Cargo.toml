@@ -1,6 +1,6 @@
 [package]
 name = "edm-desktop-app"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 
 [build-dependencies]
@@ -11,9 +11,9 @@ tauri = { version = "2.0.0", features = ["image-ico", "image-png", "tray-icon", 
 tauri-plugin-single-instance = "2.5.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-edm-core = { path = "../../../crates/edm-core" }
-edm-store = { path = "../../../crates/edm-store" }
-edm-ipc = { path = "../../../crates/edm-ipc" }
+edm-core = { path = "../../../packages/engine" }
+edm-store = { path = "../../../packages/store" }
+edm-ipc = { path = "../../../packages/ipc" }
 tokio = { version = "1.43", features = ["full"] }
 reqwest.workspace = true
 uuid.workspace = true

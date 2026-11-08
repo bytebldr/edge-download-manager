@@ -21,7 +21,6 @@ import {
   LayoutGrid,
   ChevronDown,
   ChevronUp,
-  Video,
   Cpu,
   Wifi,
   Compass,
@@ -39,20 +38,16 @@ import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
 import { RefreshLinkModal } from "./components/RefreshLinkModal";
 import { PowerCountdownModal } from "./components/PowerCountdownModal";
-import { SpeedChartInteractive } from "./components/SpeedChartInteractive";
+import { AddDownloadModal } from "./components/AddDownloadModal";
+import { MediaModal } from "./components/MediaModal";
+import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
+import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
 import { loadSettings, saveSettings, EdmSettings } from "./types/settings";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
-import { getMergedProgressSpans } from "./utils/progress";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  backdropVariants,
-  modalVariants,
-  popoverVariants,
-  viewVariants,
-} from "./utils/motion";
+import { viewVariants } from "./utils/motion";
 import {
   isTauri,
-  tauriProbeUrl,
   tauriStartDownload,
   tauriPauseDownload,
   tauriResumeDownload,
@@ -71,7 +66,6 @@ import {
   tauriIsWizardCompleted,
   tauriCheckDuplicateDownload,
   tauriSetSpeedLimit,
-  tauriSelectDownloadDirectory,
 } from "./services/tauriBridge";
 
 export interface WorkerInfo {
@@ -286,10 +280,6 @@ export default function App() {
   const [sortField, setSortField] = useState<SortField>("dateAdded");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
-  const [addCategory, setAddCategory] = useState<string>("auto");
-  const [addConnections, setAddConnections] = useState<number>(settings.downloads.maxConnectionsPerFile || 8);
-  const [addSaveDir, setAddSaveDir] = useState<string>("");
-
   interface ContextMenuState {
     visible: boolean;
     x: number;
@@ -326,11 +316,6 @@ export default function App() {
       y: Math.min(e.clientY, window.innerHeight - 270),
       item,
     });
-  };
-
-  const handleBrowseAddDir = async () => {
-    const chosen = await tauriSelectDownloadDirectory(addSaveDir || settings.downloads.defaultDirectory);
-    if (chosen) setAddSaveDir(chosen);
   };
 
   const resumeSelected = () => {
@@ -383,8 +368,6 @@ export default function App() {
   }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [urlInput, setUrlInput] = useState("");
-  const [fileNameInput, setFileNameInput] = useState("");
   const [downloads, setDownloads] = useState<DownloadItem[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -422,14 +405,6 @@ export default function App() {
     }
     return [];
   });
-  const [isProbing, setIsProbing] = useState(false);
-  const [probeResult, setProbeResult] = useState<{
-    size: string;
-    sizeBytes: number;
-    resumable: boolean;
-    type: string;
-    filename?: string;
-  } | null>(null);
 
   // Persist download tasks across sessions
   useEffect(() => {
@@ -606,54 +581,18 @@ export default function App() {
 
 
 
-  const handleUrlInputChange = (val: string) => {
-    setUrlInput(val);
-    const trimmed = val.trim();
-    if (!trimmed) {
-      setFileNameInput("");
-      return;
-    }
-    const lower = trimmed.toLowerCase();
-    if (lower.includes("youtube.com/watch") || lower.includes("youtu.be/") || lower.includes("youtube.com/shorts")) {
-      if (!fileNameInput || fileNameInput.endsWith(".bin") || fileNameInput === "video.mp4") {
-        setFileNameInput("YouTube Video.mp4");
-      }
-    } else {
-      const raw = trimmed.split("/").pop()?.split("?")[0] || "";
-      if (raw && (!fileNameInput || fileNameInput === "YouTube Video.mp4" || fileNameInput.endsWith(".bin"))) {
-        setFileNameInput(raw);
-      }
-    }
-  };
-
-  const handleProbe = async () => {
-    if (!urlInput.trim()) return;
-    setIsProbing(true);
-    try {
-      const res = await tauriProbeUrl(urlInput.trim());
-      setIsProbing(false);
-      const totalBytes = res.size_total || 0;
-      setProbeResult({
-        size: totalBytes > 0 ? formatBytes(totalBytes) : "Dynamic / Stream",
-        sizeBytes: totalBytes,
-        resumable: res.resumable,
-        type: res.content_type || "application/octet-stream",
-        filename: res.filename || undefined,
-      });
-      if (res.filename) {
-        setFileNameInput(res.filename);
-      }
-    } catch {
-      setIsProbing(false);
-    }
-  };
-
-  const handleAddDownload = async () => {
-    if (!urlInput.trim()) return;
+  const handleAddDownload = async (
+    customUrl?: string,
+    customFilename?: string,
+    customCategory?: string,
+    customConns?: number,
+    customSaveDir?: string
+  ) => {
+    const targetUrl = customUrl || "";
+    if (!targetUrl.trim()) return;
     const rawName =
-      fileNameInput.trim() ||
-      probeResult?.filename ||
-      urlInput.split("/").pop()?.split("?")[0] ||
+      (customFilename && customFilename.trim()) ||
+      targetUrl.split("/").pop()?.split("?")[0] ||
       "download.bin";
     const name = rawName.replace(/[\\/:*?"<>|]/g, "_") || "download.bin";
     const ext = name.split(".").pop()?.toLowerCase() || "";
@@ -674,15 +613,15 @@ export default function App() {
 
     let hostname = "source.net";
     try {
-      hostname = new URL(urlInput.startsWith("http") ? urlInput : `https://${urlInput}`).hostname;
+      hostname = new URL(targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}`).hostname;
     } catch {
       hostname = "download.net";
     }
 
     const dupCheck = await tauriCheckDuplicateDownload(
-      urlInput,
+      targetUrl,
       name,
-      probeResult?.sizeBytes || 0
+      0
     );
     if (dupCheck.is_duplicate) {
       const proceed = confirm(
@@ -691,18 +630,18 @@ export default function App() {
       if (!proceed) return;
     }
 
-    const conns = addConnections || settings.downloads.maxConnectionsPerFile || 8;
-    const targetDir = addSaveDir.trim() || settings.downloads.defaultDirectory;
-    const finalCategory = addCategory !== "auto" ? (addCategory as DownloadItem["category"]) : categoryName;
+    const conns = customConns || settings.downloads.maxConnectionsPerFile || 8;
+    const targetDir = (customSaveDir && customSaveDir.trim()) || settings.downloads.defaultDirectory;
+    const finalCategory = (customCategory && customCategory !== "auto") ? (customCategory as DownloadItem["category"]) : categoryName;
 
     const backendRes = await tauriStartDownload({
-      url: urlInput,
+      url: targetUrl,
       filename: name,
       saveDir: targetDir,
       maxConnections: conns,
     });
 
-    const realTotal = probeResult?.sizeBytes && probeResult.sizeBytes > 0 ? probeResult.sizeBytes : 100_000_000;
+    const realTotal = 100_000_000;
 
     const initialWorkers: WorkerInfo[] = Array.from({ length: conns }).map((_, idx) => {
       const chunkBytes = Math.floor(realTotal / conns);
@@ -729,7 +668,7 @@ export default function App() {
       connections: conns,
       state: "downloading",
       progress: 0,
-      url: urlInput,
+      url: targetUrl,
       domain: hostname,
       dateAdded: "Just now",
       workers: initialWorkers,
@@ -740,10 +679,6 @@ export default function App() {
     setSelectedDownload(newItem);
     setSelectedIds([newItem.id]);
     setIsAddModalOpen(false);
-    setUrlInput("");
-    setFileNameInput("");
-    setProbeResult(null);
-    setAddCategory("auto");
   };
 
   const downloadsRef = useRef(downloads);
@@ -2118,39 +2053,12 @@ export default function App() {
               />
             </button>
 
-            <AnimatePresence>
-              {isLimiterOpen && (
-                <motion.div
-                  variants={popoverVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="absolute bottom-full left-0 mb-1.5 w-40 rounded-xl panel-3d shadow-2xl p-1.5 z-50 origin-bottom"
-                >
-                  <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-muted)] px-2 py-0.5 mb-1 border-b border-[var(--border-dim)]">
-                    Speed Throttle
-                  </div>
-                  {["Unlimited", "50 MB/s", "20 MB/s", "10 MB/s", "5 MB/s", "2 MB/s", "500 KB/s"].map((val) => (
-                    <motion.button
-                      key={val}
-                      whileHover={{ x: 2 }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => {
-                        handleSpeedLimitChange(val);
-                        setIsLimiterOpen(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1 text-xs rounded-lg transition-colors cursor-pointer ${
-                        speedLimit === val
-                          ? "bg-[var(--accent)] text-[var(--accent-on)] font-medium"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
-                      }`}
-                    >
-                      {val}
-                    </motion.button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <SpeedLimiterModal
+              isOpen={isLimiterOpen}
+              speedLimit={speedLimit}
+              onSelect={handleSpeedLimitChange}
+              onClose={() => setIsLimiterOpen(false)}
+            />
           </div>
 
           <div className="h-5 w-[1px] bg-[var(--border-subtle)] shrink-0" />
@@ -2207,556 +2115,32 @@ export default function App() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. SIGNATURE DOWNLOAD PROGRESS & SEGMENT TELEMETRY MODAL
+          4. MODAL DIALOGS & OVERLAYS (Modular Components)
       ────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isInspectorOpen && activeSelectedDownload && (
-          <motion.div
-            variants={backdropVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-            onClick={() => setIsInspectorOpen(false)}
-          >
-            <motion.div
-              variants={modalVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="panel-3d w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-            {/* Modal Title Bar */}
-            <div className="px-4 py-2.5 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <img src="/logo.png" alt="EDM" className="w-4 h-4 object-contain shrink-0" />
-                <span className="font-bold tracking-tight text-xs sm:text-sm truncate">
-                  Download Status — {activeSelectedDownload.name}
-                </span>
-              </div>
-              <button
-                onClick={() => setIsInspectorOpen(false)}
-                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-chassis)] cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <DetailsInspectorDrawer
+        isOpen={isInspectorOpen}
+        download={activeSelectedDownload}
+        onClose={() => setIsInspectorOpen(false)}
+        settings={settings}
+        onToggleState={toggleDownloadState}
+        onOpenFile={tauriOpenFile}
+      />
 
-            {/* Modal Body */}
-            <div className="p-3.5 sm:p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
-              {/* Metadata Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs">
-                <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Status</div>
-                  <div className={`font-semibold text-xs mt-0.5 ${
-                    activeSelectedDownload.state === "downloading"
-                      ? "text-[var(--accent)]"
-                      : activeSelectedDownload.state === "paused"
-                      ? "text-amber-400"
-                      : "text-emerald-400"
-                  }`}>
-                    {activeSelectedDownload.state === "downloading"
-                      ? "Receiving data..."
-                      : activeSelectedDownload.state === "paused"
-                      ? "Paused"
-                      : "Completed"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">File Size</div>
-                  <div className="font-mono tabular-nums font-semibold text-xs mt-0.5">
-                    {formatBytes(activeSelectedDownload.sizeTotal)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Transfer Rate</div>
-                  <div className={`font-mono tabular-nums font-semibold text-xs mt-0.5 ${
-                    activeSelectedDownload.state === "downloading" ? "text-emerald-400" : "text-[var(--text-muted)]"
-                  }`}>
-                    {activeSelectedDownload.speed}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Resume Capable</div>
-                  <div className="font-semibold text-emerald-400 text-xs mt-0.5 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 inline shrink-0" /> Yes (Byte-Range)
-                  </div>
-                </div>
-              </div>
+      <AddDownloadModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAdd={(url, filename, category, conns, saveDir) => {
+          handleAddDownload(url, filename, category, conns, saveDir);
+        }}
+        settings={settings}
+      />
 
-              {/* Dynamic Parallel Segmentation Progress Bar */}
-              {(() => {
-                const totalBytes = Math.max(1, activeSelectedDownload.sizeTotal);
-                const workersList =
-                  activeSelectedDownload.workers && activeSelectedDownload.workers.length > 0
-                    ? activeSelectedDownload.workers
-                    : Array.from({ length: Math.max(1, activeSelectedDownload.connections || 8) }).map((_, idx, arr) => {
-                        const chunkBytes = Math.floor(totalBytes / arr.length);
-                        const start = idx * chunkBytes;
-                        const end = idx === arr.length - 1 ? totalBytes : (idx + 1) * chunkBytes;
-                        const range = end - start;
-                        const done = Math.floor((range * activeSelectedDownload.progress) / 100);
-                        return {
-                          idx: idx + 1,
-                          start,
-                          end,
-                          pos: start + done,
-                          speed: activeSelectedDownload.speed,
-                          status:
-                            activeSelectedDownload.state === "downloading"
-                              ? "Receiving chunk (HTTP 206)..."
-                              : activeSelectedDownload.state === "completed"
-                              ? "Chunk verified • Complete"
-                              : "Thread suspended (Paused)",
-                        };
-                      });
+      <MediaModal
+        isOpen={isVideoModalOpen}
+        onClose={() => setIsVideoModalOpen(false)}
+        onGrab={() => alert("Started HLS stream segment pipeline!")}
+      />
 
-                return (
-                  <>
-                    <div>
-                      <div className="flex justify-between items-center text-[11px] mb-1">
-                        <span className="font-medium text-[var(--text-secondary)]">
-                          Start positions and download progress by connections:
-                        </span>
-                        <span className="font-mono tabular-nums font-bold text-[var(--accent)] text-xs">
-                          {activeSelectedDownload.state === "completed" || activeSelectedDownload.progress >= 100 ? 100 : activeSelectedDownload.progress}% ({formatBytes(activeSelectedDownload.state === "completed" || activeSelectedDownload.progress >= 100 ? (activeSelectedDownload.sizeTotal || activeSelectedDownload.sizeDone) : activeSelectedDownload.sizeDone)} / {formatBytes(activeSelectedDownload.sizeTotal || activeSelectedDownload.sizeDone)})
-                        </span>
-                      </div>
-                      {/* Continuous Visual Progress Bar (Zero Seams & Merged Spans) */}
-                      <div className="h-5 rounded bg-[var(--bg-chassis)] border border-[var(--border-strong)] relative overflow-hidden shadow-inner flex items-center">
-                        {(() => {
-                          const isComplete =
-                            activeSelectedDownload.state === "completed" ||
-                            activeSelectedDownload.progress >= 100 ||
-                            (totalBytes > 0 && activeSelectedDownload.sizeDone >= totalBytes);
-
-                          if (isComplete) {
-                            return (
-                              <div
-                                className="h-full w-full progress-fill-3d transition-all duration-300"
-                                style={{ width: "100%" }}
-                              />
-                            );
-                          }
-
-                          const spans = getMergedProgressSpans(
-                            workersList,
-                            totalBytes,
-                            activeSelectedDownload.sizeDone,
-                            false
-                          );
-
-                          return (
-                            <>
-                              {spans.map((span, sIdx) => (
-                                <div
-                                  key={sIdx}
-                                  className="absolute top-0 bottom-0 z-10 progress-fill-3d transition-all duration-300"
-                                  style={{
-                                    left: `${span.startPct}%`,
-                                    width:
-                                      sIdx < spans.length - 1
-                                        ? `calc(${span.widthPct}% + 1px)`
-                                        : `${span.widthPct}%`,
-                                  }}
-                                >
-                                  {/* Active downloading write-head beacon line at the leading edge of active span */}
-                                  {activeSelectedDownload.state === "downloading" && sIdx === spans.length - 1 && (
-                                    <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_#38BDF8] animate-pulse" />
-                                  )}
-                                </div>
-                              ))}
-                              {/* Optional faint overlay if showConnectionBoundaries is enabled (default off) */}
-                              {settings?.general?.showConnectionBoundaries &&
-                                workersList &&
-                                workersList.length > 1 &&
-                                workersList.slice(1).map((w, idx) => {
-                                  const offsetPct = totalBytes > 0 ? (w.start / totalBytes) * 100 : 0;
-                                  return (
-                                    <div
-                                      key={`boundary-${idx}`}
-                                      className="absolute top-0 bottom-0 w-[1px] bg-white/20 pointer-events-none z-20"
-                                      style={{ left: `${offsetPct}%` }}
-                                    />
-                                  );
-                                })}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div className="flex justify-between text-[9.5px] text-[var(--text-muted)] font-mono mt-1">
-                        <span>Offset: 0x00000000</span>
-                        <span className="text-emerald-400 font-medium">Engine Crash Safety: Flush-Before-Checkpoint Enabled</span>
-                        <span>Offset: {formatBytes(activeSelectedDownload.sizeTotal)}</span>
-                      </div>
-                    </div>
-
-                    {/* Real-time Dual-Stream Interactive Area Chart (Shadcn Architecture) */}
-                    <SpeedChartInteractive
-                      speedHistory={activeSelectedDownload.speedHistory}
-                      currentSpeed={activeSelectedDownload.speed}
-                      peakSpeedBps={activeSelectedDownload.peakSpeedBps}
-                      isDownloading={activeSelectedDownload.state === "downloading"}
-                      eta={activeSelectedDownload.eta}
-                      elapsedSeconds={Math.floor((activeSelectedDownload as any).elapsedSeconds || 0)}
-                    />
-
-                    {/* Multi-Connection Worker Thread Telemetry Table */}
-                    <div>
-                      <div className="flex justify-between items-center text-[11px] font-medium text-[var(--text-secondary)] mb-1">
-                        <span>Multi-Connection Worker Thread Telemetry</span>
-                        <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                          {workersList.length} Active Stream{workersList.length > 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)] max-h-36 overflow-y-auto">
-                        <table className="w-full text-left text-[11px]">
-                          <thead className="sticky top-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] z-10">
-                            <tr>
-                              <th className="py-1 px-2.5">Connection</th>
-                              <th className="py-1 px-2.5">Byte Range</th>
-                              <th className="py-1 px-2.5">Progress</th>
-                              <th className="py-1 px-2.5">Throughput</th>
-                              <th className="py-1 px-2.5">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[var(--border-dim)] font-mono tabular-nums">
-                            {workersList.map((w, idx) => {
-                              const isPaused = activeSelectedDownload.state === "paused";
-                              const isCompleted = activeSelectedDownload.state === "completed";
-                              const range = Math.max(1, w.end - w.start);
-                              const done = Math.max(0, Math.min(range, w.pos - w.start));
-                              const pct = Math.min(100, Math.round((done / range) * 100));
-
-                              let statusColor = "text-[var(--text-muted)]";
-                              if (isCompleted || pct >= 100) statusColor = "text-emerald-400";
-                              else if (!isPaused && activeSelectedDownload.state === "downloading") statusColor = "text-sky-400";
-
-                              return (
-                                <tr key={w.idx || idx + 1} className="hover:bg-[var(--bg-card-hover)]">
-                                  <td className="py-1 px-2.5 font-semibold text-[var(--accent)]">Worker #{w.idx || idx + 1}</td>
-                                  <td className="py-1 px-2.5 text-[var(--text-secondary)]">
-                                    {formatBytes(w.start)} - {formatBytes(w.end)}
-                                  </td>
-                                  <td className="py-1 px-2.5 text-[var(--text-primary)]">
-                                    {pct}% ({formatBytes(done)})
-                                  </td>
-                                  <td
-                                    className={`py-1 px-2.5 font-semibold ${
-                                      isPaused ? "text-[var(--text-muted)]" : "text-emerald-400"
-                                    }`}
-                                  >
-                                    {isPaused ? "0 B/s" : w.speed}
-                                  </td>
-                                  <td className={`py-1 px-2.5 text-[10px] ${statusColor}`}>
-                                    {isPaused ? "Thread suspended (Paused)" : isCompleted ? "Chunk verified • Complete" : w.status}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-
-            {/* Modal Actions */}
-            <div className="px-4 py-2.5 bg-[var(--bg-card)] border-t border-[var(--border-subtle)] flex items-center justify-between shrink-0">
-              <div className="text-[10px] text-[var(--text-muted)] font-mono truncate mr-2">
-                NTFS Sparse Allocation • Mark-of-the-Web Attached
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {activeSelectedDownload.state === "completed" && (
-                  <button
-                    onClick={() => tauriOpenFile(activeSelectedDownload.id)}
-                    className="btn-3d h-7 px-3 rounded-lg text-xs font-semibold cursor-pointer text-blue-400 hover:text-blue-300"
-                  >
-                    Open File
-                  </button>
-                )}
-                {activeSelectedDownload.state !== "completed" && (
-                  <button
-                    onClick={() => toggleDownloadState(activeSelectedDownload.id)}
-                    className={`btn-3d h-7 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                      activeSelectedDownload.state === "downloading"
-                        ? "text-amber-400 hover:text-amber-300"
-                        : "text-emerald-400 hover:text-emerald-300"
-                    }`}
-                  >
-                    {activeSelectedDownload.state === "downloading" ? "Pause" : "Resume"}
-                  </button>
-                )}
-                <button
-                  onClick={() => setIsInspectorOpen(false)}
-                  className="btn-primary-3d h-7 px-3.5 rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  Close Window
-                </button>
-              </div>
-            </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────
-          5. ADD URL PRE-DOWNLOAD DIALOG
-      ────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isAddModalOpen && (
-          <motion.div
-            variants={backdropVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-            onClick={() => {
-              setIsAddModalOpen(false);
-              setUrlInput("");
-              setFileNameInput("");
-              setProbeResult(null);
-            }}
-          >
-            <motion.div
-              variants={modalVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="panel-3d w-full max-w-lg overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="font-bold tracking-tight text-sm flex items-center gap-2">
-                  <img src="/logo.png" alt="EDM Logo" className="w-4 h-4 object-contain" />
-                  Add New Download Task
-                </span>
-                <button
-                  onClick={() => {
-                    setIsAddModalOpen(false);
-                    setUrlInput("");
-                    setFileNameInput("");
-                    setProbeResult(null);
-                  }}
-                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                  Source Address (URL / HTTP / Magnet)
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="https://example.com/file.zip or paste download link..."
-                    value={urlInput}
-                    onChange={(e) => handleUrlInputChange(e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none"
-                  />
-                  <button
-                    onClick={handleProbe}
-                    disabled={isProbing || !urlInput.trim()}
-                    className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer"
-                  >
-                    {isProbing ? "Probing..." : "Probe Server"}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                  File Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter file name (e.g. video.mp4)..."
-                  value={fileNameInput}
-                  onChange={(e) => setFileNameInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none font-medium"
-                />
-              </div>
-
-              {probeResult && (
-                <div className="p-3 rounded-xl card-3d border border-[var(--accent-badge-border)] text-xs space-y-1">
-                  <div className="font-semibold text-[var(--accent)] flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 icon-3d" /> Endpoint Validated & Resumable
-                  </div>
-                  <div className="text-[11px] text-[var(--text-secondary)] font-mono">
-                    Size: {probeResult.size} • Accept-Ranges: bytes • Sparse Pre-allocation Ready
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                  <select
-                    value={addCategory}
-                    onChange={(e) => setAddCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg input-3d text-[var(--text-primary)] focus:outline-none cursor-pointer"
-                  >
-                    <option value="auto">Auto-Detect from Extension</option>
-                    {settings.categories
-                      .filter((c) => c.enabled)
-                      .map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">TCP Worker Streams</label>
-                  <select
-                    value={String(addConnections)}
-                    onChange={(e) => setAddConnections(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-lg input-3d text-[var(--text-primary)] focus:outline-none cursor-pointer"
-                  >
-                    <option value="8">8 Parallel Streams (Recommended)</option>
-                    <option value="16">16 Parallel Streams (Fast)</option>
-                    <option value="32">32 Parallel Streams (Maximum)</option>
-                    <option value="1">1 Single Stream (Strict)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                  Destination Directory
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={addSaveDir || settings.downloads.defaultDirectory}
-                    onChange={(e) => setAddSaveDir(e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleBrowseAddDir}
-                    className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer inline-flex items-center gap-1.5 shrink-0"
-                  >
-                    <FolderOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
-                    <span>Browse...</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-5 py-3 bg-[var(--bg-card)] border-t border-[var(--border-subtle)] flex items-center justify-end gap-2">
-              <button
-                onClick={() => {
-                  setIsAddModalOpen(false);
-                  setUrlInput("");
-                  setFileNameInput("");
-                  setProbeResult(null);
-                }}
-                className="btn-3d px-4 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddDownload}
-                disabled={!urlInput.trim()}
-                className="btn-primary-3d px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 cursor-pointer"
-              >
-                Start Download
-              </button>
-            </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────
-          6. VIDEO STREAM RADAR DIALOG (Browser Extension Grabber)
-      ────────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isVideoModalOpen && (
-          <motion.div
-            variants={backdropVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-            onClick={() => setIsVideoModalOpen(false)}
-          >
-            <motion.div
-              variants={modalVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="panel-3d w-full max-w-md overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="font-bold tracking-tight text-sm flex items-center gap-2">
-                  <Video className="w-4 h-4 text-cyan-400" />
-                  Browser Video Stream Grabber
-                </span>
-                <button
-                  onClick={() => setIsVideoModalOpen(false)}
-                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-5 space-y-3 text-xs">
-                <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 space-y-1">
-                  <div className="font-semibold text-cyan-400">Stream Discovered via Native Messaging</div>
-                  <div className="text-[11px] text-[var(--text-secondary)] font-mono">
-                    HLS Master Playlist • 1080p 60fps • No DRM Detected
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Stream Quality</label>
-                  <select className="w-full px-3 py-2 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none">
-                    <option>1080p 60fps (Full HD • ~248 MB)</option>
-                    <option>720p 30fps (HD • ~124 MB)</option>
-                    <option>Audio Only (AAC 256kbps • ~18 MB)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Target Filename</label>
-                  <input
-                    type="text"
-                    defaultValue="webinar-high-performance-systems-2026.mp4"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="px-5 py-3 bg-[var(--bg-card)] border-t border-[var(--border-subtle)] flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setIsVideoModalOpen(false)}
-                  className="btn-3d px-4 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
-                >
-                  Dismiss
-                </button>
-                <button
-                  onClick={() => {
-                    alert("Started HLS stream segment pipeline!");
-                    setIsVideoModalOpen(false);
-                  }}
-                  className="btn-primary-3d px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  Grab Video Stream
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <SetupWizard
         isOpen={isWizardOpen}

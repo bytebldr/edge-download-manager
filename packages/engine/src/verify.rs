@@ -1,3 +1,6 @@
+use md5::Md5;
+use serde::{Deserialize, Serialize};
+use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{self, BufReader, Read};
@@ -202,4 +205,124 @@ pub fn compare_files(
         total_diff_ranges,
         diff_ranges,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileChecksums {
+    pub crc32: String,
+    pub md5: String,
+    pub sha1: String,
+    pub sha256: String,
+    pub file_size: u64,
+}
+
+/// Zero-copy, high-performance streaming multi-hasher.
+/// Calculates CRC32, MD5, SHA-1, and SHA-256 simultaneously in a single IO pass.
+pub struct MultiHasher {
+    crc: u32,
+    md5: Md5,
+    sha1: Sha1,
+    sha256: Sha256,
+    total_bytes: u64,
+}
+
+impl Default for MultiHasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MultiHasher {
+    pub fn new() -> Self {
+        Self {
+            crc: 0xFFFF_FFFF,
+            md5: Md5::new(),
+            sha1: Sha1::new(),
+            sha256: Sha256::new(),
+            total_bytes: 0,
+        }
+    }
+
+    pub fn update(&mut self, chunk: &[u8]) {
+        self.crc = update_crc32(self.crc, chunk);
+        self.md5.update(chunk);
+        self.sha1.update(chunk);
+        self.sha256.update(chunk);
+        self.total_bytes += chunk.len() as u64;
+    }
+
+    pub fn finalize(self) -> FileChecksums {
+        let final_crc = !self.crc;
+        FileChecksums {
+            crc32: format!("{:08X}", final_crc),
+            md5: hex::encode(self.md5.finalize()),
+            sha1: hex::encode(self.sha1.finalize()),
+            sha256: hex::encode(self.sha256.finalize()),
+            file_size: self.total_bytes,
+        }
+    }
+
+    pub fn compute_file(path: &Path) -> io::Result<FileChecksums> {
+        let mut file = BufReader::new(File::open(path)?);
+        let mut hasher = Self::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize())
+    }
+}
+
+fn update_crc32(mut crc: u32, bytes: &[u8]) -> u32 {
+    const TABLE: [u32; 256] = generate_crc32_table();
+    for &b in bytes {
+        let idx = ((crc ^ (b as u32)) & 0xFF) as usize;
+        crc = (crc >> 8) ^ TABLE[idx];
+    }
+    crc
+}
+
+const fn generate_crc32_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut i = 0usize;
+    while i < 256 {
+        let mut crc = i as u32;
+        let mut j = 0;
+        while j < 8 {
+            if crc & 1 != 0 {
+                crc = (crc >> 1) ^ 0xEDB88320;
+            } else {
+                crc >>= 1;
+            }
+            j += 1;
+        }
+        table[i] = crc;
+        i += 1;
+    }
+    table
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multihasher_standard_vector() {
+        let mut hasher = MultiHasher::new();
+        hasher.update(b"123456789");
+        let sums = hasher.finalize();
+
+        assert_eq!(sums.crc32, "CBF43926");
+        assert_eq!(sums.md5, "25f9e794323b453885f5181f1b624d0b");
+        assert_eq!(sums.sha1, "f7c3bc1d808e04732adf679965ccc34ca7ae3441");
+        assert_eq!(
+            sums.sha256,
+            "15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225"
+        );
+        assert_eq!(sums.file_size, 9);
+    }
 }

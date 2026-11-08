@@ -46,6 +46,12 @@ pub struct PowerCountdownController {
     pub seconds_remaining: Arc<Mutex<u32>>,
 }
 
+impl Default for PowerCountdownController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PowerCountdownController {
     pub fn new() -> Self {
         Self {
@@ -258,71 +264,81 @@ pub async fn validate_and_refresh_link(
     }
 
     // 1 MiB Overlap Verification Check
-    let file_path = PathBuf::from(&task.save_dir).join(&task.filename);
+    let part_path = PathBuf::from(&task.save_dir).join(format!("{}.edmpart", task.filename));
+    let standard_path = PathBuf::from(&task.save_dir).join(&task.filename);
+    let target_file_path = if part_path.exists() {
+        Some(part_path)
+    } else if standard_path.exists() {
+        Some(standard_path)
+    } else {
+        None
+    };
     let overlap_size: u64 = 1024 * 1024; // 1 MiB
 
-    if task.size_done >= overlap_size && file_path.exists() {
-        let overlap_start = task.size_done - overlap_size;
-        let overlap_end = task.size_done - 1;
+    if task.size_done >= overlap_size {
+        if let Some(file_path) = target_file_path {
+            let overlap_start = task.size_done - overlap_size;
+            let overlap_end = task.size_done - 1;
 
-        let mut probe_req = client.get(new_url).header(
-            reqwest::header::RANGE,
-            format!("bytes={}-{}", overlap_start, overlap_end),
-        );
-        if let Some(headers) = new_headers {
-            for (k, v) in headers {
-                if let (Ok(hn), Ok(hv)) = (
-                    reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                    reqwest::header::HeaderValue::from_str(v),
-                ) {
-                    probe_req = probe_req.header(hn, hv);
+            let mut probe_req = client.get(new_url).header(
+                reqwest::header::RANGE,
+                format!("bytes={}-{}", overlap_start, overlap_end),
+            );
+            if let Some(headers) = new_headers {
+                for (k, v) in headers {
+                    if let (Ok(hn), Ok(hv)) = (
+                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(v),
+                    ) {
+                        probe_req = probe_req.header(hn, hv);
+                    }
                 }
             }
-        }
 
-        let overlap_resp = probe_req
-            .send()
-            .await
-            .map_err(|e| format!("Failed to probe overlap chunk: {}", e))?;
-
-        if overlap_resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-            let new_bytes = overlap_resp
-                .bytes()
+            let overlap_resp = probe_req
+                .send()
                 .await
-                .map_err(|e| format!("Failed to read overlap bytes: {}", e))?;
+                .map_err(|e| format!("Failed to probe overlap chunk: {}", e))?;
 
-            if new_bytes.len() as u64 == overlap_size {
-                use sha2::{Digest, Sha256};
-                let mut hasher_new = Sha256::new();
-                hasher_new.update(&new_bytes);
-                let hash_new = hasher_new.finalize();
+            if overlap_resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+                let new_bytes = overlap_resp
+                    .bytes()
+                    .await
+                    .map_err(|e| format!("Failed to read overlap bytes: {}", e))?;
 
-                use std::io::{Read, Seek, SeekFrom};
-                let mut local_file = std::fs::File::open(&file_path)
-                    .map_err(|e| format!("Cannot read local file for overlap verification: {}", e))?;
-                local_file
-                    .seek(SeekFrom::Start(overlap_start))
-                    .map_err(|e| e.to_string())?;
+                if new_bytes.len() as u64 == overlap_size {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher_new = Sha256::new();
+                    hasher_new.update(&new_bytes);
+                    let hash_new = hasher_new.finalize();
 
-                let mut local_chunk = vec![0u8; overlap_size as usize];
-                local_file
-                    .read_exact(&mut local_chunk)
-                    .map_err(|e| e.to_string())?;
+                    use std::io::{Read, Seek, SeekFrom};
+                    let mut local_file = std::fs::File::open(&file_path)
+                        .map_err(|e| format!("Cannot read local file for overlap verification: {}", e))?;
+                    local_file
+                        .seek(SeekFrom::Start(overlap_start))
+                        .map_err(|e| e.to_string())?;
 
-                let mut hasher_local = Sha256::new();
-                hasher_local.update(&local_chunk);
-                let hash_local = hasher_local.finalize();
+                    let mut local_chunk = vec![0u8; overlap_size as usize];
+                    local_file
+                        .read_exact(&mut local_chunk)
+                        .map_err(|e| e.to_string())?;
 
-                if hash_new != hash_local {
-                    return Err(
-                        "Overlap verification failed: new link content differs from existing partial file"
-                            .into(),
+                    let mut hasher_local = Sha256::new();
+                    hasher_local.update(&local_chunk);
+                    let hash_local = hasher_local.finalize();
+
+                    if hash_new != hash_local {
+                        return Err(
+                            "Overlap verification failed: new link content differs from existing partial file"
+                                .into(),
+                        );
+                    }
+                    info!(
+                        "Overlap verification passed: 1 MiB SHA-256 match confirmed for task {}",
+                        task_id
                     );
                 }
-                info!(
-                    "Overlap verification passed: 1 MiB SHA-256 match confirmed for task {}",
-                    task_id
-                );
             }
         }
     }

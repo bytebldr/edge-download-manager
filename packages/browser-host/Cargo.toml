@@ -6,9 +6,9 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-edm-ipc = { path = "../edm-ipc" }
-edm-store = { path = "../edm-store" }
-edm-core = { path = "../edm-core" }
+edm-ipc = { path = "../ipc" }
+edm-store = { path = "../store" }
+edm-core = { path = "../engine" }
 uuid.workspace = true
 chrono.workspace = true
 serde.workspace = true

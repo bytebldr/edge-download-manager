@@ -49,7 +49,7 @@ if (Test-Path $hooksPath) {
 # Invariant 3: NMH must never exclude %LOCALAPPDATA%\EDM from application resolution
 # -----------------------------------------------------------------------------
 Write-Host "`n[Check 3/6] Verifying NMH path resolution invariants..." -ForegroundColor Yellow
-$nmhMainPath = "$RootDir/crates/edm-nmh/src/main.rs"
+$nmhMainPath = "$RootDir/packages/browser-host/src/main.rs"
 if (Test-Path $nmhMainPath) {
     $nmhContent = Get-Content $nmhMainPath -Raw
     if ($nmhContent -match 'is_data_dir') {
