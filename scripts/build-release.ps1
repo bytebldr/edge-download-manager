@@ -10,6 +10,11 @@ Write-Host "==============================================" -ForegroundColor Cya
 $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
+# 0. Pre-Flight Architecture Invariant Check
+Write-Host "`n[0/6] Verifying Architectural Invariants (docs/WORKFLOW_BUGS_LOG.md)..." -ForegroundColor Yellow
+& "$PSScriptRoot/verify-invariants.ps1"
+if ($LASTEXITCODE -ne 0) { throw "Pre-flight architectural invariant verification failed! See docs/WORKFLOW_BUGS_LOG.md." }
+
 # 1. Build Desktop UI Frontend
 Write-Host "`n[1/6] Building Desktop UI frontend with Vite..." -ForegroundColor Yellow
 Set-Location "$RootDir/apps/desktop"
