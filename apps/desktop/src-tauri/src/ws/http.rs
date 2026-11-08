@@ -68,7 +68,7 @@ pub async fn handle_http_token_request(
             }
         }
         let redirect_url =
-            "https://github.com/Suvesh108/EDM/releases/latest/download/edm-firefox.xpi";
+            "https://github.com/bytebldr/edge-download-manager/releases/latest/download/edm-firefox.xpi";
         let resp = format!(
             "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRedirecting to Firefox XPI",
             redirect_url

@@ -13,8 +13,9 @@ members = [
 [workspace.package]
 version = "0.0.9"
 edition = "2021"
-authors = ["Suvesh"]
+authors = ["bytebldr"]
 license = "GPL-3.0-only"
+repository = "https://github.com/bytebldr/edge-download-manager"
 
 [workspace.dependencies]
 tokio = { version = "1.43", features = ["full"] }

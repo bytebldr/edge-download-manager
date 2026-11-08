@@ -3,8 +3,8 @@
     "edm@suvesh.dev": {
       "updates": [
         {
-          "version": "0.0.8",
-          "update_link": "https://github.com/Suvesh108/EDM/releases/latest/download/edm-firefox.xpi"
+          "version": "0.0.9",
+          "update_link": "https://github.com/bytebldr/edge-download-manager/releases/latest/download/edm-firefox.xpi"
         }
       ]
     }

@@ -470,7 +470,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
 
   // Web fallback: query GitHub releases API directly
   try {
-    const res = await fetch("https://api.github.com/repos/Suvesh108/EDM/releases/latest", {
+    const res = await fetch("https://api.github.com/repos/bytebldr/edge-download-manager/releases/latest", {
       headers: {
         Accept: "application/vnd.github.v3+json",
       },
@@ -493,7 +493,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
         download_url: setupAsset?.browser_download_url || null,
         asset_name: setupAsset?.name || null,
         asset_size: setupAsset?.size || 0,
-        html_url: release.html_url || "https://github.com/Suvesh108/EDM/releases",
+        html_url: release.html_url || "https://github.com/bytebldr/edge-download-manager/releases",
       };
     }
   } catch {
@@ -510,7 +510,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
     download_url: null,
     asset_name: null,
     asset_size: 0,
-    html_url: "https://github.com/Suvesh108/EDM/releases",
+    html_url: "https://github.com/bytebldr/edge-download-manager/releases",
   };
 }
 

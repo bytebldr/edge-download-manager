@@ -9,7 +9,7 @@ This document contains copy, metadata, and graphical specifications for submitti
 - **Name:** EDM — Edge Download Manager
 - **Short Name:** EDM
 - **Category:** Productivity / Tools
-- **Version:** `0.0.8`
+- **Version:** `0.0.9`
 - **Supported Browsers:** Google Chrome, Microsoft Edge, Brave Browser, Mozilla Firefox
 - **Gecko ID (Firefox):** `edm@suvesh.dev`
 - **Pricing:** Free & Open Source (MIT)
@@ -27,7 +27,7 @@ This document contains copy, metadata, and graphical specifications for submitti
 
 ```markdown
 **IMPORTANT: This extension requires the EDM desktop application installed on your Windows PC.**
-Get the EDM desktop app: https://github.com/Suvesh108/EDM/releases
+Get the EDM desktop app: https://github.com/bytebldr/edge-download-manager/releases
 
 EDM (Edge Download Manager) is a modern, ultra-fast download manager featuring dynamic multi-connection acceleration, media link sniffing, YouTube/stream downloading, and quiet background sleep efficiency.
 
@@ -66,5 +66,5 @@ All screenshots must be captured in 16:9 ratio (1280x800 or 1920x1080 PNG, RGB, 
 ## 4. Single-Purpose & Policy Compliance Statements
 
 - **Single Purpose:** The single purpose of the EDM extension is to hand off user-initiated download requests and detected page media links to the local EDM desktop application.
-- **Privacy Policy URL:** `https://suvesh108.github.io/EDM/store/PRIVACY.html`
-- **Support / Source URL:** `https://github.com/Suvesh108/EDM`
+- **Privacy Policy URL:** `https://bytebldr.github.io/edge-download-manager/store/PRIVACY.html`
+- **Support / Source URL:** `https://github.com/bytebldr/edge-download-manager`

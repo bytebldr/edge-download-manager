@@ -64,7 +64,7 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
     let current_version = env!("CARGO_PKG_VERSION");
-    let api_url = "https://api.github.com/repos/Suvesh108/EDM/releases/latest";
+    let api_url = "https://api.github.com/repos/bytebldr/edge-download-manager/releases/latest";
 
     let client = reqwest::Client::builder()
         .user_agent(format!("EDM/{} (Windows; x86_64)", current_version))
@@ -117,7 +117,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
     }
 
     // Attempt 2 (Resilient Zero-Rate-Limit Fallback):
-    // Follow HTTP redirect of https://github.com/Suvesh108/EDM/releases/latest
+    // Follow HTTP redirect of https://github.com/bytebldr/edge-download-manager/releases/latest
     // Never subject to GitHub 60 req/hr API rate limits or 403 blocks
     let redirect_client = reqwest::Client::builder()
         .user_agent(format!("EDM/{} (Windows; x86_64)", current_version))
@@ -127,7 +127,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         .map_err(|e| format!("Failed to create fallback client: {}", e))?;
 
     let redirect_res = redirect_client
-        .get("https://github.com/Suvesh108/EDM/releases/latest")
+        .get("https://github.com/bytebldr/edge-download-manager/releases/latest")
         .send()
         .await
         .map_err(|e| format!("Failed to reach update server: {}", e))?;
@@ -139,7 +139,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         let update_available = is_newer_version(latest_version, current_version);
         let exe_name = format!("EDM_{}_x64-setup.exe", latest_version);
         let download_url = format!(
-            "https://github.com/Suvesh108/EDM/releases/download/{}/{}",
+            "https://github.com/bytebldr/edge-download-manager/releases/download/{}/{}",
             raw_tag, exe_name
         );
 
@@ -168,7 +168,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         download_url: None,
         asset_name: None,
         asset_size: 0,
-        html_url: "https://github.com/Suvesh108/EDM/releases".to_string(),
+        html_url: "https://github.com/bytebldr/edge-download-manager/releases".to_string(),
     })
 }
 
@@ -179,8 +179,8 @@ pub async fn install_update(
     download_url: String,
 ) -> Result<(), String> {
     let trimmed = download_url.trim();
-    if !trimmed.starts_with("https://github.com/Suvesh108/EDM/releases/download/") {
-        return Err("Security violation: Update download URL must originate from official Suvesh108/EDM GitHub releases".into());
+    if !trimmed.starts_with("https://github.com/bytebldr/edge-download-manager/releases/download/") {
+        return Err("Security violation: Update download URL must originate from official bytebldr/edge-download-manager GitHub releases".into());
     }
 
     let temp_dir = std::env::temp_dir();

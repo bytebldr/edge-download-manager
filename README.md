@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Suvesh108/EDM/releases/latest"><img src="https://img.shields.io/github/v/release/Suvesh108/EDM?color=00f2fe&style=flat-square" alt="Latest Release" /></a>
-  <a href="https://github.com/Suvesh108/EDM/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/bytebldr/edge-download-manager/releases/latest"><img src="https://img.shields.io/github/v/release/bytebldr/edge-download-manager?color=00f2fe&style=flat-square" alt="Latest Release" /></a>
+  <a href="https://github.com/bytebldr/edge-download-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/status-active%20development-orange?style=flat-square" alt="Development Status" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078d4?style=flat-square" alt="Platform" />
 </p>
@@ -28,21 +28,21 @@
 Organize, manage, and monitor all your downloads in a distraction-free, high-density interface with quick filtering by videos, music, archives, documents, and programs.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Suvesh108/EDM/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="EDM Desktop Dashboard" width="900" />
+  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="EDM Desktop Dashboard" width="900" />
 </p>
 
 ### Live Speed Telemetry & Multi-Connection Inspector
 Inspect genuine transfer speeds, real-time throughput graphs, and per-connection worker progress with zero synthetic numbers or fake peaks.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Suvesh108/EDM/main/assets/screenshots/edm-telemetry-inspector-v0.0.5.png" alt="EDM Live Telemetry" width="720" />
+  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-telemetry-inspector-v0.0.5.png" alt="EDM Live Telemetry" width="720" />
 </p>
 
 ### Seamless Browser Companion Extension
 Catch downloads instantly from your favorite browser. Check live progress, pause, resume, or open files directly from the browser popup without switching windows.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Suvesh108/EDM/main/assets/screenshots/edm-browser-extension-v0.0.5.png" alt="EDM Browser Extension" width="440" />
+  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-browser-extension-v0.0.5.png" alt="EDM Browser Extension" width="440" />
 </p>
 
 ---
@@ -101,14 +101,14 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 ## 📥 Get Started
 
 ### 1. Download EDM
-Get the latest installer from the [**Releases Page**](https://github.com/Suvesh108/EDM/releases/latest):
+Get the latest installer from the [**Releases Page**](https://github.com/bytebldr/edge-download-manager/releases/latest):
 
 | Download | Description |
 | :--- | :--- |
-| **[`EDM_0.0.8_x64-setup.exe`](https://github.com/Suvesh108/EDM/releases/download/v0.0.8/EDM_0.0.8_x64-setup.exe)** | Official Standalone Windows Installer (Windows 10 / 11, 64-bit). |
-| **[`edm-extension-chromium.zip`](https://github.com/Suvesh108/EDM/releases/download/v0.0.8/edm-extension-chromium.zip)** | Pre-packaged Chromium extension for Chrome, Edge, Brave, and Opera. |
-| **[`edm-firefox.xpi`](https://github.com/Suvesh108/EDM/releases/download/v0.0.8/edm-firefox.xpi)** | Signed browser companion add-on for Mozilla Firefox. |
-| **[`edm-extension.tar.gz`](https://github.com/Suvesh108/EDM/releases/download/v0.0.8/edm-extension.tar.gz)** | Unpacked extension bundle source archive. |
+| **[`EDM_0.0.9_x64-setup.exe`](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.9/EDM_0.0.9_x64-setup.exe)** | Official Standalone Windows Installer (Windows 10 / 11, 64-bit). |
+| **[`edm-extension-chromium.zip`](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.9/edm-extension-chromium.zip)** | Pre-packaged Chromium extension for Chrome, Edge, Brave, and Opera. |
+| **[`edm-firefox.xpi`](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.9/edm-firefox.xpi)** | Signed browser companion add-on for Mozilla Firefox. |
+| **[`edm-extension.tar.gz`](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.9/edm-extension.tar.gz)** | Unpacked extension bundle source archive. |
 
 ### 2. Install the Browser Companion
 1. Download `edm-extension-chromium.zip` (or `edm-extension.tar.gz`) and extract it.
@@ -128,7 +128,7 @@ All new features and autonomous agent workflows must adhere to our [**Agent Rule
 ## 💬 Community & Feedback
 
 Have ideas, questions, or encountered a bug?
-- Open an [Issue](https://github.com/Suvesh108/EDM/issues) on GitHub.
+- Open an [Issue](https://github.com/bytebldr/edge-download-manager/issues) on GitHub.
 - Submit suggestions for new features or user interface improvements.
 
 ---
