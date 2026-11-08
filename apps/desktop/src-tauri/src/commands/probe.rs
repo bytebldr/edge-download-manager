@@ -48,7 +48,9 @@ pub async fn probe_url(url: String) -> Result<serde_json::Value, String> {
             if let Ok(info) = edm_core::packs::YtDlpPack::extract_info(&url).await {
                 let best_size = info.formats.iter().filter_map(|f| f.filesize).max();
                 let sanitized = edm_core::sanitizer::Sanitizer::sanitize_filename(&info.title);
-                let final_stream_url = info.best_video_url.unwrap_or_else(|| info.webpage_url.clone());
+                let final_stream_url = info
+                    .best_video_url
+                    .unwrap_or_else(|| info.webpage_url.clone());
                 return Ok(serde_json::json!({
                     "url": url,
                     "final_url": final_stream_url,
@@ -105,7 +107,9 @@ pub async fn probe_url(url: String) -> Result<serde_json::Value, String> {
             }
         }
 
-        let video_name = pack_target.suggested_filename.unwrap_or_else(|| "YouTube_Video.mp4".into());
+        let video_name = pack_target
+            .suggested_filename
+            .unwrap_or_else(|| "YouTube_Video.mp4".into());
         return Ok(serde_json::json!({
             "url": url,
             "final_url": url,

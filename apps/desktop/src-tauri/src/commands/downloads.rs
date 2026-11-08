@@ -79,7 +79,10 @@ pub async fn resume_download(
 }
 
 #[command]
-pub fn cancel_download(state: State<'_, AppState>, id: String) -> Result<serde_json::Value, String> {
+pub fn cancel_download(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<serde_json::Value, String> {
     let tasks = state.tasks.lock().unwrap();
     if let Some(task) = tasks.get(&id) {
         task.cancelled.store(true, Ordering::Relaxed);
@@ -182,7 +185,10 @@ pub fn get_feature_packs() -> serde_json::Value {
 }
 
 #[command]
-pub fn set_speed_limit(state: State<'_, AppState>, bytes_per_sec: Option<u64>) -> Result<(), String> {
+pub fn set_speed_limit(
+    state: State<'_, AppState>,
+    bytes_per_sec: Option<u64>,
+) -> Result<(), String> {
     state.global_limiter.set_limit(bytes_per_sec.unwrap_or(0));
     Ok(())
 }

@@ -38,12 +38,28 @@ impl VerificationReport {
         out.push_str(&format!("File B Size:   {} bytes\n", self.file_b_size));
         out.push_str(&format!("File A SHA256: {}\n", self.file_a_sha256));
         out.push_str(&format!("File B SHA256: {}\n", self.file_b_sha256));
-        out.push_str(&format!("Identical:     {}\n", if self.is_identical { "YES (100% Match)" } else { "NO (Corrupted / Mismatched)" }));
+        out.push_str(&format!(
+            "Identical:     {}\n",
+            if self.is_identical {
+                "YES (100% Match)"
+            } else {
+                "NO (Corrupted / Mismatched)"
+            }
+        ));
 
         if !self.is_identical {
-            out.push_str(&format!("Total differing bytes:  {}\n", self.total_diff_bytes));
-            out.push_str(&format!("Total differing ranges: {}\n", self.total_diff_ranges));
-            out.push_str(&format!("Showing first {} differing ranges:\n", self.diff_ranges.len()));
+            out.push_str(&format!(
+                "Total differing bytes:  {}\n",
+                self.total_diff_bytes
+            ));
+            out.push_str(&format!(
+                "Total differing ranges: {}\n",
+                self.total_diff_ranges
+            ));
+            out.push_str(&format!(
+                "Showing first {} differing ranges:\n",
+                self.diff_ranges.len()
+            ));
             for (idx, r) in self.diff_ranges.iter().enumerate() {
                 out.push_str(&format!(
                     "  [{:>3}] Offset: 0x{:08X} ({:>10}) .. 0x{:08X} ({:>10}) | Len: {:>8} bytes | Boundary: {}\n",
@@ -62,7 +78,11 @@ impl VerificationReport {
     }
 }
 
-pub fn is_near_boundary(offset: u64, chunk_size: Option<u64>, known_boundaries: &[u64]) -> (bool, String) {
+pub fn is_near_boundary(
+    offset: u64,
+    chunk_size: Option<u64>,
+    known_boundaries: &[u64],
+) -> (bool, String) {
     const BOUNDARY_TOLERANCE: u64 = 16;
 
     for &kb in known_boundaries {
@@ -76,11 +96,17 @@ pub fn is_near_boundary(offset: u64, chunk_size: Option<u64>, known_boundaries: 
         if cs > 0 {
             let rem = offset % cs;
             if rem <= BOUNDARY_TOLERANCE {
-                return (true, format!("within {}B past chunk multiple of {}", rem, cs));
+                return (
+                    true,
+                    format!("within {}B past chunk multiple of {}", rem, cs),
+                );
             }
             let dist_to_next = cs - rem;
             if dist_to_next <= BOUNDARY_TOLERANCE {
-                return (true, format!("within {}B before chunk multiple of {}", dist_to_next, cs));
+                return (
+                    true,
+                    format!("within {}B before chunk multiple of {}", dist_to_next, cs),
+                );
             }
         }
     }
@@ -139,8 +165,10 @@ pub fn compare_files(
                 total_diff_ranges += 1;
                 if diff_ranges.len() < 100 {
                     let len = byte_offset - start;
-                    let (near_start, note_start) = is_near_boundary(start, chunk_size, known_boundaries);
-                    let (near_end, note_end) = is_near_boundary(byte_offset, chunk_size, known_boundaries);
+                    let (near_start, note_start) =
+                        is_near_boundary(start, chunk_size, known_boundaries);
+                    let (near_end, note_end) =
+                        is_near_boundary(byte_offset, chunk_size, known_boundaries);
                     let is_near = near_start || near_end;
                     let note = if near_start {
                         format!("start {}", note_start)

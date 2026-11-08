@@ -1,4 +1,4 @@
-use chrono::{Datelike, DateTime, Local};
+use chrono::{DateTime, Datelike, Local};
 use edm_core::media::MediaGrabber;
 use edm_ipc::{DownloadState, MediaVariant};
 use edm_store::{DownloadRecord, QueueRecord, Store};
@@ -80,7 +80,10 @@ impl PowerCountdownController {
         let seconds_var = self.seconds_remaining.clone();
 
         tokio::spawn(async move {
-            info!("Power action countdown started: {} (60 seconds)", action_str);
+            info!(
+                "Power action countdown started: {} (60 seconds)",
+                action_str
+            );
             for sec in (0..=60).rev() {
                 if !active_flag.load(Ordering::Relaxed) {
                     info!("Power action countdown cancelled by user");
@@ -140,7 +143,8 @@ pub fn execute_system_power_action(action: &str) -> Result<(), String> {
     {
         #[link(name = "powrprof")]
         extern "system" {
-            fn SetSuspendState(hibernate: i32, force_critical: i32, disable_wake_event: i32) -> i32;
+            fn SetSuspendState(hibernate: i32, force_critical: i32, disable_wake_event: i32)
+                -> i32;
         }
 
         #[link(name = "advapi32")]
@@ -313,8 +317,9 @@ pub async fn validate_and_refresh_link(
                     let hash_new = hasher_new.finalize();
 
                     use std::io::{Read, Seek, SeekFrom};
-                    let mut local_file = std::fs::File::open(&file_path)
-                        .map_err(|e| format!("Cannot read local file for overlap verification: {}", e))?;
+                    let mut local_file = std::fs::File::open(&file_path).map_err(|e| {
+                        format!("Cannot read local file for overlap verification: {}", e)
+                    })?;
                     local_file
                         .seek(SeekFrom::Start(overlap_start))
                         .map_err(|e| e.to_string())?;
@@ -371,7 +376,9 @@ pub async fn probe_media(url: &str) -> Result<MediaProbeResult, String> {
     use edm_core::packs::extractors::{SiteExtractor, VimeoExtractor, YouTubeExtractor};
     use edm_core::packs::ytdlp::YtDlpPack;
 
-    if (url.contains("youtube.com") || url.contains("youtu.be")) && YtDlpPack::locate_binary().is_some() {
+    if (url.contains("youtube.com") || url.contains("youtu.be"))
+        && YtDlpPack::locate_binary().is_some()
+    {
         if let Ok(meta) = YtDlpPack::extract_info(url).await {
             let ipc_variants = meta
                 .formats
@@ -381,7 +388,11 @@ pub async fn probe_media(url: &str) -> Result<MediaProbeResult, String> {
                     MediaVariant {
                         quality: f.resolution.clone().unwrap_or(f.format_id),
                         url: f.url.unwrap_or_else(|| url.to_string()),
-                        media_type: if is_audio { "audio".into() } else { "direct".into() },
+                        media_type: if is_audio {
+                            "audio".into()
+                        } else {
+                            "direct".into()
+                        },
                         resolution: f.resolution,
                         bitrate: f.filesize.map(|s| s * 8),
                     }
@@ -403,7 +414,11 @@ pub async fn probe_media(url: &str) -> Result<MediaProbeResult, String> {
                 .map(|f| MediaVariant {
                     quality: f.resolution.clone().unwrap_or(f.format_id),
                     url: f.url,
-                    media_type: if f.is_audio && !f.is_video { "audio".into() } else { "direct".into() },
+                    media_type: if f.is_audio && !f.is_video {
+                        "audio".into()
+                    } else {
+                        "direct".into()
+                    },
                     resolution: f.resolution,
                     bitrate: f.filesize.map(|s| s * 8),
                 })
@@ -424,7 +439,11 @@ pub async fn probe_media(url: &str) -> Result<MediaProbeResult, String> {
                 .map(|f| MediaVariant {
                     quality: f.resolution.clone().unwrap_or(f.format_id),
                     url: f.url,
-                    media_type: if f.is_audio && !f.is_video { "audio".into() } else { "direct".into() },
+                    media_type: if f.is_audio && !f.is_video {
+                        "audio".into()
+                    } else {
+                        "direct".into()
+                    },
                     resolution: f.resolution,
                     bitrate: f.filesize.map(|s| s * 8),
                 })
@@ -527,7 +546,8 @@ pub fn is_queue_active_at_time(queue: &QueueRecord, now: DateTime<Local>) -> boo
         return false;
     }
 
-    if let (Some(ref start_str), Some(ref stop_str)) = (&queue.schedule_start, &queue.schedule_stop) {
+    if let (Some(ref start_str), Some(ref stop_str)) = (&queue.schedule_start, &queue.schedule_stop)
+    {
         if let (Ok(start_time), Ok(stop_time)) = (
             chrono::NaiveTime::parse_from_str(start_str, "%H:%M"),
             chrono::NaiveTime::parse_from_str(stop_str, "%H:%M"),
@@ -621,7 +641,8 @@ mod tests {
         assert!(res.verified);
         assert_eq!(res.actual_hash, expected_sha256);
 
-        let bad_res = verify_file_checksum(&test_file, "00000000000000000000000000000000", "sha256").unwrap();
+        let bad_res =
+            verify_file_checksum(&test_file, "00000000000000000000000000000000", "sha256").unwrap();
         assert!(!bad_res.verified);
 
         let _ = std::fs::remove_file(&test_file);

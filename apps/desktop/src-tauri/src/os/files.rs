@@ -48,7 +48,10 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
             }
             url::Host::Ipv6(ip) => {
                 if ip.is_unicast_link_local() || format!("{}", ip) == "fd00:ec2::254" {
-                    return Err("Security violation: Blocked access to IPv6 metadata or link-local address".into());
+                    return Err(
+                        "Security violation: Blocked access to IPv6 metadata or link-local address"
+                            .into(),
+                    );
                 }
             }
             url::Host::Domain(domain) => {
@@ -58,7 +61,9 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
                     || h == "instance-data"
                     || h.ends_with(".internal")
                 {
-                    return Err("Security violation: Blocked access to cloud metadata endpoint".into());
+                    return Err(
+                        "Security violation: Blocked access to cloud metadata endpoint".into(),
+                    );
                 }
             }
         }
@@ -216,7 +221,9 @@ pub fn get_system_downloads_dir_internal() -> String {
     std::env::temp_dir().to_string_lossy().to_string()
 }
 
-pub async fn select_download_directory_internal(default_path: Option<String>) -> Result<Option<String>, String> {
+pub async fn select_download_directory_internal(
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     tokio::task::spawn_blocking(move || {
         #[cfg(windows)]
         {
@@ -258,7 +265,10 @@ pub fn get_disk_free_space_internal(path: Option<String>) -> Result<serde_json::
         } else {
             "C:\\".to_string()
         };
-        let wide: Vec<u16> = std::ffi::OsStr::new(&root).encode_wide().chain(Some(0)).collect();
+        let wide: Vec<u16> = std::ffi::OsStr::new(&root)
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
 
         #[link(name = "kernel32")]
         extern "system" {

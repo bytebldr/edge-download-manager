@@ -12,7 +12,11 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-pub async fn handle_ws_connection(stream: TcpStream, peer_addr: SocketAddr, manager: Arc<WsManager>) {
+pub async fn handle_ws_connection(
+    stream: TcpStream,
+    peer_addr: SocketAddr,
+    manager: Arc<WsManager>,
+) {
     debug!("Incoming WebSocket connection from {}", peer_addr);
 
     let mut origin_valid = false;
@@ -122,7 +126,11 @@ pub async fn handle_ws_connection(stream: TcpStream, peer_addr: SocketAddr, mana
             .unwrap_or_default()
             .as_secs(),
     };
-    manager.connected_clients.write().await.insert(client_id.clone(), client_info);
+    manager
+        .connected_clients
+        .write()
+        .await
+        .insert(client_id.clone(), client_info);
 
     // Reply with ready containing current app/extension version
     let ready_json = serde_json::to_string(&OutboundWsMessage::Ready {

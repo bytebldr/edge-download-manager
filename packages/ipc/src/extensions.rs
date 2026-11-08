@@ -18,17 +18,14 @@ pub const CHROMIUM_ALLOWED_IDS: &[&str] = &[
 ];
 
 /// All allowed extension IDs for Firefox
-pub const FIREFOX_ALLOWED_IDS: &[&str] = &[
-    FIREFOX_GECKO_ID,
-];
+pub const FIREFOX_ALLOWED_IDS: &[&str] = &[FIREFOX_GECKO_ID];
 
 /// Default store URLs for one-click installation
 pub const DEFAULT_CHROME_STORE_URL: &str =
     "https://chromewebstore.google.com/detail/edm-edge-download-manager/ebdcbpghekpbgjiclaclbgmdnimeheci";
 pub const DEFAULT_EDGE_STORE_URL: &str =
     "https://microsoftedge.microsoft.com/addons/detail/edm-edge-download-manager/knldjmfmopnpolahpmmgbagdohdnhkik";
-pub const DEFAULT_FIREFOX_XPI_URL: &str =
-    "http://127.0.0.1:14370/firefox.xpi";
+pub const DEFAULT_FIREFOX_XPI_URL: &str = "http://127.0.0.1:14370/firefox.xpi";
 
 /// Returns the slice of allowed Chromium extension IDs.
 pub fn allowed_chromium_ids() -> &'static [&'static str] {
@@ -111,8 +108,12 @@ mod tests {
 
     #[test]
     fn test_firefox_moz_extension_origin_accepted() {
-        assert!(is_allowed_origin("moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4"));
-        assert!(is_allowed_origin("moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4/"));
+        assert!(is_allowed_origin(
+            "moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4"
+        ));
+        assert!(is_allowed_origin(
+            "moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4/"
+        ));
     }
 
     #[test]
@@ -120,7 +121,9 @@ mod tests {
         assert!(!is_allowed_origin("https://evil.com"));
         assert!(!is_allowed_origin("http://127.0.0.1:3000"));
         assert!(!is_allowed_origin("http://localhost:14370"));
-        assert!(!is_allowed_origin("chrome-extension://unknownfakeextensionid123456"));
+        assert!(!is_allowed_origin(
+            "chrome-extension://unknownfakeextensionid123456"
+        ));
         assert!(!is_allowed_origin("null"));
         assert!(!is_allowed_origin(""));
     }

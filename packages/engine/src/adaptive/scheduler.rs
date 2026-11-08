@@ -46,17 +46,7 @@ impl WorkScheduler {
         event_tx: mpsc::Sender<AdaptiveWorkerEvent>,
     ) -> Arc<AdaptiveWorker> {
         self.spawn_worker_at(
-            url,
-            start,
-            end,
-            start,
-            etag,
-            cookies,
-            referer,
-            user_agent,
-            client,
-            writer,
-            limiter,
+            url, start, end, start, etag, cookies, referer, user_agent, client, writer, limiter,
             event_tx,
         )
     }
@@ -82,7 +72,15 @@ impl WorkScheduler {
 
         let initial_pos = pos.clamp(start, end + 1);
         let worker = Arc::new(AdaptiveWorker::new(
-            idx, url, start, end, initial_pos, etag, cookies, referer, user_agent,
+            idx,
+            url,
+            start,
+            end,
+            initial_pos,
+            etag,
+            cookies,
+            referer,
+            user_agent,
         ));
         self.workers.push(worker.clone());
 
@@ -159,9 +157,12 @@ impl WorkScheduler {
         let active_pos = target.pos.load(Ordering::SeqCst);
         if active_pos > new_target_end {
             // Target already advanced past the proposed split point: rollback and cancel steal
-            let _ = target
-                .end
-                .compare_exchange(new_target_end, cur_end, Ordering::SeqCst, Ordering::SeqCst);
+            let _ = target.end.compare_exchange(
+                new_target_end,
+                cur_end,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
             return None;
         }
 
@@ -258,9 +259,12 @@ impl WorkScheduler {
 
         let active_pos = target.pos.load(Ordering::SeqCst);
         if active_pos > new_target_end {
-            let _ = target
-                .end
-                .compare_exchange(new_target_end, cur_end, Ordering::SeqCst, Ordering::SeqCst);
+            let _ = target.end.compare_exchange(
+                new_target_end,
+                cur_end,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
             return None;
         }
 
@@ -497,7 +501,8 @@ mod tests {
                     let cur_end = target.end.load(Ordering::SeqCst);
                     let cur_pos = target.pos.load(Ordering::SeqCst);
 
-                    if cur_end > cur_pos && (cur_end - cur_pos + 1) >= 2 * scheduler.min_chunk_size {
+                    if cur_end > cur_pos && (cur_end - cur_pos + 1) >= 2 * scheduler.min_chunk_size
+                    {
                         let remaining = cur_end - cur_pos + 1;
                         let stolen_len = remaining / 2;
                         if stolen_len >= scheduler.min_chunk_size
@@ -619,7 +624,10 @@ mod tests {
         let stolen_len = remaining / 2;
         let new_target_end = cur_end - stolen_len;
 
-        assert!(w.end.compare_exchange(cur_end, new_target_end, Ordering::SeqCst, Ordering::SeqCst).is_ok());
+        assert!(w
+            .end
+            .compare_exchange(cur_end, new_target_end, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok());
 
         let new_w = Arc::new(AdaptiveWorker::new(
             scheduler.next_idx,

@@ -698,16 +698,16 @@ impl AdaptiveEngine {
             .map_err(|e| format!("Failed to finalize file: {}", e))?;
 
         if let Some(tot) = total_size {
-            let actual_size = std::fs::metadata(&final_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let actual_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(0);
             if actual_size != tot {
                 let err = format!(
                     "Final file size mismatch: expected {} bytes, got {} bytes on disk",
                     tot, actual_size
                 );
                 error!("{}", err);
-                let _ = self.store.update_download_state(task.id, DownloadState::Failed, Some(&err));
+                let _ =
+                    self.store
+                        .update_download_state(task.id, DownloadState::Failed, Some(&err));
                 return Err(err);
             }
             if !range_set.is_complete(tot) {
@@ -717,7 +717,9 @@ impl AdaptiveEngine {
                     missing.len()
                 );
                 error!("{}", err);
-                let _ = self.store.update_download_state(task.id, DownloadState::Failed, Some(&err));
+                let _ =
+                    self.store
+                        .update_download_state(task.id, DownloadState::Failed, Some(&err));
                 return Err(err);
             }
         }

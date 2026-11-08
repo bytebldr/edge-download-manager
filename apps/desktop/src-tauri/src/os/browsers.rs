@@ -2,10 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(windows)]
-pub fn find_browser_exe(
-    app_paths_key: &str,
-    common_subpaths: &[&str],
-) -> Option<String> {
+pub fn find_browser_exe(app_paths_key: &str, common_subpaths: &[&str]) -> Option<String> {
     use windows_registry::{CURRENT_USER, LOCAL_MACHINE};
 
     // 1. Try HKLM App Paths
@@ -60,13 +57,30 @@ pub async fn collect_browser_diagnostics(
     {
         use windows_registry::CURRENT_USER;
 
-        let target_ext_id = ext_id.unwrap_or_else(|| edm_ipc::extensions::CHROMIUM_UNPACKED_ID.to_string());
+        let target_ext_id =
+            ext_id.unwrap_or_else(|| edm_ipc::extensions::CHROMIUM_UNPACKED_ID.to_string());
 
         let browsers_meta = [
-            ("edge", r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh", false),
-            ("chrome", r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh", false),
-            ("brave", r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh", false),
-            ("firefox", r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh", true),
+            (
+                "edge",
+                r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh",
+                false,
+            ),
+            (
+                "chrome",
+                r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh",
+                false,
+            ),
+            (
+                "brave",
+                r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh",
+                false,
+            ),
+            (
+                "firefox",
+                r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh",
+                true,
+            ),
         ];
 
         let mut browser_diagnostics = Vec::new();
@@ -101,41 +115,61 @@ pub async fn collect_browser_diagnostics(
                             if mpath.exists() && mpath.is_file() {
                                 diag.manifest_exists = true;
                                 if let Ok(content) = std::fs::read_to_string(&mpath) {
-                                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                        if let Some(hpath_str) = json.get("path").and_then(|v| v.as_str()) {
+                                    if let Ok(json) =
+                                        serde_json::from_str::<serde_json::Value>(&content)
+                                    {
+                                        if let Some(hpath_str) =
+                                            json.get("path").and_then(|v| v.as_str())
+                                        {
                                             let hpath = PathBuf::from(hpath_str);
                                             let full_hpath = if hpath.is_relative() {
                                                 mpath.parent().unwrap_or(&mpath).join(hpath)
                                             } else {
                                                 hpath
                                             };
-                                            diag.helper_path = Some(full_hpath.to_string_lossy().to_string());
-                                            diag.helper_exists = full_hpath.exists() && full_hpath.is_file();
+                                            diag.helper_path =
+                                                Some(full_hpath.to_string_lossy().to_string());
+                                            diag.helper_exists =
+                                                full_hpath.exists() && full_hpath.is_file();
                                         }
 
                                         if *is_firefox {
-                                            if let Some(exts) = json.get("allowed_extensions").and_then(|v| v.as_array()) {
+                                            if let Some(exts) = json
+                                                .get("allowed_extensions")
+                                                .and_then(|v| v.as_array())
+                                            {
                                                 diag.origin_matched = exts.iter().any(|e| {
-                                                    e.as_str().map(|s| edm_ipc::extensions::FIREFOX_ALLOWED_IDS.contains(&s) || s == target_ext_id).unwrap_or(false)
+                                                    e.as_str()
+                                                        .map(|s| {
+                                                            edm_ipc::extensions::FIREFOX_ALLOWED_IDS
+                                                                .contains(&s)
+                                                                || s == target_ext_id
+                                                        })
+                                                        .unwrap_or(false)
                                                 });
                                             }
-                                        } else if let Some(origins) = json.get("allowed_origins").and_then(|v| v.as_array()) {
+                                        } else if let Some(origins) =
+                                            json.get("allowed_origins").and_then(|v| v.as_array())
+                                        {
                                             diag.origin_matched = origins.iter().any(|o| {
                                                 if let Some(s) = o.as_str() {
-                                                    edm_ipc::extensions::is_allowed_origin(s) || s.contains(&target_ext_id)
+                                                    edm_ipc::extensions::is_allowed_origin(s)
+                                                        || s.contains(&target_ext_id)
                                                 } else {
                                                     false
                                                 }
                                             });
                                         }
                                     } else {
-                                        diag.error = Some("Failed to parse manifest JSON".to_string());
+                                        diag.error =
+                                            Some("Failed to parse manifest JSON".to_string());
                                     }
                                 } else {
                                     diag.error = Some("Failed to read manifest file".to_string());
                                 }
                             } else {
-                                diag.error = Some(format!("Manifest file does not exist at {}", val));
+                                diag.error =
+                                    Some(format!("Manifest file does not exist at {}", val));
                             }
                         }
                         Err(e) => {
@@ -152,11 +186,17 @@ pub async fn collect_browser_diagnostics(
 
         let current_exe = std::env::current_exe().ok();
         let dot = PathBuf::from(".");
-        let app_dir = current_exe.as_ref().and_then(|p| p.parent()).unwrap_or(&dot);
+        let app_dir = current_exe
+            .as_ref()
+            .and_then(|p| p.parent())
+            .unwrap_or(&dot);
         let helper_path = [
             app_dir.join("edm-nmh.exe"),
             app_dir.join("resources").join("edm-nmh.exe"),
-        ].into_iter().find(|p| p.exists()).map(|p| p.to_string_lossy().to_string());
+        ]
+        .into_iter()
+        .find(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string());
 
         let (last_err, last_ts, ready_ms) = {
             let p = match std::env::var("LOCALAPPDATA") {
@@ -165,8 +205,14 @@ pub async fn collect_browser_diagnostics(
             };
             if let Ok(content) = std::fs::read_to_string(&p) {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                    let err = v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string());
-                    let ts = v.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
+                    let err = v
+                        .get("error")
+                        .and_then(|e| e.as_str())
+                        .map(|s| s.to_string());
+                    let ts = v
+                        .get("timestamp")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string());
                     let ms = v.get("time_to_ready_ms").and_then(|m| m.as_u64());
                     (err, ts, ms)
                 } else {
@@ -236,16 +282,32 @@ pub async fn detect_installed_browsers_internal(
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
                     if let Some(urls) = val.get("extension_store_urls") {
                         if let Some(u) = urls.get("chrome").and_then(|v| v.as_str()) {
-                            c_url = if u.trim().is_empty() { None } else { Some(u.trim().to_string()) };
+                            c_url = if u.trim().is_empty() {
+                                None
+                            } else {
+                                Some(u.trim().to_string())
+                            };
                         }
                         if let Some(u) = urls.get("edge").and_then(|v| v.as_str()) {
-                            e_url = if u.trim().is_empty() { None } else { Some(u.trim().to_string()) };
+                            e_url = if u.trim().is_empty() {
+                                None
+                            } else {
+                                Some(u.trim().to_string())
+                            };
                         }
                         if let Some(u) = urls.get("brave").and_then(|v| v.as_str()) {
-                            b_url = if u.trim().is_empty() { None } else { Some(u.trim().to_string()) };
+                            b_url = if u.trim().is_empty() {
+                                None
+                            } else {
+                                Some(u.trim().to_string())
+                            };
                         }
                         if let Some(u) = urls.get("firefox").and_then(|v| v.as_str()) {
-                            f_url = if u.trim().is_empty() { None } else { Some(u.trim().to_string()) };
+                            f_url = if u.trim().is_empty() {
+                                None
+                            } else {
+                                Some(u.trim().to_string())
+                            };
                         }
                     }
                 }
@@ -357,24 +419,40 @@ pub fn open_browser_url_internal(browser: String, url: String) -> Result<(), Str
     // Validate scheme to prevent argument injection (--load-extension, --user-data-dir, etc.)
     let parsed = url::Url::parse(&url).map_err(|e| format!("Invalid URL: {}", e))?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
-        return Err("Security error: only http and https URLs can be opened in browser".to_string());
+        return Err(
+            "Security error: only http and https URLs can be opened in browser".to_string(),
+        );
     }
 
     #[cfg(windows)]
     {
         let browser_id = browser.to_lowercase();
         let exe_path = match browser_id.as_str() {
-            "chrome" => find_browser_exe(r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe", &[r"Google\Chrome\Application\chrome.exe"]),
-            "edge" => find_browser_exe(r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe", &[r"Microsoft\Edge\Application\msedge.exe"]),
-            "brave" => find_browser_exe(r"Software\Microsoft\Windows\CurrentVersion\App Paths\brave.exe", &[r"BraveSoftware\Brave-Browser\Application\brave.exe"]),
-            "firefox" => find_browser_exe(r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe", &[r"Mozilla Firefox\firefox.exe"]),
+            "chrome" => find_browser_exe(
+                r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
+                &[r"Google\Chrome\Application\chrome.exe"],
+            ),
+            "edge" => find_browser_exe(
+                r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
+                &[r"Microsoft\Edge\Application\msedge.exe"],
+            ),
+            "brave" => find_browser_exe(
+                r"Software\Microsoft\Windows\CurrentVersion\App Paths\brave.exe",
+                &[r"BraveSoftware\Brave-Browser\Application\brave.exe"],
+            ),
+            "firefox" => find_browser_exe(
+                r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe",
+                &[r"Mozilla Firefox\firefox.exe"],
+            ),
             _ => None,
         };
 
         if let Some(exe) = exe_path {
             let mut cmd = std::process::Command::new(&exe);
             cmd.arg(&url);
-            let _ = cmd.spawn().map_err(|e| format!("Failed to launch browser {}: {}", exe, e))?;
+            let _ = cmd
+                .spawn()
+                .map_err(|e| format!("Failed to launch browser {}: {}", exe, e))?;
             return Ok(());
         }
     }

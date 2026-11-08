@@ -351,7 +351,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_segments(&self, download_id: Uuid) -> std::result::Result<Vec<SegmentRecord>, StoreError> {
+    pub fn get_segments(
+        &self,
+        download_id: Uuid,
+    ) -> std::result::Result<Vec<SegmentRecord>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"
@@ -605,7 +608,9 @@ impl Store {
 
     pub fn export_history_csv(&self) -> std::result::Result<String, StoreError> {
         let items = self.list_history(Some(10000), None)?;
-        let mut csv = String::from("id,filename,category,state,size_done,size_total,created_at,completed_at,url\n");
+        let mut csv = String::from(
+            "id,filename,category,state,size_done,size_total,created_at,completed_at,url\n",
+        );
         for h in items {
             let line = format!(
                 "\"{}\",\"{}\",\"{}\",\"{}\",{},{},\"{}\",\"{}\",\"{}\"\n",
@@ -637,7 +642,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_encrypted_cookies(&self, id: Uuid) -> std::result::Result<Option<Vec<u8>>, StoreError> {
+    pub fn get_encrypted_cookies(
+        &self,
+        id: Uuid,
+    ) -> std::result::Result<Option<Vec<u8>>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT cookies_encrypted FROM downloads WHERE id = ?1")?;
         let mut rows = stmt.query(params![id.to_string()])?;
@@ -658,7 +666,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_download_url(&self, id: Uuid, new_url: &str) -> std::result::Result<(), StoreError> {
+    pub fn update_download_url(
+        &self,
+        id: Uuid,
+        new_url: &str,
+    ) -> std::result::Result<(), StoreError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE downloads SET url = ?1 WHERE id = ?2",
@@ -801,7 +813,9 @@ mod tests {
             .expect("state update failed");
 
         // History test
-        store.add_to_history(&record, Utc::now()).expect("add history failed");
+        store
+            .add_to_history(&record, Utc::now())
+            .expect("add history failed");
         let hist = store.list_history(None, None).expect("list history failed");
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].filename, "file.iso");
@@ -828,14 +842,23 @@ mod tests {
         assert_eq!(updated_queues.len(), 2);
 
         // Encrypted cookies test
-        store.save_encrypted_cookies(id, b"encrypted_blob").expect("save cookies failed");
+        store
+            .save_encrypted_cookies(id, b"encrypted_blob")
+            .expect("save cookies failed");
         let loaded_blob = store.get_encrypted_cookies(id).expect("get cookies failed");
         assert_eq!(loaded_blob, Some(b"encrypted_blob".to_vec()));
-        store.purge_encrypted_cookies(id).expect("purge cookies failed");
-        assert_eq!(store.get_encrypted_cookies(id).expect("get cookies failed"), None);
+        store
+            .purge_encrypted_cookies(id)
+            .expect("purge cookies failed");
+        assert_eq!(
+            store.get_encrypted_cookies(id).expect("get cookies failed"),
+            None
+        );
 
         // Duplicate test
-        let dup = store.find_duplicate("https://example.com/file.iso", "other.iso", None).expect("find dup failed");
+        let dup = store
+            .find_duplicate("https://example.com/file.iso", "other.iso", None)
+            .expect("find dup failed");
         assert!(dup.is_some());
     }
 }

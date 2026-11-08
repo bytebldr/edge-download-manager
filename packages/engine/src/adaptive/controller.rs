@@ -144,7 +144,8 @@ impl AdaptiveController {
         if self.rolling_throughput_bps == 0.0 {
             self.rolling_throughput_bps = instant_bps;
         } else {
-            self.rolling_throughput_bps = alpha * instant_bps + (1.0 - alpha) * self.rolling_throughput_bps;
+            self.rolling_throughput_bps =
+                alpha * instant_bps + (1.0 - alpha) * self.rolling_throughput_bps;
         }
 
         // Single stream fallback invariant: never scale if server cannot handle ranges
@@ -466,7 +467,9 @@ mod tests {
             let elapsed_sim = Duration::from_millis(tick as u64 * 250);
             sim_clock = start_time + elapsed_sim;
 
-            pseudo_rand = pseudo_rand.wrapping_mul(6364136223846793005).wrapping_add(1);
+            pseudo_rand = pseudo_rand
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1);
             let noise_factor = 0.95 + ((pseudo_rand % 100) as f64 / 1000.0); // 0.95 .. 1.05
             let bytes_transferred = (1_250_000.0 * noise_factor) as u64; // ~5 MB/s
 
@@ -502,7 +505,10 @@ mod tests {
                 assert!(
                     diff >= Duration::from_secs(60),
                     "Oscillation detected: {} -> {} -> {} within {:?}",
-                    from1, to1, to2, diff
+                    from1,
+                    to1,
+                    to2,
+                    diff
                 );
             }
         }
@@ -546,7 +552,8 @@ mod tests {
             }
 
             let effective_rate = smoothed_speed_bytes as u64;
-            let is_warmed_up = start_time.elapsed() >= Duration::from_secs(3) || total_downloaded >= 1024 * 1024;
+            let is_warmed_up =
+                start_time.elapsed() >= Duration::from_secs(3) || total_downloaded >= 1024 * 1024;
             assert!(is_warmed_up);
 
             let rem = total_size.saturating_sub(total_downloaded);

@@ -16,9 +16,21 @@ pub fn register_native_messaging_host() {
     let mut candidates = vec![
         current_dir.join("edm-nmh.exe"),
         current_dir.join("resources").join("edm-nmh.exe"),
-        current_dir.join("_up_").join("_up_").join("_up_").join("target").join("release").join("edm-nmh.exe"),
+        current_dir
+            .join("_up_")
+            .join("_up_")
+            .join("_up_")
+            .join("target")
+            .join("release")
+            .join("edm-nmh.exe"),
         app_dir.join("resources").join("edm-nmh.exe"),
-        app_dir.join("_up_").join("_up_").join("_up_").join("target").join("release").join("edm-nmh.exe"),
+        app_dir
+            .join("_up_")
+            .join("_up_")
+            .join("_up_")
+            .join("target")
+            .join("release")
+            .join("edm-nmh.exe"),
     ];
 
     if let Ok(key) = CURRENT_USER.open(r"Software\EDM") {
@@ -29,7 +41,15 @@ pub fn register_native_messaging_host() {
             let idir_p = PathBuf::from(idir);
             candidates.push(idir_p.join("edm-nmh.exe"));
             candidates.push(idir_p.join("resources").join("edm-nmh.exe"));
-            candidates.push(idir_p.join("_up_").join("_up_").join("_up_").join("target").join("release").join("edm-nmh.exe"));
+            candidates.push(
+                idir_p
+                    .join("_up_")
+                    .join("_up_")
+                    .join("_up_")
+                    .join("target")
+                    .join("release")
+                    .join("edm-nmh.exe"),
+            );
         }
     }
 
@@ -185,7 +205,8 @@ pub fn purge_all_user_data() {
     let _ = CURRENT_USER.remove_tree(r"Software\EDM");
     let _ = CURRENT_USER.remove_tree(r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh");
-    let _ = CURRENT_USER.remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
+    let _ = CURRENT_USER
+        .remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh");
 
     if let Ok(local) = std::env::var("LOCALAPPDATA") {

@@ -90,7 +90,9 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
                     let setup_asset = release
                         .assets
                         .iter()
-                        .find(|a| a.name.ends_with(".exe") && a.name.to_lowercase().contains("setup"))
+                        .find(|a| {
+                            a.name.ends_with(".exe") && a.name.to_lowercase().contains("setup")
+                        })
                         .or_else(|| release.assets.iter().find(|a| a.name.ends_with(".exe")));
 
                     let download_url = setup_asset.map(|a| a.browser_download_url.clone());

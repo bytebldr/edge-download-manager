@@ -6,9 +6,7 @@ use crate::os::*;
 use crate::state::AppState;
 
 #[command]
-pub async fn get_lifecycle_status(
-    state: State<'_, AppState>,
-) -> Result<LifecycleStatus, String> {
+pub async fn get_lifecycle_status(state: State<'_, AppState>) -> Result<LifecycleStatus, String> {
     let active_count = {
         let mut count = 0;
         if let Ok(tasks) = state.tasks.lock() {
@@ -24,7 +22,10 @@ pub async fn get_lifecycle_status(
 }
 
 #[command]
-pub async fn wake_engine(state: State<'_, AppState>, show_window: Option<bool>) -> Result<(), String> {
+pub async fn wake_engine(
+    state: State<'_, AppState>,
+    show_window: Option<bool>,
+) -> Result<(), String> {
     state
         .lifecycle
         .record_wake(show_window.unwrap_or(false))
@@ -38,7 +39,9 @@ pub fn get_system_downloads_dir() -> String {
 }
 
 #[command]
-pub async fn select_download_directory(default_path: Option<String>) -> Result<Option<String>, String> {
+pub async fn select_download_directory(
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     select_download_directory_internal(default_path).await
 }
 

@@ -64,7 +64,9 @@ impl WsManager {
 
     pub async fn is_browser_connected(&self, browser: &str) -> bool {
         let clients = self.connected_clients.read().await;
-        clients.values().any(|c| c.browser.eq_ignore_ascii_case(browser))
+        clients
+            .values()
+            .any(|c| c.browser.eq_ignore_ascii_case(browser))
     }
 
     pub async fn get_browser_connected_id(&self, browser: &str) -> Option<String> {

@@ -76,10 +76,7 @@ async fn handle_head(State(state): State<MockServerState>) -> Response {
     (StatusCode::OK, headers).into_response()
 }
 
-async fn handle_file(
-    State(state): State<MockServerState>,
-    headers_in: HeaderMap,
-) -> Response {
+async fn handle_file(State(state): State<MockServerState>, headers_in: HeaderMap) -> Response {
     let req_idx = state.request_count.fetch_add(1, Ordering::SeqCst);
     let total_len = state.file_bytes.len() as u64;
 
@@ -149,13 +146,21 @@ async fn handle_file(
             if req_idx % 2 == 1 && slice_len > 128 * 1024 {
                 let half = slice_len / 2;
                 let chunk = Bytes::copy_from_slice(&slice_data[..half]);
-                let stream = stream::iter(vec![
-                    Ok::<_, Infallible>(chunk),
-                ]);
-                (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from_stream(stream)).into_response()
+                let stream = stream::iter(vec![Ok::<_, Infallible>(chunk)]);
+                (
+                    StatusCode::PARTIAL_CONTENT,
+                    resp_headers,
+                    Body::from_stream(stream),
+                )
+                    .into_response()
             } else {
                 let body_bytes = Bytes::copy_from_slice(slice_data);
-                (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(body_bytes)).into_response()
+                (
+                    StatusCode::PARTIAL_CONTENT,
+                    resp_headers,
+                    Body::from(body_bytes),
+                )
+                    .into_response()
             }
         }
         ServerBehavior::RandomLatency => {
@@ -163,7 +168,12 @@ async fn handle_file(
             let delay_ms = 10 + ((req_idx as u64 * 31) % 60);
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             let body_bytes = Bytes::copy_from_slice(slice_data);
-            (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(body_bytes)).into_response()
+            (
+                StatusCode::PARTIAL_CONTENT,
+                resp_headers,
+                Body::from(body_bytes),
+            )
+                .into_response()
         }
         ServerBehavior::ThrottleSomeWorkers => {
             // (e) Throttles some connections hard so work stealing triggers
@@ -174,24 +184,40 @@ async fn handle_file(
                     .chunks(chunk_size)
                     .map(Bytes::copy_from_slice)
                     .collect();
-                let stream = futures_util::stream::unfold((chunks, 0), |(chunks, idx)| async move {
-                    if idx >= chunks.len() {
-                        None
-                    } else {
-                        tokio::time::sleep(Duration::from_millis(25)).await;
-                        let c = chunks[idx].clone();
-                        Some((Ok::<_, Infallible>(c), (chunks, idx + 1)))
-                    }
-                });
-                (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from_stream(stream)).into_response()
+                let stream =
+                    futures_util::stream::unfold((chunks, 0), |(chunks, idx)| async move {
+                        if idx >= chunks.len() {
+                            None
+                        } else {
+                            tokio::time::sleep(Duration::from_millis(25)).await;
+                            let c = chunks[idx].clone();
+                            Some((Ok::<_, Infallible>(c), (chunks, idx + 1)))
+                        }
+                    });
+                (
+                    StatusCode::PARTIAL_CONTENT,
+                    resp_headers,
+                    Body::from_stream(stream),
+                )
+                    .into_response()
             } else {
                 let body_bytes = Bytes::copy_from_slice(slice_data);
-                (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(body_bytes)).into_response()
+                (
+                    StatusCode::PARTIAL_CONTENT,
+                    resp_headers,
+                    Body::from(body_bytes),
+                )
+                    .into_response()
             }
         }
         _ => {
             let body_bytes = Bytes::copy_from_slice(slice_data);
-            (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(body_bytes)).into_response()
+            (
+                StatusCode::PARTIAL_CONTENT,
+                resp_headers,
+                Body::from(body_bytes),
+            )
+                .into_response()
         }
     }
 }
@@ -262,7 +288,10 @@ pub async fn run_diagnostic_matrix_test(
     let downloaded_path = match res {
         Ok(p) => p,
         Err(e) => {
-            println!("Download error for {:?} with {} conns: {}", behavior, connections, e);
+            println!(
+                "Download error for {:?} with {} conns: {}",
+                behavior, connections, e
+            );
             temp_dir.path().join(filename)
         }
     };
@@ -308,10 +337,15 @@ async fn test_phase1_diagnostic_matrix() {
     for &behavior in &behaviors {
         for &conns in &test_conns {
             total_tests += 1;
-            print!("Testing Behavior: {:<20} | Connections: {:>2} ... ", format!("{:?}", behavior), conns);
+            print!(
+                "Testing Behavior: {:<20} | Connections: {:>2} ... ",
+                format!("{:?}", behavior),
+                conns
+            );
             std::io::stdout().flush().unwrap();
 
-            let report = run_diagnostic_matrix_test(conns, behavior, &golden_path, file_bytes.clone()).await;
+            let report =
+                run_diagnostic_matrix_test(conns, behavior, &golden_path, file_bytes.clone()).await;
             if report.is_identical {
                 println!("PASS (SHA-256 Match)");
             } else {
@@ -325,7 +359,11 @@ async fn test_phase1_diagnostic_matrix() {
                     for (i, r) in report.diff_ranges.iter().take(3).enumerate() {
                         println!(
                             "      Range {}: 0x{:X}..0x{:X} (len {}) | {}",
-                            i + 1, r.start, r.start + r.len - 1, r.len, r.boundary_note
+                            i + 1,
+                            r.start,
+                            r.start + r.len - 1,
+                            r.len,
+                            r.boundary_note
                         );
                     }
                 }
@@ -333,5 +371,10 @@ async fn test_phase1_diagnostic_matrix() {
         }
     }
     println!("===============================================================");
-    println!("Diagnostic Matrix Completed: {} / {} passed, {} failed.", total_tests - failure_count, total_tests, failure_count);
+    println!(
+        "Diagnostic Matrix Completed: {} / {} passed, {} failed.",
+        total_tests - failure_count,
+        total_tests,
+        failure_count
+    );
 }

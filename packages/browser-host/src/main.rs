@@ -44,8 +44,14 @@ fn get_last_wake_stats() -> (Option<String>, Option<String>, Option<u64>) {
     };
     if let Ok(content) = fs::read_to_string(&p) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            let err = v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string());
-            let ts = v.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
+            let err = v
+                .get("error")
+                .and_then(|e| e.as_str())
+                .map(|s| s.to_string());
+            let ts = v
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
             let ms = v.get("time_to_ready_ms").and_then(|m| m.as_u64());
             return (err, ts, ms);
         }
@@ -53,7 +59,12 @@ fn get_last_wake_stats() -> (Option<String>, Option<String>, Option<u64>) {
     (None, None, None)
 }
 
-fn record_wake_result(ok: bool, error: Option<&str>, time_to_ready_ms: Option<u64>, exe_path: Option<&PathBuf>) {
+fn record_wake_result(
+    ok: bool,
+    error: Option<&str>,
+    time_to_ready_ms: Option<u64>,
+    exe_path: Option<&PathBuf>,
+) {
     let p = match env::var("LOCALAPPDATA") {
         Ok(dir) => PathBuf::from(dir).join("EDM"),
         Err(_) => env::temp_dir().join("EDM"),
@@ -81,25 +92,44 @@ fn verify_caller_origin() -> bool {
     }
     for arg in &args[1..] {
         if edm_ipc::extensions::is_allowed_origin(arg) {
-            tracing::info!("Origin verified: matched allowed extension origin {} (elapsed: {:?})", arg, start.elapsed());
+            tracing::info!(
+                "Origin verified: matched allowed extension origin {} (elapsed: {:?})",
+                arg,
+                start.elapsed()
+            );
             return true;
         }
         if edm_ipc::extensions::is_allowed_extension_id(arg) {
-            tracing::info!("Origin verified: matched allowed extension id directly {} (elapsed: {:?})", arg, start.elapsed());
+            tracing::info!(
+                "Origin verified: matched allowed extension id directly {} (elapsed: {:?})",
+                arg,
+                start.elapsed()
+            );
             return true;
         }
         for id in edm_ipc::extensions::CHROMIUM_ALLOWED_IDS {
             if arg.contains(id) {
-                tracing::info!("Origin verified: matched allowed extension id {} (elapsed: {:?})", id, start.elapsed());
+                tracing::info!(
+                    "Origin verified: matched allowed extension id {} (elapsed: {:?})",
+                    id,
+                    start.elapsed()
+                );
                 return true;
             }
         }
         if arg.contains(edm_ipc::extensions::FIREFOX_GECKO_ID) {
-            tracing::info!("Origin verified: matched allowed firefox gecko id (elapsed: {:?})", start.elapsed());
+            tracing::info!(
+                "Origin verified: matched allowed firefox gecko id (elapsed: {:?})",
+                start.elapsed()
+            );
             return true;
         }
     }
-    tracing::warn!("Origin verification rejected: args {:?} not in allowed list (elapsed: {:?})", &args[1..], start.elapsed());
+    tracing::warn!(
+        "Origin verification rejected: args {:?} not in allowed list (elapsed: {:?})",
+        &args[1..],
+        start.elapsed()
+    );
     false
 }
 
@@ -188,7 +218,12 @@ fn ensure_webview2_loader(exe: &Path) {
                 .join("release")
                 .join("WebView2Loader.dll"),
         );
-        candidate_sources.push(PathBuf::from(&local).join("EDM").join("resources").join("WebView2Loader.dll"));
+        candidate_sources.push(
+            PathBuf::from(&local)
+                .join("EDM")
+                .join("resources")
+                .join("WebView2Loader.dll"),
+        );
         candidate_sources.push(PathBuf::from(&local).join("EDM").join("WebView2Loader.dll"));
     }
 
@@ -200,7 +235,9 @@ fn ensure_webview2_loader(exe: &Path) {
             if let Ok(idir) = key.get_string("InstallDir") {
                 candidate_sources.push(PathBuf::from(&idir).join("WebView2Loader.dll"));
                 candidate_sources.push(PathBuf::from(&idir).join(r"resources\WebView2Loader.dll"));
-                candidate_sources.push(PathBuf::from(&idir).join(r"_up_\_up_\_up_\target\release\WebView2Loader.dll"));
+                candidate_sources.push(
+                    PathBuf::from(&idir).join(r"_up_\_up_\_up_\target\release\WebView2Loader.dll"),
+                );
             }
         }
     }
@@ -233,7 +270,10 @@ fn find_edm_exe() -> Option<PathBuf> {
                 let p = PathBuf::from(&app_path);
                 if p.exists() && p.is_file() {
                     let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if exe_names.iter().any(|name| name.eq_ignore_ascii_case(fname)) {
+                    if exe_names
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case(fname))
+                    {
                         ensure_webview2_loader(&p);
                         return Some(p);
                     }
@@ -316,7 +356,11 @@ fn find_edm_exe() -> Option<PathBuf> {
 fn launch_detached(exe: &PathBuf, show_window: bool) {
     ensure_webview2_loader(exe);
     let dir = exe.parent().unwrap_or(exe.as_path());
-    let arg = if show_window { "--show-window" } else { "--background" };
+    let arg = if show_window {
+        "--show-window"
+    } else {
+        "--background"
+    };
 
     #[cfg(windows)]
     {
@@ -341,21 +385,33 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
 
         match cmd.spawn() {
             Ok(child) => {
-                tracing::info!("Successfully spawned EDM desktop detached (PID: {}) at {}", child.id(), exe.display());
+                tracing::info!(
+                    "Successfully spawned EDM desktop detached (PID: {}) at {}",
+                    child.id(),
+                    exe.display()
+                );
                 return;
             }
             Err(e) => {
-                tracing::warn!("Direct detached spawn of {} failed: {}. Falling back to cmd start...", exe.display(), e);
+                tracing::warn!(
+                    "Direct detached spawn of {} failed: {}. Falling back to cmd start...",
+                    exe.display(),
+                    e
+                );
             }
         }
 
         // Fallback: spawn via cmd /c start "" "exe" arg
         let mut fallback = std::process::Command::new("cmd.exe");
-        fallback.args(["/c", "start", "", &exe.to_string_lossy(), arg])
+        fallback
+            .args(["/c", "start", "", &exe.to_string_lossy(), arg])
             .current_dir(dir)
             .creation_flags(CREATE_NO_WINDOW);
         match fallback.spawn() {
-            Ok(_) => tracing::info!("Spawned EDM desktop via cmd start fallback at {}", exe.display()),
+            Ok(_) => tracing::info!(
+                "Spawned EDM desktop via cmd start fallback at {}",
+                exe.display()
+            ),
             Err(e) => tracing::error!("Cmd start fallback failed for {}: {}", exe.display(), e),
         }
     }
@@ -526,13 +582,30 @@ fn repair_registration() -> Result<String, String> {
 fn collect_diagnostics(ext_id: Option<String>) -> DiagnosticsReport {
     use windows_registry::CURRENT_USER;
 
-    let target_ext_id = ext_id.unwrap_or_else(|| edm_ipc::extensions::CHROMIUM_UNPACKED_ID.to_string());
+    let target_ext_id =
+        ext_id.unwrap_or_else(|| edm_ipc::extensions::CHROMIUM_UNPACKED_ID.to_string());
 
     let browsers_meta = [
-        ("edge", r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh", false),
-        ("chrome", r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh", false),
-        ("brave", r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh", false),
-        ("firefox", r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh", true),
+        (
+            "edge",
+            r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh",
+            false,
+        ),
+        (
+            "chrome",
+            r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh",
+            false,
+        ),
+        (
+            "brave",
+            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh",
+            false,
+        ),
+        (
+            "firefox",
+            r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh",
+            true,
+        ),
     ];
 
     let mut browser_diagnostics = Vec::new();
@@ -561,28 +634,46 @@ fn collect_diagnostics(ext_id: Option<String>) -> DiagnosticsReport {
                         if mpath.exists() && mpath.is_file() {
                             diag.manifest_exists = true;
                             if let Ok(content) = fs::read_to_string(&mpath) {
-                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                    if let Some(hpath_str) = json.get("path").and_then(|v| v.as_str()) {
+                                if let Ok(json) =
+                                    serde_json::from_str::<serde_json::Value>(&content)
+                                {
+                                    if let Some(hpath_str) =
+                                        json.get("path").and_then(|v| v.as_str())
+                                    {
                                         let hpath = PathBuf::from(hpath_str);
                                         let full_hpath = if hpath.is_relative() {
                                             mpath.parent().unwrap_or(&mpath).join(hpath)
                                         } else {
                                             hpath
                                         };
-                                        diag.helper_path = Some(full_hpath.to_string_lossy().to_string());
-                                        diag.helper_exists = full_hpath.exists() && full_hpath.is_file();
+                                        diag.helper_path =
+                                            Some(full_hpath.to_string_lossy().to_string());
+                                        diag.helper_exists =
+                                            full_hpath.exists() && full_hpath.is_file();
                                     }
 
                                     if *is_firefox {
-                                        if let Some(exts) = json.get("allowed_extensions").and_then(|v| v.as_array()) {
+                                        if let Some(exts) = json
+                                            .get("allowed_extensions")
+                                            .and_then(|v| v.as_array())
+                                        {
                                             diag.origin_matched = exts.iter().any(|e| {
-                                                e.as_str().map(|s| edm_ipc::extensions::FIREFOX_ALLOWED_IDS.contains(&s) || s == target_ext_id).unwrap_or(false)
+                                                e.as_str()
+                                                    .map(|s| {
+                                                        edm_ipc::extensions::FIREFOX_ALLOWED_IDS
+                                                            .contains(&s)
+                                                            || s == target_ext_id
+                                                    })
+                                                    .unwrap_or(false)
                                             });
                                         }
-                                    } else if let Some(origins) = json.get("allowed_origins").and_then(|v| v.as_array()) {
+                                    } else if let Some(origins) =
+                                        json.get("allowed_origins").and_then(|v| v.as_array())
+                                    {
                                         diag.origin_matched = origins.iter().any(|o| {
                                             if let Some(s) = o.as_str() {
-                                                edm_ipc::extensions::is_allowed_origin(s) || s.contains(&target_ext_id)
+                                                edm_ipc::extensions::is_allowed_origin(s)
+                                                    || s.contains(&target_ext_id)
                                             } else {
                                                 false
                                             }
@@ -610,7 +701,9 @@ fn collect_diagnostics(ext_id: Option<String>) -> DiagnosticsReport {
         browser_diagnostics.push(diag);
     }
 
-    let helper_path = env::current_exe().ok().map(|p| p.to_string_lossy().to_string());
+    let helper_path = env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
     let app_exe = find_edm_exe();
     let app_installed = app_exe.is_some();
     let app_exe_path = app_exe.map(|p| p.to_string_lossy().to_string());
@@ -672,7 +765,10 @@ async fn forward_to_edm_desktop(msg: &ExtensionMessage) -> Option<AppReply> {
     let resp = client
         .post("http://127.0.0.1:8998/api")
         .header("x-edm-token", token)
-        .header("Origin", "chrome-extension://ginpdimhcdbojbhemgjedghkeolbcmgj")
+        .header(
+            "Origin",
+            "chrome-extension://ginpdimhcdbojbhemgjedghkeolbcmgj",
+        )
         .header("Content-Type", "application/json")
         .body(body)
         .send()
@@ -713,14 +809,22 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
             let _lock = win_lock::NamedLock::acquire(r"Local\EDM_Wake_Lock", 25000);
 
             if is_ws_server_ready() {
-                tracing::info!("WebSocket server is already ready (elapsed: {:?})", start.elapsed());
+                tracing::info!(
+                    "WebSocket server is already ready (elapsed: {:?})",
+                    start.elapsed()
+                );
                 if show_window {
                     if let Some(exe) = find_edm_exe() {
                         launch_detached(&exe, true);
                     }
                 }
                 let token = get_ws_token();
-                record_wake_result(true, None, Some(start.elapsed().as_millis() as u64), find_edm_exe().as_ref());
+                record_wake_result(
+                    true,
+                    None,
+                    Some(start.elapsed().as_millis() as u64),
+                    find_edm_exe().as_ref(),
+                );
                 return AppReply::WakeResult {
                     ok: true,
                     status: "ready".into(),
@@ -731,11 +835,17 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
 
             let exe = match find_edm_exe() {
                 Some(p) => {
-                    tracing::info!("Found EDM executable at {} (elapsed: {:?})", p.display(), start.elapsed());
+                    tracing::info!(
+                        "Found EDM executable at {} (elapsed: {:?})",
+                        p.display(),
+                        start.elapsed()
+                    );
                     p
                 }
                 None => {
-                    tracing::error!("EDM executable not found in any candidate or registry location!");
+                    tracing::error!(
+                        "EDM executable not found in any candidate or registry location!"
+                    );
                     record_wake_result(false, Some("EDM executable not found"), None, None);
                     return AppReply::WakeResult {
                         ok: false,
@@ -748,7 +858,11 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
 
             let launch_start = Instant::now();
             launch_detached(&exe, show_window);
-            tracing::info!("Launched detached process for {} in {:?}", exe.display(), launch_start.elapsed());
+            tracing::info!(
+                "Launched detached process for {} in {:?}",
+                exe.display(),
+                launch_start.elapsed()
+            );
 
             // Cold start allowance up to 20 seconds
             if wait_for_ws_server(20) {
@@ -764,7 +878,12 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 }
             } else {
                 tracing::error!("Timeout (20s) waiting for EDM WebSocket server to initialize");
-                record_wake_result(false, Some("Timeout waiting for EDM desktop to initialize"), None, Some(&exe));
+                record_wake_result(
+                    false,
+                    Some("Timeout waiting for EDM desktop to initialize"),
+                    None,
+                    Some(&exe),
+                );
                 AppReply::WakeResult {
                     ok: false,
                     status: "error".into(),
@@ -775,7 +894,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::GetDiagnostics { extension_id } => {
-            tracing::info!("Collecting diagnostics for extension_id: {:?}", extension_id);
+            tracing::info!(
+                "Collecting diagnostics for extension_id: {:?}",
+                extension_id
+            );
             AppReply::Diagnostics {
                 report: collect_diagnostics(extension_id),
             }
@@ -836,10 +958,18 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
             let agg_speed: u64 = 0;
 
             let is_running = is_ws_server_ready();
-            let token = if is_running { Some(get_ws_token()) } else { None };
+            let token = if is_running {
+                Some(get_ws_token())
+            } else {
+                None
+            };
 
             AppReply::Status {
-                status: if is_running { "running".into() } else { "asleep".into() },
+                status: if is_running {
+                    "running".into()
+                } else {
+                    "asleep".into()
+                },
                 version: env!("CARGO_PKG_VERSION").into(),
                 protocol: PROTOCOL_VERSION,
                 active_downloads: active,
@@ -1199,7 +1329,11 @@ async fn main() -> io::Result<()> {
     init_nmh_logging();
     let host_start = Instant::now();
     let args: Vec<String> = env::args().collect();
-    tracing::info!("Host started. PID: {}, Args: {:?}", std::process::id(), args);
+    tracing::info!(
+        "Host started. PID: {}, Args: {:?}",
+        std::process::id(),
+        args
+    );
 
     if !verify_caller_origin() {
         tracing::error!("Security violation: Untrusted caller origin");
@@ -1320,7 +1454,10 @@ async fn main() -> io::Result<()> {
     let mut reader = stdin.lock();
     let mut writer = stdout.lock();
 
-    tracing::info!("NMH ready for length-prefixed stdin/stdout messages (init elapsed: {:?})", host_start.elapsed());
+    tracing::info!(
+        "NMH ready for length-prefixed stdin/stdout messages (init elapsed: {:?})",
+        host_start.elapsed()
+    );
 
     while let Ok(Some(res)) = read_message(&mut reader) {
         match res {

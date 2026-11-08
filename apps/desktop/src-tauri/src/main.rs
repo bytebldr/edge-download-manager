@@ -82,7 +82,10 @@ fn open_persistent_store() -> Store {
 fn main() {
     let t_boot = std::time::Instant::now();
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--clean-uninstall" || a == "--purge-data") {
+    if args
+        .iter()
+        .any(|a| a == "--clean-uninstall" || a == "--purge-data")
+    {
         #[cfg(windows)]
         purge_all_user_data();
         return;
@@ -190,7 +193,10 @@ fn main() {
                     if features::is_queue_active_at_time(&q, now) {
                         let active_count = {
                             if let Ok(tasks) = queue_state.tasks.lock() {
-                                tasks.values().filter(|h| !h.cancelled.load(Ordering::Relaxed)).count()
+                                tasks
+                                    .values()
+                                    .filter(|h| !h.cancelled.load(Ordering::Relaxed))
+                                    .count()
                             } else {
                                 0
                             }
@@ -745,13 +751,22 @@ mod tests {
         assert!(res.is_ok(), "prepare_extension_files failed: {:?}", res);
         let path = PathBuf::from(res.unwrap());
         assert!(path.exists(), "Target folder should exist");
-        assert!(path.join("manifest.json").exists(), "manifest.json should exist");
-        assert!(path.join("hashes.json").exists(), "hashes.json should exist");
+        assert!(
+            path.join("manifest.json").exists(),
+            "manifest.json should exist"
+        );
+        assert!(
+            path.join("hashes.json").exists(),
+            "hashes.json should exist"
+        );
     }
 
     #[test]
     fn test_system_downloads_dir() {
         let dir = get_system_downloads_dir_internal();
-        assert!(!dir.is_empty(), "System downloads directory should not be empty");
+        assert!(
+            !dir.is_empty(),
+            "System downloads directory should not be empty"
+        );
     }
 }

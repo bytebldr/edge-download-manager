@@ -43,7 +43,10 @@ extern "system" {
         lp_total_number_of_free_bytes: *mut u64,
     ) -> i32;
     fn IsDebuggerPresent() -> i32;
-    fn CheckRemoteDebuggerPresent(h_process: *mut std::ffi::c_void, is_debugger_present: *mut i32) -> i32;
+    fn CheckRemoteDebuggerPresent(
+        h_process: *mut std::ffi::c_void,
+        is_debugger_present: *mut i32,
+    ) -> i32;
     fn GetCurrentProcess() -> *mut std::ffi::c_void;
 }
 
@@ -142,7 +145,9 @@ pub fn decrypt_dpapi(cipher: &[u8]) -> Result<Vec<u8>, String> {
 pub fn check_double_extension(filename: &str) -> Option<String> {
     let lower = filename.to_lowercase();
     let dangerous_exts = ["exe", "scr", "bat", "cmd", "vbs", "js", "msi", "ps1", "hta"];
-    let benign_exts = ["pdf", "mp4", "mp3", "png", "jpg", "jpeg", "doc", "docx", "xls", "xlsx", "zip", "txt"];
+    let benign_exts = [
+        "pdf", "mp4", "mp3", "png", "jpg", "jpeg", "doc", "docx", "xls", "xlsx", "zip", "txt",
+    ];
 
     let parts: Vec<&str> = lower.split('.').collect();
     if parts.len() >= 3 {
@@ -270,7 +275,10 @@ pub fn apply_mark_of_the_web(file_path: &Path, source_url: Option<&str>) -> Resu
                 Ok(())
             }
             Err(e) => {
-                warn!("Failed to write Zone.Identifier ADS to {:?}: {}", file_path, e);
+                warn!(
+                    "Failed to write Zone.Identifier ADS to {:?}: {}",
+                    file_path, e
+                );
                 // Non-fatal if filesystem doesn't support ADS (e.g. FAT32/exFAT)
                 Ok(())
             }

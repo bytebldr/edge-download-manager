@@ -23,7 +23,10 @@ pub fn app_toggle_maximize(window: tauri::WebviewWindow) {
 }
 
 #[command]
-pub async fn app_close(window: tauri::WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn app_close(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let close_to_tray = if let Ok(Some(json_str)) = state.store.get_setting("app_settings") {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
             val.get("general")

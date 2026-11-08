@@ -62,7 +62,13 @@ pub fn parse_content_range(val: &str) -> Option<(u64, u64, Option<u64>)> {
 
     let start = start_str.parse::<u64>().ok()?;
     let end = end_str.parse::<u64>().ok()?;
-    let total = total_str.and_then(|s| if s == "*" { None } else { s.parse::<u64>().ok() });
+    let total = total_str.and_then(|s| {
+        if s == "*" {
+            None
+        } else {
+            s.parse::<u64>().ok()
+        }
+    });
 
     Some((start, end, total))
 }
@@ -324,7 +330,11 @@ impl AdaptiveWorker {
             }
 
             // Validate ETag if server provides one
-            if let Some(resp_etag) = resp.headers().get(reqwest::header::ETAG).and_then(|v| v.to_str().ok()) {
+            if let Some(resp_etag) = resp
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|v| v.to_str().ok())
+            {
                 let clean_resp = resp_etag.trim().trim_matches('"');
                 if let Some(ref expected) = self.etag {
                     let clean_exp = expected.trim().trim_matches('"');
@@ -386,7 +396,10 @@ impl AdaptiveWorker {
                                 );
                                 retries += 1;
                                 self.retry_count.store(retries, Ordering::Relaxed);
-                                tokio::time::sleep(Duration::from_millis(500 * (1 << retries.min(4)))).await;
+                                tokio::time::sleep(Duration::from_millis(
+                                    500 * (1 << retries.min(4)),
+                                ))
+                                .await;
                                 continue;
                             }
                             if cr_end < current_end {
@@ -484,7 +497,10 @@ impl AdaptiveWorker {
                 if let Err(e) = writer.write_at(write_offset, &next_chunk) {
                     error!("Worker {} disk write error: {}", self.idx, e);
                     let err_str = e.to_string().to_lowercase();
-                    if err_str.contains("112") || err_str.contains("disk is full") || err_str.contains("space") {
+                    if err_str.contains("112")
+                        || err_str.contains("disk is full")
+                        || err_str.contains("space")
+                    {
                         self.set_status(WorkerStatus::Failed);
                         let _ = event_tx
                             .send(AdaptiveWorkerEvent::Failed {

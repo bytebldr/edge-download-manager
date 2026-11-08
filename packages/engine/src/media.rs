@@ -96,7 +96,10 @@ impl MediaGrabber {
     }
 
     /// Fetches and probes a media URL (HLS playlist, DASH manifest, or direct stream)
-    pub async fn probe_media_stream(url: &str, client: &reqwest::Client) -> Result<(Vec<StreamVariant>, bool), String> {
+    pub async fn probe_media_stream(
+        url: &str,
+        client: &reqwest::Client,
+    ) -> Result<(Vec<StreamVariant>, bool), String> {
         let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
         let text = resp.text().await.map_err(|e| e.to_string())?;
         if Self::is_drm_protected(&text) {

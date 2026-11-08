@@ -18,9 +18,15 @@ fn parse_size_str(s: &str) -> u64 {
     }
     let clean = s.trim_start_matches('~').trim();
     let (num_part, multiplier) = if clean.ends_with("GiB") {
-        (clean.trim_end_matches("GiB").trim(), 1024.0 * 1024.0 * 1024.0)
+        (
+            clean.trim_end_matches("GiB").trim(),
+            1024.0 * 1024.0 * 1024.0,
+        )
     } else if clean.ends_with("GB") {
-        (clean.trim_end_matches("GB").trim(), 1000.0 * 1000.0 * 1000.0)
+        (
+            clean.trim_end_matches("GB").trim(),
+            1000.0 * 1000.0 * 1000.0,
+        )
     } else if clean.ends_with("MiB") {
         (clean.trim_end_matches("MiB").trim(), 1024.0 * 1024.0)
     } else if clean.ends_with("MB") {
@@ -35,7 +41,10 @@ fn parse_size_str(s: &str) -> u64 {
         (clean, 1.0)
     };
 
-    num_part.parse::<f64>().map(|n| (n * multiplier) as u64).unwrap_or(0)
+    num_part
+        .parse::<f64>()
+        .map(|n| (n * multiplier) as u64)
+        .unwrap_or(0)
 }
 
 fn parse_speed_str(s: &str) -> u64 {
@@ -144,7 +153,9 @@ impl YtDlpPack {
             }
 
             // Check standard Python Scripts directory
-            let py_dir = PathBuf::from(&local_app_data).join("Programs").join("Python");
+            let py_dir = PathBuf::from(&local_app_data)
+                .join("Programs")
+                .join("Python");
             if py_dir.exists() {
                 if let Ok(entries) = std::fs::read_dir(py_dir) {
                     for entry in entries.flatten() {
@@ -192,7 +203,8 @@ impl YtDlpPack {
                 }
 
                 if tokio::fs::create_dir_all(&tools_dir).await.is_ok() {
-                    let download_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+                    let download_url =
+                        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
                     let client = reqwest::Client::builder()
                         .timeout(std::time::Duration::from_secs(45))
                         .user_agent("EDM-Tools-Bootstrap/1.0")
@@ -408,7 +420,8 @@ impl YtDlpPack {
         task: AdaptiveDownloadTask,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
-        let bin = Self::ensure_binary().await
+        let bin = Self::ensure_binary()
+            .await
             .ok_or_else(|| "yt-dlp binary could not be located or downloaded".to_string())?;
 
         let target_name = if !task.filename.is_empty()
@@ -419,7 +432,10 @@ impl YtDlpPack {
             let safe_name = sanitized.replace('%', "%%");
             let ext = safe_name.rsplit('.').next().unwrap_or("mp4");
             if ext == "mp4" || ext == "mkv" || ext == "webm" || ext == "mp3" || ext == "m4a" {
-                format!("{}.%(ext)s", safe_name.trim_end_matches(&format!(".{}", ext)))
+                format!(
+                    "{}.%(ext)s",
+                    safe_name.trim_end_matches(&format!(".{}", ext))
+                )
             } else {
                 format!("{}.%(ext)s", safe_name)
             }
@@ -482,7 +498,10 @@ impl YtDlpPack {
                 Some("360")
             } else if task.url.contains("#1440p") || task.filename.contains("1440p") {
                 Some("1440")
-            } else if task.url.contains("#2160p") || task.filename.contains("2160p") || task.url.contains("#4k") {
+            } else if task.url.contains("#2160p")
+                || task.filename.contains("2160p")
+                || task.url.contains("#4k")
+            {
                 Some("2160")
             } else {
                 None
@@ -541,9 +560,17 @@ impl YtDlpPack {
         cmd.stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
-        let stdout = child.stdout.take().ok_or("Failed to capture yt-dlp stdout")?;
-        let stderr = child.stderr.take().ok_or("Failed to capture yt-dlp stderr")?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("Failed to capture yt-dlp stdout")?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or("Failed to capture yt-dlp stderr")?;
 
         let cancelled = task.cancelled.clone();
         let download_id = task.id.to_string();
@@ -892,7 +919,10 @@ impl YtDlpPack {
             }
         }
 
-        let status = child.wait().await.map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
         if !status.success() {
             let last_errs = stderr_lines.join("\n");
             return Err(format!("yt-dlp download failed: {}", last_errs));
@@ -919,12 +949,19 @@ impl YtDlpPack {
             None => {
                 let mut found = None;
                 if let Ok(entries) = std::fs::read_dir(&task.save_dir) {
-                    let stem = std::path::Path::new(&task.filename).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let stem = std::path::Path::new(&task.filename)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
                     for entry in entries.flatten() {
                         let p = entry.path();
                         if p.is_file() {
                             if let Some(file_name) = p.file_name().and_then(|n| n.to_str()) {
-                                if !stem.is_empty() && file_name.starts_with(stem) && !file_name.ends_with(".part") && !file_name.ends_with(".ytdl") {
+                                if !stem.is_empty()
+                                    && file_name.starts_with(stem)
+                                    && !file_name.ends_with(".part")
+                                    && !file_name.ends_with(".ytdl")
+                                {
                                     found = Some(p);
                                     break;
                                 }
@@ -936,7 +973,9 @@ impl YtDlpPack {
             }
         };
 
-        let file_size = std::fs::metadata(&target_file).map(|m| m.len()).unwrap_or(0);
+        let file_size = std::fs::metadata(&target_file)
+            .map(|m| m.len())
+            .unwrap_or(0);
         if file_size == 0 {
             return Err("Download failed: 0 bytes received or merge failed".to_string());
         }

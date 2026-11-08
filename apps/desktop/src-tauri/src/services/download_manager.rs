@@ -81,7 +81,10 @@ pub fn execute_download(
         || path_str.contains(r"\start menu\programs\startup")
         || path_str.contains(r"\microsoft\windows\start menu")
     {
-        return Err("Security violation: Target download directory is a restricted Windows system location".into());
+        return Err(
+            "Security violation: Target download directory is a restricted Windows system location"
+                .into(),
+        );
     }
 
     let resolved_path = edm_core::sanitizer::Sanitizer::resolve_duplicate(&save_path, &clean_name);
@@ -111,7 +114,10 @@ pub fn execute_download(
                         config.max_connections = (conns.clamp(1, 64)) as u32;
                     }
                 }
-                if let Some(min_mb) = dl.get("minFileSizeForSegmentationMb").and_then(|v| v.as_u64()) {
+                if let Some(min_mb) = dl
+                    .get("minFileSizeForSegmentationMb")
+                    .and_then(|v| v.as_u64())
+                {
                     config.min_chunk_size = min_mb.max(1) * 1024 * 1024;
                 }
                 if let Some(retries) = dl.get("maxRetries").and_then(|v| v.as_u64()) {
@@ -124,11 +130,20 @@ pub fn execute_download(
                         req_timeout_secs = t;
                     }
                 }
-                let proxy_mode = net.get("proxyMode").and_then(|v| v.as_str()).unwrap_or("system");
+                let proxy_mode = net
+                    .get("proxyMode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("system");
                 if proxy_mode == "manual" {
-                    let proto = net.get("proxyProtocol").and_then(|v| v.as_str()).unwrap_or("http");
+                    let proto = net
+                        .get("proxyProtocol")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("http");
                     let host = net.get("proxyHost").and_then(|v| v.as_str()).unwrap_or("");
-                    let port = net.get("proxyPort").and_then(|v| v.as_u64()).unwrap_or(8080);
+                    let port = net
+                        .get("proxyPort")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(8080);
                     if !host.trim().is_empty() {
                         let p_url = format!("{}://{}:{}", proto, host.trim(), port);
                         if let Ok(p) = reqwest::Proxy::all(&p_url) {

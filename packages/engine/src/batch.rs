@@ -22,14 +22,23 @@ pub fn expand_batch_pattern(pattern: &str) -> Result<Vec<String>, String> {
         if let Some(end_idx) = trimmed[start_idx..].find('}') {
             let end_abs = start_idx + end_idx;
             let inner = &trimmed[start_idx + 1..end_abs];
-            let options: Vec<&str> = inner.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+            let options: Vec<&str> = inner
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
             if options.is_empty() {
                 return Err("Empty set in brace expression".into());
             }
 
             let mut expanded = Vec::new();
             for opt in options {
-                let s = format!("{}{}{}", &trimmed[..start_idx], opt, &trimmed[end_abs + 1..]);
+                let s = format!(
+                    "{}{}{}",
+                    &trimmed[..start_idx],
+                    opt,
+                    &trimmed[end_abs + 1..]
+                );
                 let sub = expand_batch_pattern(&s)?;
                 expanded.extend(sub);
                 if expanded.len() > 1000 {
@@ -53,11 +62,17 @@ pub fn expand_batch_pattern(pattern: &str) -> Result<Vec<String>, String> {
                 // Check numeric range
                 if let (Ok(num1), Ok(num2)) = (p1.parse::<u32>(), p2.parse::<u32>()) {
                     if num1 > num2 {
-                        return Err(format!("Reversed numeric range [{}..{}] is not supported", num1, num2));
+                        return Err(format!(
+                            "Reversed numeric range [{}..{}] is not supported",
+                            num1, num2
+                        ));
                     }
                     let count = num2 - num1 + 1;
                     if count > 1000 {
-                        return Err(format!("Range length {} exceeds safety cap of 1,000 items", count));
+                        return Err(format!(
+                            "Range length {} exceeds safety cap of 1,000 items",
+                            count
+                        ));
                     }
 
                     let pad_len = if p1.starts_with('0') && p1.len() > 1 {
@@ -73,11 +88,18 @@ pub fn expand_batch_pattern(pattern: &str) -> Result<Vec<String>, String> {
                         } else {
                             n.to_string()
                         };
-                        let s = format!("{}{}{}", &trimmed[..start_idx], formatted_num, &trimmed[end_abs + 1..]);
+                        let s = format!(
+                            "{}{}{}",
+                            &trimmed[..start_idx],
+                            formatted_num,
+                            &trimmed[end_abs + 1..]
+                        );
                         let sub = expand_batch_pattern(&s)?;
                         expanded.extend(sub);
                         if expanded.len() > 1000 {
-                            return Err("Batch expansion exceeded safety limit of 1,000 items".into());
+                            return Err(
+                                "Batch expansion exceeded safety limit of 1,000 items".into()
+                            );
                         }
                     }
                     return Ok(deduplicate(expanded));
@@ -89,16 +111,26 @@ pub fn expand_batch_pattern(pattern: &str) -> Result<Vec<String>, String> {
                     let c2 = p2.chars().next().unwrap();
                     if c1.is_ascii_alphabetic() && c2.is_ascii_alphabetic() {
                         if c1 > c2 {
-                            return Err(format!("Reversed alphabetic range [{}..{}] is not supported", c1, c2));
+                            return Err(format!(
+                                "Reversed alphabetic range [{}..{}] is not supported",
+                                c1, c2
+                            ));
                         }
                         let mut expanded = Vec::new();
                         for byte in (c1 as u8)..=(c2 as u8) {
                             let ch = byte as char;
-                            let s = format!("{}{}{}", &trimmed[..start_idx], ch, &trimmed[end_abs + 1..]);
+                            let s = format!(
+                                "{}{}{}",
+                                &trimmed[..start_idx],
+                                ch,
+                                &trimmed[end_abs + 1..]
+                            );
                             let sub = expand_batch_pattern(&s)?;
                             expanded.extend(sub);
                             if expanded.len() > 1000 {
-                                return Err("Batch expansion exceeded safety limit of 1,000 items".into());
+                                return Err(
+                                    "Batch expansion exceeded safety limit of 1,000 items".into()
+                                );
                             }
                         }
                         return Ok(deduplicate(expanded));

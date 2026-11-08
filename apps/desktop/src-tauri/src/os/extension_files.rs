@@ -28,23 +28,56 @@ pub fn get_user_extension_dir() -> Result<PathBuf, String> {
             return Ok(PathBuf::from(config).join("EDM").join("extension"));
         }
         if let Ok(home) = std::env::var("HOME") {
-            return Ok(PathBuf::from(home).join(".config").join("EDM").join("extension"));
+            return Ok(PathBuf::from(home)
+                .join(".config")
+                .join("EDM")
+                .join("extension"));
         }
         Err("Failed to determine config folder".to_string())
     }
 }
 
 pub const EMBEDDED_EXTENSION_FILES: &[(&str, &[u8])] = &[
-    ("manifest.json", include_bytes!("../../../../../extension/manifest.json")),
-    ("background.js", include_bytes!("../../../../../extension/background.js")),
-    ("content.js", include_bytes!("../../../../../extension/content.js")),
-    ("popup.html", include_bytes!("../../../../../extension/popup.html")),
-    ("popup.js", include_bytes!("../../../../../extension/popup.js")),
-    ("popup.css", include_bytes!("../../../../../extension/popup.css")),
-    ("options.html", include_bytes!("../../../../../extension/options.html")),
-    ("options.js", include_bytes!("../../../../../extension/options.js")),
-    ("hashes.json", include_bytes!("../../../../../extension/hashes.json")),
-    ("logo.png", include_bytes!("../../../../../extension/logo.png")),
+    (
+        "manifest.json",
+        include_bytes!("../../../../../extension/manifest.json"),
+    ),
+    (
+        "background.js",
+        include_bytes!("../../../../../extension/background.js"),
+    ),
+    (
+        "content.js",
+        include_bytes!("../../../../../extension/content.js"),
+    ),
+    (
+        "popup.html",
+        include_bytes!("../../../../../extension/popup.html"),
+    ),
+    (
+        "popup.js",
+        include_bytes!("../../../../../extension/popup.js"),
+    ),
+    (
+        "popup.css",
+        include_bytes!("../../../../../extension/popup.css"),
+    ),
+    (
+        "options.html",
+        include_bytes!("../../../../../extension/options.html"),
+    ),
+    (
+        "options.js",
+        include_bytes!("../../../../../extension/options.js"),
+    ),
+    (
+        "hashes.json",
+        include_bytes!("../../../../../extension/hashes.json"),
+    ),
+    (
+        "logo.png",
+        include_bytes!("../../../../../extension/logo.png"),
+    ),
 ];
 
 pub fn prepare_extension_files_internal() -> Result<String, String> {
@@ -92,13 +125,17 @@ pub fn prepare_extension_files_internal() -> Result<String, String> {
         let hashes_path = source_dir.join("hashes.json");
         if hashes_path.exists() {
             if let Ok(hashes_content) = std::fs::read_to_string(&hashes_path) {
-                if let Ok(hashes_json) = serde_json::from_str::<serde_json::Value>(&hashes_content) {
+                if let Ok(hashes_json) = serde_json::from_str::<serde_json::Value>(&hashes_content)
+                {
                     if let Some(files_map) = hashes_json.get("files").and_then(|f| f.as_object()) {
                         let mut all_ok = true;
                         for (filename, expected_hash_val) in files_map {
                             let expected_hash_str = match expected_hash_val.as_str() {
                                 Some(s) => s,
-                                None => { all_ok = false; break; }
+                                None => {
+                                    all_ok = false;
+                                    break;
+                                }
                             };
                             let expected_sha256 = expected_hash_str
                                 .strip_prefix("sha256:")
@@ -112,7 +149,10 @@ pub fn prepare_extension_files_internal() -> Result<String, String> {
 
                             let file_bytes = match std::fs::read(&src_file) {
                                 Ok(b) => b,
-                                Err(_) => { all_ok = false; break; }
+                                Err(_) => {
+                                    all_ok = false;
+                                    break;
+                                }
                             };
 
                             let mut hasher = Sha256::new();
