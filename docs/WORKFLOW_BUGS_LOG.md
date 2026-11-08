@@ -111,7 +111,26 @@ Across multiple development cycles, the same class of mistakes occurred repeated
 - **The Fix**:
   - Redirected all tracing logs to `stderr` or rolling file logs in `%LOCALAPPDATA%\EDM\logs\`.
   - Implemented a robust loop with length-prefixed framing and panic hooks.
-- **Files Modified**: [`crates/edm-nmh/src/main.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/crates/edm-nmh/src/main.rs).
+- **Files Modified**: [`packages/browser-host/src/main.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/browser-host/src/main.rs).
+
+---
+
+### Incident CRIT-06: CI Release Failure Due to WiX 3 Toolset 504 Gateway Timeout
+- **Severity**: 🔴 **Critical** (CI Release pipeline halted during bundle creation, preventing binary release)
+- **CI Failure Log**:
+  > `Info Patching D:\a\EDM\EDM\target\release\edm-desktop-app.exe with bundle type information: msi`
+  > `Info Verifying wix package`
+  > `Downloading https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip`
+  > `failed to bundle project: http status: 504`
+- **What Was Forgotten / Missed**:
+  - `apps/desktop/src-tauri/tauri.conf.json` had `"targets": "all"`. On Windows, Tauri attempted to bundle both NSIS and WiX MSI installers.
+  - Generating WiX MSI bundles requires downloading `wix314-binaries.zip` from GitHub on every clean runner. An intermittent 504 Gateway Timeout from the WiX release CDN failed the entire release job.
+  - In addition, EDM is strictly distributed as an NSIS installer (`hooks.nsh`), and the MSI was neither maintained nor distributed.
+- **The Fix**:
+  - Pinned `tauri.conf.json` `"targets": ["nsis"]`.
+  - Updated `scripts/build-release.ps1` with explicit `--bundles nsis --ci` flags.
+  - Added `@tauri-apps/cli` to `apps/desktop/package.json` devDependencies for deterministic execution.
+- **Files Modified**: [`apps/desktop/src-tauri/tauri.conf.json`](file:///c:/Users/Suvesh/Desktop/projects/EDM/apps/desktop/src-tauri/tauri.conf.json), [`scripts/build-release.ps1`](file:///c:/Users/Suvesh/Desktop/projects/EDM/scripts/build-release.ps1), [`apps/desktop/package.json`](file:///c:/Users/Suvesh/Desktop/projects/EDM/apps/desktop/package.json).
 
 ---
 
