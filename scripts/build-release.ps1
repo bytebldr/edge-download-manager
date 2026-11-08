@@ -72,10 +72,10 @@ Set-Location "$RootDir/apps/desktop"
 $hasCl = Get-Command "cl.exe" -ErrorAction SilentlyContinue
 if ($hasCl) {
     Write-Host "Using MSVC toolchain (x86_64-pc-windows-msvc)..." -ForegroundColor Green
-    npx @tauri-apps/cli build --target x86_64-pc-windows-msvc
+    npx @tauri-apps/cli build --target x86_64-pc-windows-msvc --bundles nsis --ci
 } else {
     Write-Host "MSVC not detected in path; building with active toolchain..." -ForegroundColor Yellow
-    npx @tauri-apps/cli build
+    npx @tauri-apps/cli build --bundles nsis --ci
 }
 if ($LASTEXITCODE -ne 0) { throw "Tauri application build failed" }
 
