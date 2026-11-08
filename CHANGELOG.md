@@ -2,6 +2,32 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.9] - 2026-11-08
+
+### 🚀 Dynamic Media Quality Probing, Modular Architecture & Release Hardening
+
+#### 1. Dynamic YouTube Stream & Quality Discovery
+- **Zero-Hardcoding Format Resolution**: Replaced static quality options with dynamic runtime format probing via `packages/engine/src/packs/ytdlp.rs` and `probe_video_url` IPC command.
+- **Genuine Available Quality Extraction**: Accurately discovers available video resolutions (4K/2160p, 1440p/2K, 1080p60, 720p, 480p, 360p) and audio streams for each specific video, preventing low-quality fallback when higher resolutions exist.
+- **In-Player Native Pill Integration**: Extends the native YouTube quick download pill next to the Subscribe button to render available video resolutions, codec badges (VP9/AV1), and audio-only extraction formats.
+
+#### 2. Workspace Modularization & Architecture Refactoring
+- **Modern Package Directory Layout**: Refactored monolithic directory naming into clean, modular packages:
+  - `packages/engine` (`edm-core`): Adaptive multi-stream chunk downloader, range set math, and integrity verification.
+  - `packages/browser-host` (`edm-nmh`): Chrome/Gecko Native Messaging Host binary with stdio framing and auto-wake supervisor.
+  - `packages/ipc` (`edm-ipc`): Extension IDs, WebSocket message schemas, and cross-process data types.
+  - `packages/store` (`edm-store`): SQLite persistent storage layer with batched writes and migrations.
+  - `packages/cli` (`edm-cli`): Headless command-line download utility.
+  - `packages/mock-server` (`edm-testsrv`): In-process mock HTTP testing server for chaos diagnostics.
+  - `apps/desktop`: Tauri v2 desktop user interface with React 19 and Tailwind CSS.
+  - `extension`: Manifest V3 browser extension for Chromium and Firefox.
+
+#### 3. Release Pipeline & Packaging Hardening
+- **WiX CDN Decoupling & Target Pinning**: Pinned Tauri bundle targets strictly to `["nsis"]` in `tauri.conf.json` and `scripts/build-release.ps1`, eliminating external WiX 3 toolset download dependencies and preventing CI 504 Gateway Timeout failures.
+- **Deterministic CI Execution**: Added `@tauri-apps/cli` to `apps/desktop/package.json` devDependencies and passed `--ci` and `--bundles nsis` to build scripts.
+- **Architectural Invariants Verification**: Automated 6/6 pre-flight invariant checks in `scripts/verify-invariants.ps1` covering non-destructive NSIS hooks, bidirectional binary co-location, NMH path resolution, and `WebView2Loader.dll` integrity.
+- **Workspace-wide Formatting & Quality Gates**: Applied `cargo fmt` and resolved Clippy lints across all modular packages.
+
 ## [v0.0.8] - 2026-11-06
 
 ### 🚀 Adaptive Engine V2.0, Media Extraction, Security Hardening & Optimization Overhaul
