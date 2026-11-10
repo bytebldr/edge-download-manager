@@ -364,7 +364,18 @@ impl PackExecutor {
 
         let mut actual_task = task;
         actual_task.url = stream_url;
-        if actual_task.filename.is_empty() || actual_task.filename == "download" {
+        if yt.can_extract(&actual_task.url) || actual_task.url.contains("googlevideo.com") {
+            actual_task.user_agent = Some("Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/32.0.0.35.485 Chrome/120.0.6099.144 Mobile VR Safari/537.36".to_string());
+            actual_task.config.max_connections = 1;
+        }
+        if actual_task.filename.is_empty()
+            || actual_task.filename == "download"
+            || actual_task.filename == "download.bin"
+            || actual_task.filename == "watch"
+            || actual_task.filename == "watch.mp4"
+            || actual_task.filename == "video"
+            || actual_task.filename == "video.mp4"
+        {
             let sanitized_title = crate::sanitizer::Sanitizer::sanitize_filename(&extracted.title);
             actual_task.filename = format!("{}.mp4", sanitized_title);
         }
@@ -500,6 +511,6 @@ impl PackExecutor {
         _telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
         let _ed2k = Ed2kPack::parse_link(&task.url)?;
-        Err("eD2k/Kad P2P protocol transfer is not supported in EDM v0.0.11. Please use HTTP/HTTPS, FTP, HLS/DASH, or BitTorrent/Magnet.".into())
+        Err("eD2k/Kad P2P protocol transfer is not supported in EDM v0.0.12. Please use HTTP/HTTPS, FTP, HLS/DASH, or BitTorrent/Magnet.".into())
     }
 }

@@ -259,6 +259,28 @@ Across multiple development cycles, the same class of mistakes occurred repeated
 
 ---
 
+### Incident MAJ-07: BitTorrent Re-Download Stalling and YouTube Client Collision (v0.0.12)
+- **Severity**: 🟠 **Major** (BitTorrent re-downloads stall infinitely at 0 B/s; YouTube downloads fail or collide into `watch.mp4`)
+- **Symptom**:
+  - Re-downloading a torrent via `.torrent` file after magnet download resulted in permanent "Stalled" ETA at 0 B/s.
+  - YouTube downloads failed intermittently with 403 / SABR-only errors, showed false "Stalled" ETA during 10M chunk buffering, and subsequent downloads collided into `watch.mp4`.
+- **What Was Forgotten / Missed**:
+  - `librqbit` defaults `overwrite` to `false`, causing tasks with pre-existing local files to enter `TorrentStatsState::Error`. The 500ms ticker loop ignored the error state, spinning infinitely at 0 B/s.
+  - Telemetry lacked an `Initializing` phase to differentiate disk piece hashing from network stalling.
+  - YouTube invocations forced deprecated iOS client (`youtube:player_client=ios,web,default`), which triggers SABR-only and GVS PO-Token 403 blocks.
+  - Large `--http-chunk-size 10M` caused > 10s stdout gaps, triggering the UI's 10-second stall watchdog.
+  - Adding unprobed YouTube URLs generated generic filename `"watch"`, causing subsequent downloads to collide into `watch.mp4` and skip download without updating telemetry.
+- **The Fix**:
+  - Set `AddTorrentOptions { overwrite: true, ..Default::default() }` and fail fast on `TorrentStatsState::Error`.
+  - Added `phase: "Verifying"` during `TorrentStatsState::Initializing` and refreshed `smooth.lastProgressTime` in UI.
+  - Enriched magnet URIs with Tier-1 public trackers.
+  - Removed forced iOS client and 10M chunk size from yt-dlp arguments; passed `--force-overwrites`.
+  - Normalized generic filenames (`"watch"`, `"video"`, `"download"`) to `"%(title)s.%(ext)s"`.
+  - Captured `[download] <path> has already been downloaded` to immediately complete pre-existing targets.
+- **Files Modified**: [`packages/engine/src/packs/bittorrent.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/engine/src/packs/bittorrent.rs), [`packages/engine/src/packs/ytdlp.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/engine/src/packs/ytdlp.rs), [`packages/engine/src/packs/process.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/engine/src/packs/process.rs), [`packages/engine/src/packs/executor.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/engine/src/packs/executor.rs), [`apps/desktop/src/App.tsx`](file:///c:/Users/Suvesh/Desktop/projects/EDM/apps/desktop/src/App.tsx).
+
+---
+
 ## 5. Automated Invariant Guardrails & CI Enforcement
 
 To guarantee that none of these bugs ever recur, the following 6 invariants are automated via [`scripts/verify-invariants.ps1`](file:///c:/Users/Suvesh/Desktop/projects/EDM/scripts/verify-invariants.ps1) and executed in CI on every push:

@@ -27,7 +27,8 @@ try {
       path.join(root, 'src', 'background.ts'),
       path.join(root, 'src', 'content.ts'),
       path.join(root, 'src', 'popup.ts'),
-      path.join(root, 'src', 'options.ts')
+      path.join(root, 'src', 'options.ts'),
+      path.join(root, 'src', 'yt-main.ts')
     ],
     outdir: tempDir,
     target: 'es2020',
@@ -62,6 +63,9 @@ if (fs.existsSync(path.join(tempDir, 'popup.js'))) {
 if (fs.existsSync(path.join(tempDir, 'options.js'))) {
   fs.copyFileSync(path.join(tempDir, 'options.js'), path.join(distChromium, 'options.js'));
 }
+if (fs.existsSync(path.join(tempDir, 'yt-main.js'))) {
+  fs.copyFileSync(path.join(tempDir, 'yt-main.js'), path.join(distChromium, 'yt-main.js'));
+}
 
 // 2. Also copy assets directly to root extension/ folder so loading `extension` directly works out-of-the-box
 fs.copyFileSync(path.join(root, 'manifest.chromium.json'), path.join(root, 'manifest.json'));
@@ -84,6 +88,9 @@ if (fs.existsSync(path.join(tempDir, 'popup.js'))) {
 }
 if (fs.existsSync(path.join(tempDir, 'options.js'))) {
   fs.copyFileSync(path.join(tempDir, 'options.js'), path.join(root, 'options.js'));
+}
+if (fs.existsSync(path.join(tempDir, 'yt-main.js'))) {
+  fs.copyFileSync(path.join(tempDir, 'yt-main.js'), path.join(root, 'yt-main.js'));
 }
 
 // 3. Copy assets to Firefox (dist/firefox)

@@ -22,6 +22,40 @@ pub enum BencodeValue {
 
 pub struct BitTorrentPack;
 
+pub const TIER1_TRACKERS: &[&str] = &[
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://opentracker.i2p.rocks:6969/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://explodie.org:6969/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce",
+    "udp://tracker.moeking.me:6969/announce",
+];
+
+fn find_largest_file_recursive(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut best_file = None;
+    let mut max_size = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        if let Ok(entries) = std::fs::read_dir(&current) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.is_file() {
+                    let sz = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                    if sz > max_size {
+                        max_size = sz;
+                        best_file = Some(path);
+                    }
+                }
+            }
+        }
+    }
+    best_file
+}
+
 impl BitTorrentPack {
     /// Download a torrent or magnet URI in-process using librqbit
     pub async fn download_in_process(
@@ -51,7 +85,15 @@ impl BitTorrentPack {
             .map_err(|e| format!("Failed to create BitTorrent session: {}", e))?;
 
         let add_torrent = if task.url.starts_with("magnet:") {
-            AddTorrent::from_url(&task.url)
+            let mut enriched = task.url.clone();
+            for tr in TIER1_TRACKERS {
+                let enc = urlencoding::encode(tr);
+                if !enriched.contains(&enc.to_string()) && !enriched.contains(tr) {
+                    enriched.push_str("&tr=");
+                    enriched.push_str(&enc);
+                }
+            }
+            AddTorrent::from_url(enriched)
         } else if task.url.starts_with("http://") || task.url.starts_with("https://") {
             // Remote .torrent URL: fetch bytes in-memory with user cookies and referer headers
             let mut req = reqwest::Client::new().get(&task.url);
@@ -141,6 +183,7 @@ impl BitTorrentPack {
 
         let add_opts = AddTorrentOptions {
             paused: false,
+            overwrite: true,
             ..Default::default()
         };
 
@@ -202,6 +245,12 @@ impl BitTorrentPack {
             }
 
             let stats = handle.stats();
+            if matches!(stats.state, librqbit::TorrentStatsState::Error) {
+                let _ = session.stop().await;
+                return Err("BitTorrent engine entered error state (disk I/O or swarm failure)".to_string());
+            }
+
+            let is_initializing = matches!(stats.state, librqbit::TorrentStatsState::Initializing { .. });
 
             let now = std::time::Instant::now();
             let elapsed_sec = now.duration_since(last_tick_time).as_secs_f64().max(0.1);
@@ -266,9 +315,7 @@ impl BitTorrentPack {
                 (0.3 * instant_bps as f64 + 0.7 * rolling_bps as f64) as u64
             };
 
-            let mode = if live_conns == 0 {
-                AccelerationMode::Optimizing
-            } else if instant_bps > prev_instant_bps && prev_instant_bps > 0 {
+            let mode = if live_conns == 0 || (instant_bps > prev_instant_bps && prev_instant_bps > 0) {
                 AccelerationMode::Optimizing
             } else if live_conns >= (task.config.max_connections / 2).max(2) {
                 AccelerationMode::Stable
@@ -277,34 +324,38 @@ impl BitTorrentPack {
             };
             prev_instant_bps = instant_bps;
 
-            let decision_reason = match mode {
-                AccelerationMode::Optimizing => {
-                    if stats.total_bytes == 0 {
-                        "Resolving DHT Swarm & Metadata".to_string()
-                    } else if live_conns == 0 {
-                        "Probing Swarm Peers via DHT".to_string()
-                    } else {
-                        let eff_speed = instant_bps / 8;
-                        let speed_display = if eff_speed >= 1024 * 1024 {
-                            format!("{:.1} MB/s", eff_speed as f64 / (1024.0 * 1024.0))
-                        } else if eff_speed >= 1024 {
-                            format!("{:.1} KB/s", eff_speed as f64 / 1024.0)
+            let decision_reason = if is_initializing {
+                "Verifying existing pieces on disk...".to_string()
+            } else {
+                match mode {
+                    AccelerationMode::Optimizing => {
+                        if stats.total_bytes == 0 {
+                            "Resolving DHT Swarm & Metadata".to_string()
+                        } else if live_conns == 0 {
+                            "Probing Swarm Peers via DHT".to_string()
                         } else {
-                            format!("{} B/s", eff_speed)
-                        };
+                            let eff_speed = instant_bps / 8;
+                            let speed_display = if eff_speed >= 1024 * 1024 {
+                                format!("{:.1} MB/s", eff_speed as f64 / (1024.0 * 1024.0))
+                            } else if eff_speed >= 1024 {
+                                format!("{:.1} KB/s", eff_speed as f64 / 1024.0)
+                            } else {
+                                format!("{} B/s", eff_speed)
+                            };
+                            format!(
+                                "Adaptive Swarm Ramp-Up ({} peers @ {})",
+                                live_conns, speed_display
+                            )
+                        }
+                    }
+                    AccelerationMode::Stable => {
                         format!(
-                            "Adaptive Swarm Ramp-Up ({} peers @ {})",
-                            live_conns, speed_display
+                            "High-Throughput Swarm Plateau ({} peers connected)",
+                            live_conns
                         )
                     }
+                    _ => format!("BitTorrent Swarm ({} active peers)", live_conns),
                 }
-                AccelerationMode::Stable => {
-                    format!(
-                        "High-Throughput Swarm Plateau ({} peers connected)",
-                        live_conns
-                    )
-                }
-                _ => format!("BitTorrent Swarm ({} active peers)", live_conns),
             };
 
             // 3. Multi-Stream Adaptive Worker Telemetry Synthesis
@@ -377,7 +428,9 @@ impl BitTorrentPack {
             }
 
             let eff_speed = (instant_bps / 8).max(dl_speed);
-            let current_phase = if stats.total_bytes == 0 {
+            let current_phase = if is_initializing {
+                Some("Verifying".to_string())
+            } else if stats.total_bytes == 0 {
                 Some("Resolving".to_string())
             } else if stats.finished || progress_pct >= 100.0 {
                 Some("Completed".to_string())
@@ -420,22 +473,8 @@ impl BitTorrentPack {
 
         // If target_file_path is a directory (multi-file torrent), resolve to the largest payload file
         if target_file_path.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&target_file_path) {
-                let mut max_size = 0u64;
-                let mut best_file = None;
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.is_file() {
-                        let sz = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-                        if sz > max_size {
-                            max_size = sz;
-                            best_file = Some(p);
-                        }
-                    }
-                }
-                if let Some(bf) = best_file {
-                    target_file_path = bf;
-                }
+            if let Some(bf) = find_largest_file_recursive(&target_file_path) {
+                target_file_path = bf;
             }
         }
 

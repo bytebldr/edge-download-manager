@@ -105,10 +105,10 @@ Get the latest production release from the official [**GitHub Releases Page**](h
 
 | Package | Type | Link |
 | :--- | :--- | :--- |
-| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.0.11_x64-setup.exe`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.11/EDM_0.0.11_x64-setup.exe) |
-| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.11/edm-extension-chromium.zip) |
-| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.11/edm-firefox.xpi) |
-| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.11/edm-extension.tar.gz) |
+| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.0.12_x64-setup.exe`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/EDM_0.0.12_x64-setup.exe) |
+| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-extension-chromium.zip) |
+| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-firefox.xpi) |
+| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-extension.tar.gz) |
 
 ### Installing the Browser Companion:
 1. Download `edm-extension-chromium.zip` (for Chrome, Edge, Brave, Opera) or `edm-firefox.xpi` (for Firefox).

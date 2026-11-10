@@ -424,10 +424,17 @@ impl YtDlpPack {
             .await
             .ok_or_else(|| "yt-dlp binary could not be located or downloaded".to_string())?;
 
-        let target_name = if !task.filename.is_empty()
-            && task.filename != "download"
-            && task.filename != "download.bin"
-        {
+        let is_generic = task.filename.trim().is_empty()
+            || task.filename == "download"
+            || task.filename == "download.bin"
+            || task.filename == "watch"
+            || task.filename == "watch.mp4"
+            || task.filename == "video"
+            || task.filename == "video.mp4"
+            || task.filename == "media"
+            || task.filename == "media.mp4";
+
+        let target_name = if !is_generic {
             let sanitized = crate::sanitizer::Sanitizer::sanitize_filename(&task.filename);
             let safe_name = sanitized.replace('%', "%%");
             let ext = safe_name.rsplit('.').next().unwrap_or("mp4");
@@ -449,6 +456,7 @@ impl YtDlpPack {
         let mut args = vec![
             "--newline".to_string(),
             "--progress".to_string(),
+            "--force-overwrites".to_string(),
             "--no-playlist".to_string(),
             "--print".to_string(),
             "before_dl:EDM_INFO:%(filesize,filesize_approx)s|%(requested_formats.0.filesize,requested_formats.0.filesize_approx)s|%(requested_formats.1.filesize,requested_formats.1.filesize_approx)s".to_string(),
@@ -487,8 +495,15 @@ impl YtDlpPack {
                 args.push("mp3".to_string());
             }
         } else {
-            // Check for specific height requested, e.g. 1080p, 720p, 480p, 360p, 1440p, 2160p, 4k
-            let height_pref = if task.url.contains("#1080p") || task.filename.contains("1080p") {
+            // Check for specific height requested, e.g. 2160p (4k), 1440p (2k), 1080p, 720p, 480p, 360p, 240p, 144p
+            let height_pref = if task.url.contains("#2160p")
+                || task.filename.contains("2160p")
+                || task.url.contains("#4k")
+            {
+                Some("2160")
+            } else if task.url.contains("#1440p") || task.filename.contains("1440p") || task.url.contains("#2k") {
+                Some("1440")
+            } else if task.url.contains("#1080p") || task.filename.contains("1080p") {
                 Some("1080")
             } else if task.url.contains("#720p") || task.filename.contains("720p") {
                 Some("720")
@@ -496,13 +511,10 @@ impl YtDlpPack {
                 Some("480")
             } else if task.url.contains("#360p") || task.filename.contains("360p") {
                 Some("360")
-            } else if task.url.contains("#1440p") || task.filename.contains("1440p") {
-                Some("1440")
-            } else if task.url.contains("#2160p")
-                || task.filename.contains("2160p")
-                || task.url.contains("#4k")
-            {
-                Some("2160")
+            } else if task.url.contains("#240p") || task.filename.contains("240p") {
+                Some("240")
+            } else if task.url.contains("#144p") || task.filename.contains("144p") {
+                Some("144")
             } else {
                 None
             };
@@ -543,13 +555,6 @@ impl YtDlpPack {
             args.push(ua.clone());
         }
 
-        if clean_url.contains("youtube.com") || clean_url.contains("youtu.be") {
-            args.push("--extractor-args".to_string());
-            args.push("youtube:player_client=ios,web,default".to_string());
-            args.push("--http-chunk-size".to_string());
-            args.push("10M".to_string());
-        }
-
         args.push("--".to_string());
         args.push(clean_url);
 
@@ -563,6 +568,7 @@ impl YtDlpPack {
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+        super::process::assign_child_to_job(&child);
         let stdout = child
             .stdout
             .take()
@@ -635,16 +641,31 @@ impl YtDlpPack {
                             let line = line.trim();
                             if line.starts_with("EDM_FINAL:") {
                                 let path_str = line.trim_start_matches("EDM_FINAL:").trim();
-                                if !path_str.is_empty() {
-                                    final_path = Some(PathBuf::from(path_str));
+                                if !path_str.is_empty() && path_str != "NA" {
+                                    let p = PathBuf::from(path_str);
+                                    let abs_p = if p.is_absolute() { p } else { task.save_dir.join(p) };
+                                    final_path = Some(abs_p);
                                 }
                             } else if line.starts_with("[download] Destination:") {
                                 let path_str = line.trim_start_matches("[download] Destination:").trim();
                                 if !path_str.is_empty() {
-                                    final_path = Some(PathBuf::from(path_str));
+                                    let p = PathBuf::from(path_str);
+                                    let abs_p = if p.is_absolute() { p } else { task.save_dir.join(p) };
+                                    final_path = Some(abs_p);
                                 }
                                 if is_dual_stream && stream0_done > 0 {
                                     current_stream = 1;
+                                }
+                            } else if line.contains("has already been downloaded") {
+                                let path_str = line
+                                    .trim_start_matches("[download]")
+                                    .trim()
+                                    .trim_end_matches("has already been downloaded")
+                                    .trim();
+                                if !path_str.is_empty() {
+                                    let p = PathBuf::from(path_str);
+                                    let abs_p = if p.is_absolute() { p } else { task.save_dir.join(p) };
+                                    final_path = Some(abs_p);
                                 }
                             } else if line.starts_with("EDM_INFO:") {
                                 let payload = line.trim_start_matches("EDM_INFO:").trim();
@@ -872,10 +893,23 @@ impl YtDlpPack {
                         if trimmed.starts_with("[download] Destination:") {
                             let path_str = trimmed.trim_start_matches("[download] Destination:").trim();
                             if !path_str.is_empty() {
-                                final_path = Some(PathBuf::from(path_str));
+                                let p = PathBuf::from(path_str);
+                                let abs_p = if p.is_absolute() { p } else { task.save_dir.join(p) };
+                                final_path = Some(abs_p);
                             }
                             if is_dual_stream && stream0_done > 0 {
                                 current_stream = 1;
+                            }
+                        } else if trimmed.contains("has already been downloaded") {
+                            let path_str = trimmed
+                                .trim_start_matches("[download]")
+                                .trim()
+                                .trim_end_matches("has already been downloaded")
+                                .trim();
+                            if !path_str.is_empty() {
+                                let p = PathBuf::from(path_str);
+                                let abs_p = if p.is_absolute() { p } else { task.save_dir.join(p) };
+                                final_path = Some(abs_p);
                             }
                         } else if trimmed.contains("[Merger]") || trimmed.contains("Merging formats") || trimmed.contains("[ffmpeg]") {
                             merge_ticks = merge_ticks.saturating_add(1);
@@ -953,20 +987,33 @@ impl YtDlpPack {
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("");
+                    let mut latest_time = std::time::SystemTime::UNIX_EPOCH;
+                    let mut newest_file = None;
+
                     for entry in entries.flatten() {
                         let p = entry.path();
                         if p.is_file() {
                             if let Some(file_name) = p.file_name().and_then(|n| n.to_str()) {
-                                if !stem.is_empty()
-                                    && file_name.starts_with(stem)
-                                    && !file_name.ends_with(".part")
-                                    && !file_name.ends_with(".ytdl")
-                                {
-                                    found = Some(p);
+                                if file_name.ends_with(".part") || file_name.ends_with(".ytdl") {
+                                    continue;
+                                }
+                                if !stem.is_empty() && !is_generic && file_name.starts_with(stem) {
+                                    found = Some(p.clone());
                                     break;
+                                }
+                                if let Ok(m) = std::fs::metadata(&p) {
+                                    if let Ok(mod_time) = m.modified() {
+                                        if mod_time > latest_time {
+                                            latest_time = mod_time;
+                                            newest_file = Some(p);
+                                        }
+                                    }
                                 }
                             }
                         }
+                    }
+                    if found.is_none() && is_generic {
+                        found = newest_file;
                     }
                 }
                 found.ok_or_else(|| "Download failed: output file not found on disk".to_string())?

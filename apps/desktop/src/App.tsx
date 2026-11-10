@@ -614,11 +614,12 @@ export default function App() {
   ) => {
     const targetUrl = customUrl || "";
     if (!targetUrl.trim()) return;
-    const rawName =
-      (customFilename && customFilename.trim()) ||
-      targetUrl.split("/").pop()?.split("?")[0] ||
-      "download.bin";
-    const name = rawName.replace(/[\\/:*?"<>|]/g, "_") || "download.bin";
+    const isYouTubeUrl = targetUrl.includes("youtube.com") || targetUrl.includes("youtu.be");
+    let initialName = (customFilename && customFilename.trim()) || targetUrl.split("/").pop()?.split("?")[0] || "download.bin";
+    if (isYouTubeUrl && (!customFilename || !customFilename.trim() || initialName === "watch" || initialName === "watch.mp4")) {
+      initialName = "";
+    }
+    const name = initialName ? initialName.replace(/[\\/:*?"<>|]/g, "_") : (isYouTubeUrl ? "YouTube_Video.mp4" : "download.bin");
     const ext = name.split(".").pop()?.toLowerCase() || "";
 
     let categoryName: DownloadItem["category"] = "Programs";
@@ -789,7 +790,12 @@ export default function App() {
             if (isFinished) {
               currentEta = "Finished";
               smooth.lastValidEta = "Finished";
+            } else if (phase === "Verifying" || telem.decision_reason?.toLowerCase().includes("verif")) {
+              smooth.lastProgressTime = now;
+              currentEta = telem.decision_reason || "Verifying local files...";
+              smooth.lastValidEta = currentEta;
             } else if (phase === "Resolving" || telem.decision_reason?.toLowerCase().includes("fetching video info") || telem.decision_reason?.toLowerCase().includes("resolv")) {
+              smooth.lastProgressTime = now;
               currentEta = telem.decision_reason || "Resolving metadata...";
               smooth.lastValidEta = currentEta;
             } else if (phase === "Merging" || telem.decision_reason?.toLowerCase().includes("merg")) {
@@ -807,8 +813,11 @@ export default function App() {
             } else {
               // Speed is zero: only show Stalled if zero bytes for >= 10s during active download
               const stalledMs = now - smooth.lastProgressTime;
-              if (phase === "Resolving") {
-                currentEta = "Fetching video info...";
+              if (phase === "Verifying" || telem.decision_reason?.toLowerCase().includes("verif")) {
+                smooth.lastProgressTime = now;
+                currentEta = telem.decision_reason || "Verifying local files...";
+              } else if (phase === "Resolving" || telem.decision_reason?.toLowerCase().includes("resolv")) {
+                currentEta = telem.decision_reason || "Fetching video info...";
               } else if (phase === "Merging") {
                 currentEta = "Merging...";
               } else if (stalledMs < 10000 && smooth.lastValidEta && smooth.lastValidEta !== "Calculating...") {

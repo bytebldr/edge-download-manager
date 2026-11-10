@@ -462,50 +462,72 @@ function injectYoutubePillIfNeeded() {
     }
     return document.title.replace(" - YouTube", "").trim().replace(/[\\/:*?"<>|]/g, "_") || "YouTube_Video";
   }
+  function extractStreamingDataFromDOM() {
+    try {
+      const cacheEl = document.getElementById("edm-yt-stream-cache");
+      if (cacheEl) {
+        const streamAttr = cacheEl.getAttribute("data-stream");
+        if (streamAttr) {
+          const parsed = JSON.parse(streamAttr);
+          if (parsed?.formats || parsed?.adaptiveFormats) {
+            return parsed;
+          }
+        }
+      }
+      const scripts = Array.from(document.scripts);
+      for (const script of scripts) {
+        const text = script.textContent;
+        if (!text || text.length < 50) continue;
+        if (text.includes("ytInitialPlayerResponse")) {
+          const m = text.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/s) || text.match(/var\s+ytInitialPlayerResponse\s*=\s*(\{.+?\});/s) || text.match(/ytInitialPlayerResponse\s*=\s*(\{.+\})/);
+          if (m && m[1]) {
+            try {
+              const obj = JSON.parse(m[1]);
+              if (obj?.streamingData) return obj.streamingData;
+            } catch {
+            }
+          }
+        }
+        if (text.includes('"streamingData"')) {
+          const m = text.match(/"streamingData"\s*:\s*(\{.+?\})\s*,\s*"playbackTracking"/s) || text.match(/"streamingData"\s*:\s*(\{.+?\})\s*,\s*"/s);
+          if (m && m[1]) {
+            try {
+              const obj = JSON.parse(m[1]);
+              if (obj?.formats || obj?.adaptiveFormats) return obj;
+            } catch {
+            }
+          }
+        }
+      }
+    } catch {
+    }
+    return null;
+  }
   function requestPageStreamData() {
+    const immediate = extractStreamingDataFromDOM();
+    if (immediate) {
+      return Promise.resolve(immediate);
+    }
     return new Promise((resolve) => {
+      let resolved = false;
       const handler = (event) => {
         if (event.source === window && event.data?.type === "EDM_STREAM_DATA_RESPONSE") {
           window.removeEventListener("message", handler);
-          resolve(event.data.payload);
+          if (!resolved) {
+            resolved = true;
+            resolve(event.data.payload || extractStreamingDataFromDOM());
+          }
         }
       };
       window.addEventListener("message", handler);
+      window.postMessage({ type: "EDM_REQUEST_STREAM_DATA" }, "*");
       setTimeout(() => {
         window.removeEventListener("message", handler);
-        resolve(null);
-      }, 900);
-      try {
-        const script = document.createElement("script");
-        script.textContent = `
-          (function() {
-            try {
-              const player = document.getElementById('movie_player');
-              let data = null;
-              if (player && typeof player.getStreamingData === 'function') {
-                data = player.getStreamingData();
-              } else if (player && typeof player.getPlayerResponse === 'function') {
-                data = player.getPlayerResponse()?.streamingData;
-              } else if (window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.streamingData) {
-                data = window.ytInitialPlayerResponse.streamingData;
-              } else if (window.ytplayer && window.ytplayer.config && window.ytplayer.config.args) {
-                try {
-                  const raw = window.ytplayer.config.args.raw_player_response || window.ytplayer.config.args.player_response;
-                  if (typeof raw === 'string') data = JSON.parse(raw)?.streamingData;
-                  else if (typeof raw === 'object') data = raw?.streamingData;
-                } catch {}
-              }
-              window.postMessage({ type: 'EDM_STREAM_DATA_RESPONSE', payload: data }, '*');
-            } catch (e) {
-              window.postMessage({ type: 'EDM_STREAM_DATA_RESPONSE', payload: null }, '*');
-            }
-          })();
-        `;
-        (document.head || document.documentElement).appendChild(script);
-        script.remove();
-      } catch {
-        resolve(null);
-      }
+        if (!resolved) {
+          resolved = true;
+          resolve(extractStreamingDataFromDOM());
+        }
+      }, 350);
     });
   }
   async function triggerDownload(formatTag, customTitleSuffix, isAudio = false) {
@@ -606,66 +628,113 @@ function injectYoutubePillIfNeeded() {
     const formats = streamData && Array.isArray(streamData.formats) ? streamData.formats : [];
     const adaptive = streamData && Array.isArray(streamData.adaptiveFormats) ? streamData.adaptiveFormats : [];
     const allFormats = [...formats, ...adaptive];
-    const findFormat = (predicate) => allFormats.filter(predicate).pop();
-    const f2160 = findFormat((f) => f.height >= 2160 || f.qualityLabel && f.qualityLabel.includes("2160"));
-    if (f2160) {
-      const sizeStr = formatBytes(f2160.contentLength);
-      const sub = sizeStr ? `Ultra-crisp 2160p (${sizeStr})` : "Ultra-crisp 2160p MP4 (Max detail)";
+    const qualityTiers = [
+      {
+        tag: "4320p",
+        title: "8K Ultra HD (4320p)",
+        minH: 4320,
+        maxH: 9999,
+        suffix: " [4320p 8K]",
+        defaultSub: "Supreme 8K resolution (Max fidelity)"
+      },
+      {
+        tag: "2160p",
+        title: "4K Ultra HD (2160p)",
+        minH: 2160,
+        maxH: 4319,
+        suffix: " [2160p 4K]",
+        defaultSub: "Ultra-crisp 2160p (Max detail)"
+      },
+      {
+        tag: "1440p",
+        title: "2K Quad HD (1440p)",
+        minH: 1440,
+        maxH: 2159,
+        suffix: " [1440p 2K]",
+        defaultSub: "High-res 1440p (Sharp detail)"
+      },
+      {
+        tag: "1080p",
+        title: "1080p Full HD",
+        minH: 1080,
+        maxH: 1439,
+        suffix: " [1080p]",
+        defaultSub: "Crisp 1080p MP4 with merged audio"
+      },
+      {
+        tag: "720p",
+        title: "720p HD",
+        minH: 720,
+        maxH: 1079,
+        suffix: " [720p]",
+        defaultSub: "Standard 720p MP4 (Fast download)"
+      },
+      {
+        tag: "480p",
+        title: "480p Standard",
+        minH: 480,
+        maxH: 719,
+        suffix: " [480p]",
+        defaultSub: "Standard 480p MP4"
+      },
+      {
+        tag: "360p",
+        title: "360p Medium",
+        minH: 360,
+        maxH: 479,
+        suffix: " [360p]",
+        defaultSub: "Standard 360p MP4 (Data saver)"
+      },
+      {
+        tag: "240p",
+        title: "240p Low Quality",
+        minH: 240,
+        maxH: 359,
+        suffix: " [240p]",
+        defaultSub: "Low bandwidth 240p stream"
+      },
+      {
+        tag: "144p",
+        title: "144p Data Saver",
+        minH: 144,
+        maxH: 239,
+        suffix: " [144p]",
+        defaultSub: "Minimum file size 144p stream"
+      }
+    ];
+    if (allFormats.length > 0) {
+      for (const tier of qualityTiers) {
+        const matched = allFormats.filter((f) => {
+          if (f.height && f.height >= tier.minH && f.height <= tier.maxH) return true;
+          if (f.qualityLabel && f.qualityLabel.includes(tier.tag)) return true;
+          return false;
+        });
+        if (matched.length > 0) {
+          const best = matched.reduce((prev, cur) => {
+            const prevLen = parseInt(prev.contentLength || "0", 10);
+            const curLen = parseInt(cur.contentLength || "0", 10);
+            return curLen >= prevLen ? cur : prev;
+          }, matched[0]);
+          const sizeStr = formatBytes(best.contentLength);
+          const fpsStr = best.fps && best.fps > 30 ? ` \u2022 ${best.fps}fps` : "";
+          const sub = sizeStr ? `${tier.tag} MP4 (${sizeStr}${fpsStr})` : `${tier.defaultSub}${fpsStr}`;
+          menu.appendChild(
+            createMenuItem(videoIcon, tier.title, sub, () => {
+              triggerDownload(tier.tag, tier.suffix);
+            })
+          );
+        }
+      }
+    } else {
       menu.appendChild(
-        createMenuItem(videoIcon, "4K Ultra HD (2160p)", sub, () => {
-          triggerDownload("2160p", " [2160p 4K]");
-        })
-      );
-    }
-    const f1440 = findFormat((f) => f.height >= 1440 && f.height < 2160 || f.qualityLabel && f.qualityLabel.includes("1440"));
-    if (f1440) {
-      const sizeStr = formatBytes(f1440.contentLength);
-      const sub = sizeStr ? `Quad HD 1440p (${sizeStr})` : "High-res 1440p MP4 (Sharp detail)";
-      menu.appendChild(
-        createMenuItem(videoIcon, "2K Quad HD (1440p)", sub, () => {
-          triggerDownload("1440p", " [1440p 2K]");
-        })
-      );
-    }
-    const f1080 = findFormat((f) => f.height >= 1080 && f.height < 1440 || f.qualityLabel && f.qualityLabel.includes("1080"));
-    if (f1080) {
-      const sizeStr = formatBytes(f1080.contentLength);
-      const sub = sizeStr ? `Crisp 1080p MP4 (${sizeStr})` : "Crisp 1080p MP4 with merged audio";
-      menu.appendChild(
-        createMenuItem(videoIcon, "1080p Full HD", sub, () => {
-          triggerDownload("1080p", " [1080p]");
-        })
-      );
-    }
-    const f720 = findFormat((f) => f.height >= 720 && f.height < 1080 || f.qualityLabel && f.qualityLabel.includes("720"));
-    if (f720) {
-      const sizeStr = formatBytes(f720.contentLength);
-      const sub = sizeStr ? `Standard 720p MP4 (${sizeStr})` : "Standard 720p MP4 (Fast download)";
-      menu.appendChild(
-        createMenuItem(videoIcon, "720p HD", sub, () => {
-          triggerDownload("720p", " [720p]");
-        })
-      );
-    }
-    const f480 = findFormat((f) => f.height >= 480 && f.height < 720 || f.qualityLabel && f.qualityLabel.includes("480"));
-    if (f480) {
-      const sizeStr = formatBytes(f480.contentLength);
-      const sub = sizeStr ? `Standard 480p MP4 (${sizeStr})` : "Standard 480p MP4";
-      menu.appendChild(
-        createMenuItem(videoIcon, "480p Standard", sub, () => {
-          triggerDownload("480p", " [480p]");
-        })
-      );
-    }
-    const f360 = findFormat((f) => f.height < 480 && f.height >= 144 || f.qualityLabel && (f.qualityLabel.includes("360") || f.qualityLabel.includes("240") || f.qualityLabel.includes("144")));
-    if (f360) {
-      const labelText = f360.height ? `${f360.height}p Low Quality` : "360p / Low Quality";
-      const sizeStr = formatBytes(f360.contentLength);
-      const sub = sizeStr ? `Compressed MP4 (${sizeStr})` : "Compressed MP4 (Data saver)";
-      menu.appendChild(
-        createMenuItem(videoIcon, labelText, sub, () => {
-          triggerDownload(f360.height ? `${f360.height}p` : "360p", ` [${f360.height || 360}p]`);
-        })
+        createMenuItem(
+          videoIcon,
+          "Scanning video qualities...",
+          "Detecting streams for this video...",
+          () => {
+            triggerDownload("", "");
+          }
+        )
       );
     }
     const audioSecTitle = document.createElement("div");
@@ -681,14 +750,24 @@ function injectYoutubePillIfNeeded() {
     const mp3Size = formatBytes(bestAudio?.contentLength);
     const m4aSize = formatBytes(m4aStream?.contentLength || bestAudio?.contentLength);
     menu.appendChild(
-      createMenuItem(audioIcon, "Extract Audio (MP3)", mp3Size ? `Universal MP3 stream (${mp3Size})` : "Universal MP3 at highest bitrate", () => {
-        triggerDownload("audio", "", true);
-      })
+      createMenuItem(
+        audioIcon,
+        "Extract Audio (MP3)",
+        mp3Size ? `Universal MP3 stream (${mp3Size})` : "Universal MP3 at highest bitrate",
+        () => {
+          triggerDownload("audio", "", true);
+        }
+      )
     );
     menu.appendChild(
-      createMenuItem(audioIcon, "Extract Audio (M4A)", m4aSize ? `Original AAC sound stream (${m4aSize})` : "Original AAC/M4A sound stream", () => {
-        triggerDownload("audio#m4a", "", true);
-      })
+      createMenuItem(
+        audioIcon,
+        "Extract Audio (M4A)",
+        m4aSize ? `Original AAC sound stream (${m4aSize})` : "Original AAC/M4A sound stream",
+        () => {
+          triggerDownload("audio#m4a", "", true);
+        }
+      )
     );
   }
   async function updateMenuWithStreamingData() {
@@ -707,6 +786,9 @@ function injectYoutubePillIfNeeded() {
     e.stopPropagation();
     e.preventDefault();
     if (menu.style.display === "none" || !menu.style.display) {
+      if (!cachedStreamData) {
+        cachedStreamData = extractStreamingDataFromDOM();
+      }
       renderMenuContent(cachedStreamData);
       menu.style.display = "flex";
       updateMenuWithStreamingData();
@@ -718,6 +800,9 @@ function injectYoutubePillIfNeeded() {
     btn.style.background = "linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%), #1e1e1e";
     btn.style.borderColor = "#3b82f6";
     btn.style.transform = "translateY(-1px)";
+    if (!cachedStreamData) {
+      cachedStreamData = extractStreamingDataFromDOM();
+    }
     if (!cachedStreamData) {
       requestPageStreamData().then((data) => {
         if (data) cachedStreamData = data;

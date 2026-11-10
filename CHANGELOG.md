@@ -2,6 +2,30 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.12] - 2026-11-10
+
+### 🛡️ Hotfix: BitTorrent Swarm Resumption, Overwrite Guard & YouTube Clean Protocol
+
+#### 1. BitTorrent Overwrite & Resume Support
+- **Unconditional File Overwrite Flag**: Set `AddTorrentOptions { overwrite: true, ..Default::default() }` in `librqbit` in-process engine so re-downloading or resuming existing files on disk verifies local piece hashes and seeds/resumes rather than failing with `File exists`.
+- **Fail-Fast Swarm Error State Interception**: Handled `librqbit::TorrentStatsState::Error` immediately, eliminating 0-bps infinite loops.
+- **Verification Phase Telemetry**: Implemented `TorrentStatsState::Initializing` handling with `phase: "Verifying"` and `"Verifying existing pieces on disk..."`, refreshing UI progress timers to prevent false stalled states.
+- **Tier-1 Public Tracker Injection**: Enriched magnet links with curated Tier-1 public trackers (`tracker.opentrackr.org`, `open.demonii.com`, etc.) for instantaneous swarm discovery.
+- **Recursive Multi-File Payload Extraction**: Added `find_largest_file_recursive` to resolve the primary target file across arbitrary directory depth.
+
+#### 2. YouTube Robust Client & Templating Pipeline
+- **Clean Default Client Negotiation**: Removed `--extractor-args "youtube:player_client=ios,web,default"` to prevent iOS SABR/PO-Token 403 lockouts; yt-dlp now leverages Node.js challenge solving with native web/Samsung/VisionOS player APIs.
+- **Granular Progress Streaming**: Removed `--http-chunk-size 10M` to eliminate false 10-second stalled trips.
+- **Collision-Free Dynamic Templating**: Automatically converts generic filenames (`"watch"`, `"watch.mp4"`, `"video"`, `"download"`, `"download.bin"`) to `"%(title)s.%(ext)s"`, preventing multiple YouTube downloads from colliding into `watch.mp4`.
+- **Force Overwrite on Re-Download**: Added `--force-overwrites` to cleanly overwrite incomplete or existing files on explicit duplicate confirmation.
+- **Captured Pre-Existing Target**: Handled `[download] <path> has already been downloaded` with absolute path normalization and immediate 100% completion telemetry.
+- **Fallback User-Agent & Concurrency**: Passed Android VR User-Agent and single-connection concurrency to in-process `YouTubeExtractor` fallback to avoid Google Video CDN 403 rejections.
+
+#### 3. Browser Extension: Dynamic YouTube Quality Selector
+- **CSP-Compliant Stream Inspection**: Replaced CSP-blocked inline script injection with direct DOM script extraction and a MAIN-world companion script (`yt-main.ts`).
+- **Dynamic Per-Video Resolution Selection**: The dropdown dynamically presents only the resolutions actually available for the current playing video (8K, 4K, 1440p, 1080p, 720p, 480p, 360p, 240p, 144p) with exact file sizes and framerate badges (e.g. `60fps`), eliminating the bug where only "Best Available Quality" appeared.
+- **Fragment-Based Engine Routing**: Downloads cleanly route chosen resolutions (`#2160p`, `#1080p`, `#720p`, etc.) directly into EDM's native video pack.
+
 ## [v0.0.11] - 2026-11-10
 
 ### 🚀 Seamless In-Place Upgrades, Custom Installer Branding & Compact Settings UI

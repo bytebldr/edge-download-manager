@@ -55,6 +55,18 @@ mod windows_job {
     }
 }
 
+/// Attach a child process to the global OS Job Object to guarantee tree cleanup on termination.
+pub fn assign_child_to_job(child: &tokio::process::Child) {
+    #[cfg(windows)]
+    {
+        windows_job::assign_child_to_job(child);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child;
+    }
+}
+
 /// Configure a tokio::process::Command to run completely hidden without console windows.
 pub fn configure_hidden_command<P: AsRef<Path>, I, S>(program: P, args: I) -> Command
 where
