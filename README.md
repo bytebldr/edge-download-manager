@@ -133,6 +133,8 @@ Have ideas, questions, or encountered a bug?
 
 ---
 
-## 📄 License
+## 📄 License & Third-Party Credits
 
 EDM is proudly free and open source software released under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+See [**THIRD_PARTY_CREDITS.md**](THIRD_PARTY_CREDITS.md) for full open-source attributions, upstream sources, and third-party engine licenses.
