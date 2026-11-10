@@ -334,7 +334,17 @@ pub fn execute_download(
         let result = edm_core::PackExecutor::execute(task, engine, client, Some(cb)).await;
         let (final_state, error_msg, verified_size) = match result {
             Ok(ref final_path) => {
-                let s = std::fs::metadata(final_path).map(|m| m.len()).unwrap_or(0);
+                let s = if final_path.is_dir() {
+                    let mut dir_total = 0u64;
+                    if let Ok(entries) = std::fs::read_dir(final_path) {
+                        for entry in entries.flatten() {
+                            dir_total += std::fs::metadata(entry.path()).map(|m| m.len()).unwrap_or(0);
+                        }
+                    }
+                    dir_total
+                } else {
+                    std::fs::metadata(final_path).map(|m| m.len()).unwrap_or(0)
+                };
                 if s > 0 {
                     (DownloadState::Completed, None, Some(s))
                 } else {

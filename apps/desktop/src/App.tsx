@@ -754,7 +754,9 @@ export default function App() {
           if (telem) {
             const phase = (telem as any).phase;
             const rawDone = telem.downloaded_bytes;
-            const effectiveTotal = telem.total_bytes || task.sizeTotal;
+            const effectiveTotal = telem.total_bytes && telem.total_bytes > 0
+              ? telem.total_bytes
+              : (phase === "Resolving" ? 0 : task.sizeTotal);
             let calculatedPct = 0;
             if (effectiveTotal > 0) {
               calculatedPct = Math.min(100, Math.floor((rawDone / effectiveTotal) * 100));
@@ -765,7 +767,7 @@ export default function App() {
               ? effectiveTotal
               : (rawDone > 0 && rawProgress > 0 ? Math.round((rawDone / (rawProgress / 100))) : 0);
             const sizeDone = isFinished && sizeTotal > 0 ? sizeTotal : rawDone;
-            const progress = isFinished ? 100 : (phase === "Merging" ? 95 : rawProgress);
+            const progress = isFinished ? 100 : (phase === "Merging" ? 95 : (phase === "Resolving" ? 0 : rawProgress));
             const now = Date.now();
 
             smooth.elapsedSeconds += 0.25;
@@ -787,9 +789,9 @@ export default function App() {
             if (isFinished) {
               currentEta = "Finished";
               smooth.lastValidEta = "Finished";
-            } else if (phase === "Resolving" || telem.decision_reason?.toLowerCase().includes("fetching video info")) {
-              currentEta = "Fetching video info...";
-              smooth.lastValidEta = "Fetching video info...";
+            } else if (phase === "Resolving" || telem.decision_reason?.toLowerCase().includes("fetching video info") || telem.decision_reason?.toLowerCase().includes("resolv")) {
+              currentEta = telem.decision_reason || "Resolving metadata...";
+              smooth.lastValidEta = currentEta;
             } else if (phase === "Merging" || telem.decision_reason?.toLowerCase().includes("merg")) {
               currentEta = "Merging...";
               smooth.lastValidEta = "Merging...";

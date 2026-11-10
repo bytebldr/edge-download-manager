@@ -152,10 +152,30 @@ impl BitTorrentPack {
                 res = &mut add_fut => {
                     break res.map_err(|e| format!("Failed to add torrent: {}", e))?;
                 }
-                _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {
                     if task.cancelled.load(Ordering::Relaxed) {
                         let _ = session.stop().await;
                         return Err("BitTorrent download cancelled by user".to_string());
+                    }
+                    if let Some(ref cb) = telemetry_cb {
+                        cb(AdaptiveTelemetry {
+                            download_id: task.id.to_string(),
+                            total_bytes: None,
+                            downloaded_bytes: 0,
+                            progress_pct: 0.0,
+                            instant_throughput_bps: 0,
+                            rolling_throughput_bps: 0,
+                            active_connections: 1,
+                            target_connections: task.config.max_connections,
+                            live_workers: 1,
+                            max_allowed_connections: task.config.max_connections.max(32),
+                            mode: AccelerationMode::Optimizing,
+                            eta_seconds: None,
+                            decision_reason: "Resolving Magnet & DHT Metadata...".to_string(),
+                            phase: Some("Resolving".to_string()),
+                            workers: Vec::new(),
+                            updated_at: Utc::now(),
+                        });
                     }
                 }
             }
@@ -171,6 +191,7 @@ impl BitTorrentPack {
         let mut prev_downloaded = 0u64;
         let mut rolling_bps = 0u64;
         let mut prev_instant_bps = 0u64;
+        let mut last_tick_time = std::time::Instant::now();
 
         loop {
             ticker.tick().await;
@@ -181,6 +202,10 @@ impl BitTorrentPack {
             }
 
             let stats = handle.stats();
+
+            let now = std::time::Instant::now();
+            let elapsed_sec = now.duration_since(last_tick_time).as_secs_f64().max(0.1);
+            last_tick_time = now;
 
             // 1. Adaptive Engine Token Bucket Speed Limiter Enforcement
             let delta = stats.progress_bytes.saturating_sub(prev_downloaded);
@@ -226,8 +251,15 @@ impl BitTorrentPack {
                 target_file_path = task.save_dir.join(safe_name);
             }
 
-            // 2. Adaptive Throughput & Acceleration Mode Evaluation
-            let instant_bps = dl_speed * 8;
+            // 2. High-Accuracy Throughput Evaluation: Combine delta sampling with session reports
+            let measured_bps = ((delta as f64 / elapsed_sec) * 8.0) as u64;
+            let reported_bps = dl_speed * 8;
+            let instant_bps = if measured_bps > 0 {
+                measured_bps.max(reported_bps)
+            } else {
+                reported_bps
+            };
+
             rolling_bps = if rolling_bps == 0 {
                 instant_bps
             } else {
@@ -252,12 +284,13 @@ impl BitTorrentPack {
                     } else if live_conns == 0 {
                         "Probing Swarm Peers via DHT".to_string()
                     } else {
-                        let speed_display = if dl_speed >= 1024 * 1024 {
-                            format!("{:.1} MB/s", dl_speed as f64 / (1024.0 * 1024.0))
-                        } else if dl_speed >= 1024 {
-                            format!("{:.1} KB/s", dl_speed as f64 / 1024.0)
+                        let eff_speed = instant_bps / 8;
+                        let speed_display = if eff_speed >= 1024 * 1024 {
+                            format!("{:.1} MB/s", eff_speed as f64 / (1024.0 * 1024.0))
+                        } else if eff_speed >= 1024 {
+                            format!("{:.1} KB/s", eff_speed as f64 / 1024.0)
                         } else {
-                            format!("{} B/s", dl_speed)
+                            format!("{} B/s", eff_speed)
                         };
                         format!(
                             "Adaptive Swarm Ramp-Up ({} peers @ {})",
@@ -303,7 +336,7 @@ impl BitTorrentPack {
                     };
                     let status = if stats.finished || worker_downloaded >= worker_total {
                         WorkerStatus::Completed
-                    } else if worker_speed > 0 {
+                    } else if instant_bps > 0 {
                         WorkerStatus::Downloading
                     } else {
                         WorkerStatus::Connecting
@@ -334,12 +367,23 @@ impl BitTorrentPack {
                     speed_bps: instant_bps,
                     status: if stats.finished {
                         WorkerStatus::Completed
-                    } else {
+                    } else if instant_bps > 0 {
                         WorkerStatus::Downloading
+                    } else {
+                        WorkerStatus::Connecting
                     },
                     retry_count: 0,
                 });
             }
+
+            let eff_speed = (instant_bps / 8).max(dl_speed);
+            let current_phase = if stats.total_bytes == 0 {
+                Some("Resolving".to_string())
+            } else if stats.finished || progress_pct >= 100.0 {
+                Some("Completed".to_string())
+            } else {
+                Some("Downloading".to_string())
+            };
 
             if let Some(ref cb) = telemetry_cb {
                 cb(AdaptiveTelemetry {
@@ -354,24 +398,47 @@ impl BitTorrentPack {
                     live_workers: num_workers,
                     max_allowed_connections: task.config.max_connections.max(32),
                     mode,
-                    eta_seconds: if dl_speed > 0 && stats.total_bytes > stats.progress_bytes {
-                        Some((stats.total_bytes - stats.progress_bytes) / dl_speed)
+                    eta_seconds: if eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
+                        Some((stats.total_bytes - stats.progress_bytes) / eff_speed)
                     } else {
                         None
                     },
                     decision_reason,
-                    phase: None,
+                    phase: current_phase,
                     workers,
                     updated_at: Utc::now(),
                 });
             }
 
-            if stats.finished || progress_pct >= 100.0 {
+            // Only complete when metadata is resolved (total_bytes > 0) and finished
+            if stats.total_bytes > 0 && (stats.finished || progress_pct >= 100.0) {
                 break;
             }
         }
 
         let _ = session.stop().await;
+
+        // If target_file_path is a directory (multi-file torrent), resolve to the largest payload file
+        if target_file_path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&target_file_path) {
+                let mut max_size = 0u64;
+                let mut best_file = None;
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() {
+                        let sz = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                        if sz > max_size {
+                            max_size = sz;
+                            best_file = Some(p);
+                        }
+                    }
+                }
+                if let Some(bf) = best_file {
+                    target_file_path = bf;
+                }
+            }
+        }
+
         Ok(target_file_path)
     }
     /// Parse a magnet URI into info hash, display name, and tracker list
