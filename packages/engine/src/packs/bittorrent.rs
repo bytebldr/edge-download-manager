@@ -36,7 +36,13 @@ impl BitTorrentPack {
 
         const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
 
+        let peer_limit = task.config.max_connections.clamp(4, 128) as usize;
         let session_opts = SessionOptions {
+            peer_limit: Some(peer_limit),
+            client_name_and_version: Some(format!(
+                "EDM/{} (Edge Download Manager)",
+                env!("CARGO_PKG_VERSION")
+            )),
             ..Default::default()
         };
 
@@ -162,6 +168,9 @@ impl BitTorrentPack {
         let mut ticker = tokio::time::interval(Duration::from_millis(500));
         let mut target_file_path = task.save_dir.join(&task.filename);
         let mut disk_space_checked = false;
+        let mut prev_downloaded = 0u64;
+        let mut rolling_bps = 0u64;
+        let mut prev_instant_bps = 0u64;
 
         loop {
             ticker.tick().await;
@@ -172,6 +181,16 @@ impl BitTorrentPack {
             }
 
             let stats = handle.stats();
+
+            // 1. Adaptive Engine Token Bucket Speed Limiter Enforcement
+            let delta = stats.progress_bytes.saturating_sub(prev_downloaded);
+            prev_downloaded = stats.progress_bytes;
+            if delta > 0 {
+                if let Some(ref lim) = task.limiter {
+                    lim.acquire(delta).await;
+                }
+            }
+
             let total_bytes = if stats.total_bytes > 0 {
                 Some(stats.total_bytes)
             } else {
@@ -207,40 +226,142 @@ impl BitTorrentPack {
                 target_file_path = task.save_dir.join(safe_name);
             }
 
+            // 2. Adaptive Throughput & Acceleration Mode Evaluation
+            let instant_bps = dl_speed * 8;
+            rolling_bps = if rolling_bps == 0 {
+                instant_bps
+            } else {
+                (0.3 * instant_bps as f64 + 0.7 * rolling_bps as f64) as u64
+            };
+
+            let mode = if live_conns == 0 {
+                AccelerationMode::Optimizing
+            } else if instant_bps > prev_instant_bps && prev_instant_bps > 0 {
+                AccelerationMode::Optimizing
+            } else if live_conns >= (task.config.max_connections / 2).max(2) {
+                AccelerationMode::Stable
+            } else {
+                AccelerationMode::Auto
+            };
+            prev_instant_bps = instant_bps;
+
+            let decision_reason = match mode {
+                AccelerationMode::Optimizing => {
+                    if stats.total_bytes == 0 {
+                        "Resolving DHT Swarm & Metadata".to_string()
+                    } else if live_conns == 0 {
+                        "Probing Swarm Peers via DHT".to_string()
+                    } else {
+                        let speed_display = if dl_speed >= 1024 * 1024 {
+                            format!("{:.1} MB/s", dl_speed as f64 / (1024.0 * 1024.0))
+                        } else if dl_speed >= 1024 {
+                            format!("{:.1} KB/s", dl_speed as f64 / 1024.0)
+                        } else {
+                            format!("{} B/s", dl_speed)
+                        };
+                        format!(
+                            "Adaptive Swarm Ramp-Up ({} peers @ {})",
+                            live_conns, speed_display
+                        )
+                    }
+                }
+                AccelerationMode::Stable => {
+                    format!(
+                        "High-Throughput Swarm Plateau ({} peers connected)",
+                        live_conns
+                    )
+                }
+                _ => format!("BitTorrent Swarm ({} active peers)", live_conns),
+            };
+
+            // 3. Multi-Stream Adaptive Worker Telemetry Synthesis
+            let num_workers = live_conns.clamp(1, task.config.max_connections).min(32);
+            let worker_speed = if num_workers > 0 {
+                instant_bps / num_workers as u64
+            } else {
+                0
+            };
+            let mut workers = Vec::with_capacity(num_workers as usize);
+
+            if stats.total_bytes > 0 {
+                let chunk_size = stats.total_bytes / num_workers as u64;
+                for i in 0..num_workers {
+                    let start = i as u64 * chunk_size;
+                    let end = if i == num_workers - 1 {
+                        stats.total_bytes
+                    } else {
+                        (i as u64 + 1) * chunk_size
+                    };
+                    let worker_total = end.saturating_sub(start);
+                    let worker_downloaded = if stats.total_bytes > 0 {
+                        ((stats.progress_bytes as f64
+                            * (worker_total as f64 / stats.total_bytes as f64))
+                            as u64)
+                            .min(worker_total)
+                    } else {
+                        0
+                    };
+                    let status = if stats.finished || worker_downloaded >= worker_total {
+                        WorkerStatus::Completed
+                    } else if worker_speed > 0 {
+                        WorkerStatus::Downloading
+                    } else {
+                        WorkerStatus::Connecting
+                    };
+                    workers.push(WorkerTelemetry {
+                        idx: i,
+                        start,
+                        end,
+                        pos: start + worker_downloaded,
+                        bytes_downloaded: worker_downloaded,
+                        speed_bps: worker_speed,
+                        status,
+                        retry_count: 0,
+                    });
+                }
+            } else {
+                let fallback_end = if stats.total_bytes > 0 {
+                    stats.total_bytes
+                } else {
+                    stats.progress_bytes
+                };
+                workers.push(WorkerTelemetry {
+                    idx: 0,
+                    start: 0,
+                    end: fallback_end,
+                    pos: stats.progress_bytes,
+                    bytes_downloaded: stats.progress_bytes,
+                    speed_bps: instant_bps,
+                    status: if stats.finished {
+                        WorkerStatus::Completed
+                    } else {
+                        WorkerStatus::Downloading
+                    },
+                    retry_count: 0,
+                });
+            }
+
             if let Some(ref cb) = telemetry_cb {
                 cb(AdaptiveTelemetry {
                     download_id: task.id.to_string(),
                     total_bytes,
                     downloaded_bytes: stats.progress_bytes,
                     progress_pct,
-                    instant_throughput_bps: dl_speed * 8,
-                    rolling_throughput_bps: dl_speed * 8,
+                    instant_throughput_bps: instant_bps,
+                    rolling_throughput_bps: rolling_bps,
                     active_connections: live_conns.max(1),
-                    target_connections: live_conns.max(1),
-                    live_workers: live_conns,
-                    max_allowed_connections: 64,
-                    mode: AccelerationMode::Stable,
+                    target_connections: task.config.max_connections,
+                    live_workers: num_workers,
+                    max_allowed_connections: task.config.max_connections.max(32),
+                    mode,
                     eta_seconds: if dl_speed > 0 && stats.total_bytes > stats.progress_bytes {
                         Some((stats.total_bytes - stats.progress_bytes) / dl_speed)
                     } else {
                         None
                     },
-                    decision_reason: format!("BitTorrent Swarm ({} peers)", live_conns),
+                    decision_reason,
                     phase: None,
-                    workers: vec![WorkerTelemetry {
-                        idx: 0,
-                        start: 0,
-                        end: stats.total_bytes,
-                        pos: stats.progress_bytes,
-                        bytes_downloaded: stats.progress_bytes,
-                        speed_bps: dl_speed * 8,
-                        status: if stats.finished {
-                            WorkerStatus::Completed
-                        } else {
-                            WorkerStatus::Downloading
-                        },
-                        retry_count: 0,
-                    }],
+                    workers,
                     updated_at: Utc::now(),
                 });
             }
