@@ -221,6 +221,32 @@ Across multiple development cycles, the same class of mistakes occurred repeated
 
 ---
 
+### Incident MAJ-05: FFmpeg Process Pipe Deadlock on Large Diagnostic Output
+- **Severity**: 🟠 **Major** (Transmuxing operations hang indefinitely without completing or updating UI)
+- **Symptom**: During high-bitrate video/audio stream stitching, FFmpeg hung at 99% progress.
+- **What Was Forgotten / Missed**:
+  - Spawning FFmpeg with `-progress pipe:1` while reading only `stdout` causes an OS pipe deadlock if FFmpeg writes diagnostics, warnings, or banner text to `stderr` that exceeds the OS pipe buffer (4 KiB on Windows, 64 KiB on Unix).
+  - FFmpeg blocked indefinitely waiting for the OS to drain stderr before writing further progress to stdout.
+- **The Fix**:
+  - Implemented `ProcessGuard` and `FfmpegSupervisor` in `packages/engine/src/adaptive_wrapper/process_guard.rs`.
+  - Concurrently spawned an asynchronous stderr draining task using `tokio::io::AsyncBufReadExt` while reading stdout progress line-by-line.
+  - Bound subprocesses to RAII drop guards to terminate zombie child processes on cancellation.
+- **Files Modified**: [`packages/engine/src/adaptive_wrapper/process_guard.rs`](file:///c:/Users/Suvesh/Desktop/projects/EDM/packages/engine/src/adaptive_wrapper/process_guard.rs).
+
+---
+
+### Incident MAJ-06: Extension & Desktop Version Drift Causing Stale UI Badges
+- **Severity**: 🟡 **Minor** (Cosmetic discrepancy and out-of-sync badge display)
+- **Symptom**: Browser extension popup displayed `v0.0.9` while desktop application and engine were on `v0.0.11`.
+- **What Was Forgotten / Missed**:
+  - Automated version bumping scripts updated `manifest.json` and `Cargo.toml`, but `extension/popup.html` and `extension/src/popup.html` contained hardcoded `v0.0.9` static badges.
+- **The Fix**:
+  - Synchronized static version badges across `popup.html` and `src/popup.html` to align with workspace version `0.0.11`.
+  - Added verification in pre-flight checks.
+- **Files Modified**: [`extension/popup.html`](file:///c:/Users/Suvesh/Desktop/projects/EDM/extension/popup.html), [`extension/src/popup.html`](file:///c:/Users/Suvesh/Desktop/projects/EDM/extension/src/popup.html).
+
+---
+
 ### Incident MIN-04: Clippy Lints Breaking CI Gates
 - **Severity**: 🟡 **Minor** (Build warning noise)
 - **Symptom**: `cargo clippy --workspace --all-targets` failed in CI on warning flags.

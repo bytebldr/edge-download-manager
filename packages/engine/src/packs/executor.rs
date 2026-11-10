@@ -500,6 +500,6 @@ impl PackExecutor {
         _telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
         let _ed2k = Ed2kPack::parse_link(&task.url)?;
-        Err("eD2k/Kad P2P protocol transfer is not supported in EDM v0.0.8. Please use HTTP/HTTPS, FTP, HLS/DASH, or BitTorrent/Magnet.".into())
+        Err("eD2k/Kad P2P protocol transfer is not supported in EDM v0.0.11. Please use HTTP/HTTPS, FTP, HLS/DASH, or BitTorrent/Magnet.".into())
     }
 }
