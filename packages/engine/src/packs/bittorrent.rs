@@ -34,6 +34,8 @@ impl BitTorrentPack {
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
+        const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
+
         let session_opts = SessionOptions {
             ..Default::default()
         };
@@ -42,17 +44,89 @@ impl BitTorrentPack {
             .await
             .map_err(|e| format!("Failed to create BitTorrent session: {}", e))?;
 
-        let add_torrent = if task.url.starts_with("magnet:")
-            || task.url.starts_with("http://")
-            || task.url.starts_with("https://")
-        {
+        let add_torrent = if task.url.starts_with("magnet:") {
             AddTorrent::from_url(&task.url)
+        } else if task.url.starts_with("http://") || task.url.starts_with("https://") {
+            // Remote .torrent URL: fetch bytes in-memory with user cookies and referer headers
+            let mut req = reqwest::Client::new().get(&task.url);
+            if let Some(ref c) = task.cookies {
+                req = req.header("Cookie", c);
+            }
+            if let Some(ref r) = task.referer {
+                req = req.header("Referer", r);
+            }
+            if let Some(ref ua) = task.user_agent {
+                req = req.header("User-Agent", ua);
+            }
+
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| format!("Failed to download remote .torrent file: {}", e))?;
+
+            if !resp.status().is_success() {
+                let _ = session.stop().await;
+                return Err(format!(
+                    "Failed to fetch .torrent: HTTP {}",
+                    resp.status()
+                ));
+            }
+
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| format!("Failed to read .torrent response bytes: {}", e))?;
+
+            if bytes.len() > MAX_TORRENT_BYTES {
+                let _ = session.stop().await;
+                return Err("Torrent file exceeds 10 MiB limit".into());
+            }
+
+            let slice = bytes.as_ref();
+            if slice.is_empty() {
+                let _ = session.stop().await;
+                return Err("Torrent file is empty (0 bytes)".into());
+            }
+
+            let head = String::from_utf8_lossy(&slice[..slice.len().min(64)]).to_lowercase();
+            if head.contains("<html") || head.contains("<!doctype") {
+                let _ = session.stop().await;
+                return Err("Invalid .torrent file: received HTML authentication page or invalid response instead of bencode data".into());
+            }
+
+            AddTorrent::from_bytes(bytes.to_vec())
         } else {
-            let path = std::path::PathBuf::from(&task.url);
+            let path = if task.url.starts_with("file://") {
+                url::Url::parse(&task.url)
+                    .ok()
+                    .and_then(|u| u.to_file_path().ok())
+                    .unwrap_or_else(|| std::path::PathBuf::from(&task.url))
+            } else {
+                std::path::PathBuf::from(&task.url)
+            };
             if path.exists() {
+                let meta = tokio::fs::metadata(&path)
+                    .await
+                    .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
+                if meta.len() as usize > MAX_TORRENT_BYTES {
+                    let _ = session.stop().await;
+                    return Err("Torrent file exceeds 10 MiB limit".into());
+                }
                 let data = tokio::fs::read(&path)
                     .await
                     .map_err(|e| format!("Failed to read .torrent file: {}", e))?;
+
+                if data.is_empty() {
+                    let _ = session.stop().await;
+                    return Err("Torrent file is empty (0 bytes)".into());
+                }
+
+                let head = String::from_utf8_lossy(&data[..data.len().min(64)]).to_lowercase();
+                if head.contains("<html") || head.contains("<!doctype") {
+                    let _ = session.stop().await;
+                    return Err("Invalid .torrent file: contains HTML text instead of bencode data".into());
+                }
+
                 AddTorrent::from_bytes(data)
             } else {
                 AddTorrent::from_url(&task.url)
@@ -64,10 +138,22 @@ impl BitTorrentPack {
             ..Default::default()
         };
 
-        let handle_res = session
-            .add_torrent(add_torrent, Some(add_opts))
-            .await
-            .map_err(|e| format!("Failed to add torrent: {}", e))?;
+        let add_fut = session.add_torrent(add_torrent, Some(add_opts));
+        tokio::pin!(add_fut);
+
+        let handle_res = loop {
+            tokio::select! {
+                res = &mut add_fut => {
+                    break res.map_err(|e| format!("Failed to add torrent: {}", e))?;
+                }
+                _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                    if task.cancelled.load(Ordering::Relaxed) {
+                        let _ = session.stop().await;
+                        return Err("BitTorrent download cancelled by user".to_string());
+                    }
+                }
+            }
+        };
 
         let handle = handle_res
             .into_handle()
@@ -75,6 +161,7 @@ impl BitTorrentPack {
 
         let mut ticker = tokio::time::interval(Duration::from_millis(500));
         let mut target_file_path = task.save_dir.join(&task.filename);
+        let mut disk_space_checked = false;
 
         loop {
             ticker.tick().await;
@@ -90,6 +177,16 @@ impl BitTorrentPack {
             } else {
                 None
             };
+
+            // Deferred disk space check once torrent metadata resolves total size
+            if !disk_space_checked && stats.total_bytes > 0 {
+                disk_space_checked = true;
+                if let Err(e) = crate::security::check_disk_space(&task.save_dir, stats.total_bytes) {
+                    let _ = session.stop().await;
+                    return Err(format!("Insufficient disk space: {}", e));
+                }
+            }
+
             let progress_pct = if stats.total_bytes > 0 {
                 (stats.progress_bytes as f64 / stats.total_bytes as f64) * 100.0
             } else {
@@ -106,7 +203,8 @@ impl BitTorrentPack {
             };
 
             if let Some(name) = handle.name() {
-                target_file_path = task.save_dir.join(name);
+                let safe_name = crate::sanitizer::Sanitizer::sanitize_filename(&name);
+                target_file_path = task.save_dir.join(safe_name);
             }
 
             if let Some(ref cb) = telemetry_cb {
@@ -152,6 +250,7 @@ impl BitTorrentPack {
             }
         }
 
+        let _ = session.stop().await;
         Ok(target_file_path)
     }
     /// Parse a magnet URI into info hash, display name, and tracker list

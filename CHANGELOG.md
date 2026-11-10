@@ -16,6 +16,12 @@ All notable changes to Edge Download Manager (EDM) are documented in this file.
 #### 3. Compact Settings Feature Pack Cards
 - **High-Density Card Grid**: Redesigned Feature Packs in `SettingsPage.tsx` into a responsive, compact 3-column card grid showing pack icon, display name, and version badge, reducing vertical footprint and visual clutter.
 
+#### 4. Automated BitTorrent & Magnet Link Swarm Pipeline
+- **Zero Dead-End .torrent Downloads**: When clicking a `.torrent` link or opening a file, EDM automatically fetches and parses the bencode metadata in-memory and launches the in-process `librqbit` swarm to download the content rather than terminating with an inert `.torrent` file.
+- **Direct Magnet Link Handling**: Fully automated `magnet:?xt=...` link parsing, DHT peer discovery, cancellation-aware resolution, and deferred disk space verification.
+- **Windows Shell & Protocol Integration**: Configured `magnet:` protocol handler and `.torrent` file association (`EDM.TorrentFile`) in NSIS installer hooks and runtime registry, routing external launches to the running EDM instance with automatic window focus.
+- **Desktop UI Ingestion**: Added a `.torrent` file picker dialog in the Add Download modal and native window drag-and-drop ingestion.
+
 ## [v0.0.9] - 2026-11-08
 
 ### 🚀 Dynamic Media Quality Probing, Modular Architecture & Release Hardening

@@ -872,6 +872,18 @@ export async function tauriSelectDownloadDirectory(defaultPath?: string): Promis
   return null;
 }
 
+export async function tauriSelectTorrentFile(): Promise<string | null> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return await invoke<string | null>("select_torrent_file");
+    } catch (err) {
+      console.warn("Tauri select_torrent_file failed:", err);
+    }
+  }
+  return null;
+}
+
 export interface DiskFreeSpace {
   drive: string;
   total_bytes: number;
@@ -906,5 +918,21 @@ export async function tauriSetAutostart(enable: boolean): Promise<void> {
       console.warn("Tauri autostart toggle failed:", err);
     }
   }
+}
+
+export async function tauriOnDragDrop(onFilesDropped: (paths: string[]) => void): Promise<(() => void) | undefined> {
+  if (isTauri()) {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      return await getCurrentWindow().onDragDropEvent((event) => {
+        if (event.payload.type === "drop" && Array.isArray(event.payload.paths)) {
+          onFilesDropped(event.payload.paths);
+        }
+      });
+    } catch (err) {
+      console.warn("Tauri onDragDropEvent failed to register:", err);
+    }
+  }
+  return undefined;
 }
 

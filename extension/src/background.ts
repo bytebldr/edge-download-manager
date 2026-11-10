@@ -941,9 +941,17 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
       return;
     }
 
-    // Min file size check (in KB)
+    const url = item.finalUrl || item.url;
+
+    // Check if this is a .torrent file to ensure BitTorrent downloads are never skipped by min-size
+    const isTorrentFile =
+      (item.filename && item.filename.toLowerCase().endsWith(".torrent")) ||
+      (url && url.toLowerCase().split("?")[0].endsWith(".torrent")) ||
+      item.mime === "application/x-bittorrent";
+
+    // Min file size check (in KB) - bypassed for .torrent metadata
     const minSizeKb = Number(store?.edm_min_size || 0);
-    if (minSizeKb > 0 && typeof item.fileSize === "number" && item.fileSize > 0) {
+    if (!isTorrentFile && minSizeKb > 0 && typeof item.fileSize === "number" && item.fileSize > 0) {
       if (item.fileSize < minSizeKb * 1024) {
         safeSuggest();
         return;
@@ -958,7 +966,6 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
     }
 
     // 3. Skip non-http(s) URLs
-    const url = item.finalUrl || item.url;
     if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) {
       safeSuggest();
       return;

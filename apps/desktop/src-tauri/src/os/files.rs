@@ -5,7 +5,7 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
     let lower = trimmed.to_ascii_lowercase();
 
     // 1. BitTorrent Magnet URIs (handled by bittorrent_pack)
-    if lower.starts_with("magnet:?") {
+    if lower.starts_with("magnet:") {
         return url::Url::parse(trimmed)
             .or_else(|_| {
                 url::Url::parse(&format!(
@@ -14,6 +14,27 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
                 ))
             })
             .map_err(|e| format!("Invalid magnet URI: {}", e));
+    }
+
+    // 1b. BitTorrent Local .torrent File Path or file:// URI
+    let local_path = if lower.starts_with("file://") {
+        url::Url::parse(trimmed)
+            .ok()
+            .and_then(|u| u.to_file_path().ok())
+    } else {
+        Some(PathBuf::from(trimmed))
+    };
+
+    if let Some(ref lp) = local_path {
+        if lp.is_absolute()
+            && lp
+                .extension()
+                .map_or(false, |e| e.eq_ignore_ascii_case("torrent"))
+            && lp.exists()
+        {
+            return url::Url::from_file_path(lp)
+                .map_err(|_| "Failed to resolve file path to URL".to_string());
+        }
     }
 
     // 2. eDonkey2000 URIs (handled by ed2k_pack)
@@ -235,6 +256,34 @@ pub async fn select_download_directory_internal(
             );
             let output = std::process::Command::new("powershell")
                 .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .creation_flags(0x08000000)
+                .output()
+                .map_err(|e| e.to_string())?;
+
+            let res = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if res.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(res))
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub async fn select_torrent_file_internal() -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Title = 'Select .torrent File'; $d.Filter = 'BitTorrent Files (*.torrent)|*.torrent|All Files (*.*)|*.*'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }";
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
                 .creation_flags(0x08000000)
                 .output()
                 .map_err(|e| e.to_string())?;

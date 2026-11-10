@@ -229,6 +229,28 @@ impl FeaturePackManager {
             };
         }
 
+        // 1b. BitTorrent .torrent File (HTTP URL or Local Disk Path)
+        let clean_path = lower.split('?').next().unwrap_or("");
+        if clean_path.ends_with(".torrent")
+            || std::path::Path::new(trimmed)
+                .extension()
+                .map_or(false, |e| e.eq_ignore_ascii_case("torrent"))
+        {
+            let suggested = trimmed
+                .split('/')
+                .next_back()
+                .and_then(|s| s.split('\\').next_back())
+                .map(|s| s.split('?').next().unwrap_or(s).to_string());
+            return ParsedPackTarget {
+                pack_id: FeaturePackId::BitTorrentPack,
+                clean_url: trimmed.to_string(),
+                suggested_filename: suggested,
+                estimated_size: None,
+                is_stream: false,
+                is_p2p: true,
+            };
+        }
+
         // 2. eDonkey2000
         if lower.starts_with("ed2k://") {
             let info = Ed2kPack::parse_link(trimmed).ok();
@@ -470,5 +492,25 @@ mod tests {
             target.mirror_url,
             "https://hf-mirror.com/meta-llama/Llama-3-8B/resolve/main/model.safetensors"
         );
+    }
+
+    #[test]
+    fn test_torrent_and_magnet_classification() {
+        let magnet_target = FeaturePackManager::classify_target(
+            "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335de7ece74f6d2&dn=Ubuntu+Linux",
+        );
+        assert_eq!(magnet_target.pack_id, FeaturePackId::BitTorrentPack);
+        assert!(magnet_target.is_p2p);
+
+        let torrent_url_target = FeaturePackManager::classify_target(
+            "https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso.torrent?token=abc",
+        );
+        assert_eq!(torrent_url_target.pack_id, FeaturePackId::BitTorrentPack);
+        assert!(torrent_url_target.is_p2p);
+
+        // Verify that random URLs with /torrent/ in the path do not trigger false positives
+        let article_target =
+            FeaturePackManager::classify_target("https://example.com/torrent/article.html");
+        assert_eq!(article_target.pack_id, FeaturePackId::HttpPack);
     }
 }

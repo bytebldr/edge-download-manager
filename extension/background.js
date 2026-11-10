@@ -793,8 +793,10 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
       safeSuggest();
       return;
     }
+    const url = item.finalUrl || item.url;
+    const isTorrentFile = item.filename && item.filename.toLowerCase().endsWith(".torrent") || url && url.toLowerCase().split("?")[0].endsWith(".torrent") || item.mime === "application/x-bittorrent";
     const minSizeKb = Number(store?.edm_min_size || 0);
-    if (minSizeKb > 0 && typeof item.fileSize === "number" && item.fileSize > 0) {
+    if (!isTorrentFile && minSizeKb > 0 && typeof item.fileSize === "number" && item.fileSize > 0) {
       if (item.fileSize < minSizeKb * 1024) {
         safeSuggest();
         return;
@@ -805,7 +807,6 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
       safeSuggest();
       return;
     }
-    const url = item.finalUrl || item.url;
     if (!url || !url.startsWith("http://") && !url.startsWith("https://")) {
       safeSuggest();
       return;

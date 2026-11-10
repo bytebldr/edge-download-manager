@@ -172,6 +172,32 @@ pub fn register_native_messaging_host() {
         let _ = k.set_string("InstallDir", current_dir.to_string_lossy());
         let _ = k.set_string("NmhPath", nmh_path.to_string_lossy());
     }
+
+    // Register magnet: protocol
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\magnet") {
+        let _ = k.set_string("", "URL:BitTorrent Magnet URL");
+        let _ = k.set_string("URL Protocol", "");
+    }
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\magnet\DefaultIcon") {
+        let _ = k.set_string("", format!("{},0", current_exe.display()));
+    }
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\magnet\shell\open\command") {
+        let _ = k.set_string("", format!("\"{}\" \"%1\"", current_exe.display()));
+    }
+
+    // Register .torrent file association
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\.torrent") {
+        let _ = k.set_string("", "EDM.TorrentFile");
+    }
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile") {
+        let _ = k.set_string("", "BitTorrent Document");
+    }
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile\DefaultIcon") {
+        let _ = k.set_string("", format!("{},0", current_exe.display()));
+    }
+    if let Ok(k) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile\shell\open\command") {
+        let _ = k.set_string("", format!("\"{}\" \"%1\"", current_exe.display()));
+    }
 }
 
 #[cfg(not(windows))]
@@ -203,6 +229,9 @@ pub fn set_app_user_model_id() {}
 pub fn purge_all_user_data() {
     use windows_registry::CURRENT_USER;
     let _ = CURRENT_USER.remove_tree(r"Software\EDM");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\magnet");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\.torrent");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\EDM.TorrentFile");
     let _ = CURRENT_USER.remove_tree(r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER

@@ -66,6 +66,7 @@ import {
   tauriIsWizardCompleted,
   tauriCheckDuplicateDownload,
   tauriSetSpeedLimit,
+  tauriOnDragDrop,
 } from "./services/tauriBridge";
 
 export interface WorkerInfo {
@@ -366,6 +367,29 @@ export default function App() {
       window.removeEventListener("click", handleCloseContext);
     };
   }, []);
+
+  // Window drag-and-drop ingestion for .torrent files
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    tauriOnDragDrop(async (paths) => {
+      for (const p of paths) {
+        if (p.toLowerCase().endsWith(".torrent")) {
+          const fname = p.split(/[\\/]/).pop() || "torrent_download";
+          await tauriStartDownload({
+            url: p,
+            filename: fname,
+            saveDir: settings.downloads.defaultDirectory,
+            maxConnections: 8,
+          });
+        }
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [settings.downloads.defaultDirectory]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [downloads, setDownloads] = useState<DownloadItem[]>(() => {

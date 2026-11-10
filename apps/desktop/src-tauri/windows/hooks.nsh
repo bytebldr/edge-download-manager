@@ -146,6 +146,32 @@ done_apppath:
   WriteRegStr HKCU "Software\Classes\edm\shell\open\command" "" '"$INSTDIR\EDM.exe" "%1"'
 done_cmd:
 
+  ; Register BitTorrent magnet protocol
+  WriteRegStr HKCU "Software\Classes\magnet" "" "URL:BitTorrent Magnet URL"
+  WriteRegStr HKCU "Software\Classes\magnet" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\magnet\DefaultIcon" "" "$INSTDIR\EDM.exe,0"
+  IfFileExists "$INSTDIR\EDM.exe" 0 +3
+    WriteRegStr HKCU "Software\Classes\magnet\shell\open\command" "" '"$INSTDIR\EDM.exe" "%1"'
+    Goto done_magnet_cmd
+  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 +3
+    WriteRegStr HKCU "Software\Classes\magnet\shell\open\command" "" '"$INSTDIR\edm-desktop-app.exe" "%1"'
+    Goto done_magnet_cmd
+  WriteRegStr HKCU "Software\Classes\magnet\shell\open\command" "" '"$INSTDIR\EDM.exe" "%1"'
+done_magnet_cmd:
+
+  ; Register .torrent file association
+  WriteRegStr HKCU "Software\Classes\.torrent" "" "EDM.TorrentFile"
+  WriteRegStr HKCU "Software\Classes\EDM.TorrentFile" "" "BitTorrent Document"
+  WriteRegStr HKCU "Software\Classes\EDM.TorrentFile\DefaultIcon" "" "$INSTDIR\EDM.exe,0"
+  IfFileExists "$INSTDIR\EDM.exe" 0 +3
+    WriteRegStr HKCU "Software\Classes\EDM.TorrentFile\shell\open\command" "" '"$INSTDIR\EDM.exe" "%1"'
+    Goto done_torrent_cmd
+  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 +3
+    WriteRegStr HKCU "Software\Classes\EDM.TorrentFile\shell\open\command" "" '"$INSTDIR\edm-desktop-app.exe" "%1"'
+    Goto done_torrent_cmd
+  WriteRegStr HKCU "Software\Classes\EDM.TorrentFile\shell\open\command" "" '"$INSTDIR\EDM.exe" "%1"'
+done_torrent_cmd:
+
   ; Provision extension files into %LOCALAPPDATA%\EDM\extension and %APPDATA%\EDM\extension
   CreateDirectory "$LOCALAPPDATA\EDM\extension"
   CreateDirectory "$APPDATA\EDM\extension"
@@ -172,6 +198,9 @@ done_cmd:
 
   ; 3. Delete EDM app, autostart, and protocol handler registry keys
   DeleteRegKey HKCU "Software\Classes\edm"
+  DeleteRegKey HKCU "Software\Classes\magnet"
+  DeleteRegKey HKCU "Software\Classes\.torrent"
+  DeleteRegKey HKCU "Software\Classes\EDM.TorrentFile"
   DeleteRegKey HKCU "Software\EDM"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "EDM"
 

@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { X, CheckCircle2, FolderOpen } from "lucide-react";
+import { X, CheckCircle2, FolderOpen, FileCode } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { backdropVariants, modalVariants } from "../utils/motion";
 import { EdmSettings } from "../types/settings";
-import { isTauri, tauriProbeUrl, tauriSelectDownloadDirectory } from "../services/tauriBridge";
+import { isTauri, tauriProbeUrl, tauriSelectDownloadDirectory, tauriSelectTorrentFile } from "../services/tauriBridge";
 
 interface AddDownloadModalProps {
   isOpen: boolean;
@@ -105,6 +105,20 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     }
   };
 
+  const handleBrowseTorrentFile = async () => {
+    try {
+      const chosen = await tauriSelectTorrentFile();
+      if (chosen) {
+        setUrlInput(chosen);
+        const name = chosen.split(/[\\/]/).pop() || "";
+        setFileNameInput(name);
+        setAddCategory("Compressed");
+      }
+    } catch (err) {
+      console.warn("Failed to select torrent file:", err);
+    }
+  };
+
   const handleSubmit = () => {
     if (!urlInput.trim()) return;
     onAdd(
@@ -151,20 +165,30 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                  Source Address (URL / HTTP / Magnet)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-[var(--text-secondary)]">
+                    Source Address (URL / HTTP / Magnet / .torrent)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleBrowseTorrentFile}
+                    className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                  >
+                    <FileCode className="w-3.5 h-3.5" />
+                    <span>Choose .torrent File...</span>
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="https://example.com/file.zip or paste download link..."
+                    placeholder="https://example.com/file.zip, magnet:?xt=..., or path to .torrent file"
                     value={urlInput}
                     onChange={(e) => handleUrlInputChange(e.target.value)}
                     className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none"
                   />
                   <button
                     onClick={handleProbe}
-                    disabled={isProbing || !urlInput.trim()}
+                    disabled={isProbing || !urlInput.trim() || urlInput.startsWith("magnet:") || urlInput.endsWith(".torrent")}
                     className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer"
                   >
                     {isProbing ? "Probing..." : "Probe Server"}

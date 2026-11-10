@@ -46,6 +46,11 @@ pub async fn select_download_directory(
 }
 
 #[command]
+pub async fn select_torrent_file() -> Result<Option<String>, String> {
+    select_torrent_file_internal().await
+}
+
+#[command]
 pub fn get_disk_free_space(path: Option<String>) -> Result<serde_json::Value, String> {
     get_disk_free_space_internal(path)
 }

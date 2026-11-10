@@ -467,6 +467,53 @@ fn main() {
         }
     });
 
+    // Helper to inspect CLI targets (magnet links, .torrent files, or URLs) from cold start or single-instance wake
+    fn handle_cli_arguments(app: &tauri::AppHandle, args: &[String]) {
+        let state = app.state::<AppState>();
+        for arg in args {
+            let trimmed = arg.trim().trim_matches('"');
+            if trimmed.starts_with('-') || trimmed.is_empty() || trimmed.ends_with(".exe") {
+                continue;
+            }
+
+            let lower = trimmed.to_ascii_lowercase();
+            let is_magnet = lower.starts_with("magnet:");
+            let is_torrent = lower.split('?').next().unwrap_or("").ends_with(".torrent")
+                || std::path::Path::new(trimmed)
+                    .extension()
+                    .map_or(false, |e| e.eq_ignore_ascii_case("torrent"));
+            let is_url = lower.starts_with("http://") || lower.starts_with("https://");
+
+            if is_magnet || is_torrent || is_url {
+                tracing::info!("Received CLI download target: {}", trimmed);
+                let id = Uuid::new_v4();
+                let target_url = trimmed.to_string();
+                let state_ref = state.inner().clone();
+                state.rt_handle.spawn(async move {
+                    let _ = services::download_manager::execute_download(
+                        &state_ref,
+                        id,
+                        target_url,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                });
+
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+                break;
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             let is_autostart = argv.iter().any(|arg| arg == "--autostart");
@@ -485,6 +532,8 @@ fn main() {
                     lc.record_wake(false).await;
                 });
             }
+
+            handle_cli_arguments(app, &argv);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -521,6 +570,8 @@ fn main() {
                     );
                 }
             }
+
+            handle_cli_arguments(&app.handle().clone(), &args);
 
             // Tray Icon Setup
             let open_i = MenuItem::with_id(app, "open", "Open EDM", true, None::<&str>)?;
@@ -716,6 +767,7 @@ fn main() {
             set_wizard_completed,
             get_system_downloads_dir,
             select_download_directory,
+            select_torrent_file,
             get_disk_free_space,
             refresh_download_link,
             expand_batch_urls,
