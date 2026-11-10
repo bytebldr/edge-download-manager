@@ -1,6 +1,6 @@
 [package]
 name = "edm-desktop-app"
-version = "0.0.9"
+version.workspace = true
 edition = "2021"
 
 [build-dependencies]

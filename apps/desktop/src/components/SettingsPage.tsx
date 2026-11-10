@@ -1331,91 +1331,35 @@ export default function SettingsPage({
                 })}
               </div>
 
-              {/* Feature Packs Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {/* Feature Packs Compact Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {FEATURE_PACKS.filter((p) => packCategoryFilter === "all" || p.category === packCategoryFilter).map((pack) => {
                   return (
                     <motion.div
                       key={pack.id}
-                      whileHover={{ y: -2 }}
+                      whileHover={{ y: -1 }}
                       transition={springs.interactive}
-                      className="card-3d p-4 rounded-2xl space-y-3 transition-colors relative overflow-hidden flex flex-col justify-between"
+                      className="card-3d p-2.5 rounded-xl flex items-center justify-between gap-2.5 min-w-0 transition-colors"
                     >
-                      {/* Top Header */}
-                      <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="p-2 rounded-xl icon-box-3d shrink-0">
-                              {pack.id === "http_pack" && <Globe className="w-4 h-4 text-blue-400" />}
-                              {pack.id === "bittorrent_pack" && <Share2 className="w-4 h-4 text-emerald-400" />}
-                              {pack.id === "ftp_pack" && <Server className="w-4 h-4 text-amber-400" />}
-                              {pack.id === "ed2k_pack" && <Radio className="w-4 h-4 text-purple-400" />}
-                              {pack.id === "m3u8_pack" && <Film className="w-4 h-4 text-cyan-400" />}
-                              {pack.id === "ffmpeg_pack" && <Layers className="w-4 h-4 text-pink-400" />}
-                              {pack.id === "yt_dlp_pack" && <Sparkles className="w-4 h-4 text-rose-400" />}
-                              {pack.id === "github_pack" && <Package className="w-4 h-4 text-slate-300" />}
-                              {pack.id === "huggingface_pack" && <Cpu className="w-4 h-4 text-yellow-400" />}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-xs font-bold text-[var(--text-primary)] truncate">{pack.name}</h3>
-                                <span className="font-mono text-[10px] text-[var(--text-muted)] bg-[var(--bg-chassis)] px-1.5 py-0.5 rounded-md border border-[var(--border-subtle)]">
-                                  {pack.id}
-                                </span>
-                              </div>
-                              <span
-                                className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider mt-0.5"
-                                style={{
-                                  color: pack.color,
-                                  backgroundColor: `${pack.color}15`,
-                                  border: `1px solid ${pack.color}35`,
-                                }}
-                              >
-                                {pack.badge}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Permanent Active Version Badge */}
-                          <div className="shrink-0 flex items-center gap-1.5">
-                            <span className="badge-3d px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold text-[var(--accent)] bg-[var(--bg-chassis)] border border-[var(--border-subtle)] shadow-sm">
-                              v{pack.version}
-                            </span>
-                          </div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="p-1.5 rounded-lg icon-box-3d shrink-0">
+                          {pack.id === "http_pack" && <Globe className="w-4 h-4 text-blue-400" />}
+                          {pack.id === "bittorrent_pack" && <Share2 className="w-4 h-4 text-emerald-400" />}
+                          {pack.id === "ftp_pack" && <Server className="w-4 h-4 text-amber-400" />}
+                          {pack.id === "ed2k_pack" && <Radio className="w-4 h-4 text-purple-400" />}
+                          {pack.id === "m3u8_pack" && <Film className="w-4 h-4 text-cyan-400" />}
+                          {pack.id === "ffmpeg_pack" && <Layers className="w-4 h-4 text-pink-400" />}
+                          {pack.id === "yt_dlp_pack" && <Sparkles className="w-4 h-4 text-rose-400" />}
+                          {pack.id === "github_pack" && <Package className="w-4 h-4 text-slate-300" />}
+                          {pack.id === "huggingface_pack" && <Cpu className="w-4 h-4 text-yellow-400" />}
                         </div>
-
-                        {/* Summary & Details */}
-                        <div className="space-y-1">
-                          <p className="text-xs font-semibold text-[var(--text-primary)]">{pack.description}</p>
-                          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">{pack.details}</p>
-                        </div>
-
-                        {/* Capability Pills */}
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {pack.capabilities.map((cap) => (
-                            <span
-                              key={cap}
-                              className="badge-3d px-2 py-0.5 rounded text-[10px] font-medium text-[var(--text-secondary)] bg-[var(--bg-chassis)] border border-[var(--border-subtle)]"
-                            >
-                              {cap}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="text-xs font-semibold text-[var(--text-primary)] truncate" title={pack.name}>
+                          {pack.name}
+                        </span>
                       </div>
-
-                      {/* Footer Details */}
-                      <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                        <div className="flex items-center gap-2 truncate">
-                          <span className="font-mono text-[10px] truncate">
-                            {pack.protocols.join(" • ")}
-                          </span>
-                        </div>
-                        {pack.requiresPack && (
-                          <span className="text-[10px] font-medium text-cyan-400 shrink-0">
-                            + {pack.requiresPack}
-                          </span>
-                        )}
-                      </div>
+                      <span className="shrink-0 font-mono text-[10px] font-medium text-[var(--accent)] bg-[var(--bg-chassis)] px-1.5 py-0.5 rounded border border-[var(--border-subtle)]">
+                        v{pack.version}
+                      </span>
                     </motion.div>
                   );
                 })}

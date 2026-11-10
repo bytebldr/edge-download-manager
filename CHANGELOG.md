@@ -2,6 +2,20 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.11] - 2026-11-10
+
+### 🚀 Seamless In-Place Upgrades, Custom Installer Branding & Compact Settings UI
+
+#### 1. Seamless In-Place Upgrades in NSIS Installer
+- **Eliminated Uninstall Prompt**: Intercepted `PageReinstall` in the NSIS installer template (`installer.nsi`) to bypass the prompt requiring users to uninstall older versions before upgrading.
+- **Data & Configuration Preservation**: Performs in-place binary overwrite in `$INSTDIR` while fully preserving `%LOCALAPPDATA%\EDM`, download history, and user settings.
+
+#### 2. Custom NSIS Installer Branding
+- **Branded Setup Executable**: Configured custom installer icon (`icon.ico`) and embedded high-resolution 24-bit bitmaps for installer header (`nsis-header.bmp`) and sidebar wizard (`nsis-sidebar.bmp`), replacing default Nullsoft graphics.
+
+#### 3. Compact Settings Feature Pack Cards
+- **High-Density Card Grid**: Redesigned Feature Packs in `SettingsPage.tsx` into a responsive, compact 3-column card grid showing pack icon, display name, and version badge, reducing vertical footprint and visual clutter.
+
 ## [v0.0.9] - 2026-11-08
 
 ### 🚀 Dynamic Media Quality Probing, Modular Architecture & Release Hardening
