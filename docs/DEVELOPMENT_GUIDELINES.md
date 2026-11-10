@@ -1,6 +1,6 @@
-# EDM Agent & Architecture Rules
+# EDM Architecture & Development Guidelines
 
-Every AI agent, developer, and automated pipeline working on EDM must strictly adhere to the following 7 core rules:
+Every contributor, developer, and automated pipeline working on Edge Download Manager (EDM) must strictly adhere to the following 7 core architectural guidelines:
 
 ---
 

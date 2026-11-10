@@ -1,7 +1,7 @@
 # EDM Dependency Licenses
 
-Every external crate, library, and tool included in EDM is reviewed for permissive licensing.
-In accordance with EDM operating rules, no GPL or AGPL code is incorporated into the codebase.
+Every external crate, library, and tool included in EDM is reviewed for open-source compatibility.
+EDM is distributed under the GNU General Public License v3.0 (GPL-3.0). All third-party crates and libraries incorporated into EDM use compatible OSI-approved permissive licenses (MIT, Apache-2.0, ISC) or standalone LGPL sidecars.
 
 ## Rust Workspace Dependencies
 - `tokio`: MIT
