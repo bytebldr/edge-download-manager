@@ -155,6 +155,3 @@ No. EDM operates 100% locally on your computer. It never communicates with any t
 
 Official production releases of Edge Download Manager for Windows are digitally signed via SignPath to guarantee software integrity and protect users against tampering. For complete details regarding our signing verification, release authorization, team roles, and build provenance, please review our [**Code Signing Policy**](CODE_SIGNING_POLICY.md).
 
----
-
-<sub>**Keywords**: download manager, downloadmanager, internet download manager, idm alternative, fdm alternative, download accelerator, windows download manager, open source download manager, bittorrent client, torrent download manager, magnet link downloader, video downloader, youtube downloader, 4k video downloader, hls downloader, m3u8 downloader, multithreaded download manager, rust download manager, tauri v2.</sub>
