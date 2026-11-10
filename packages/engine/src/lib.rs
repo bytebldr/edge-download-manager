@@ -1,4 +1,5 @@
 pub mod adaptive;
+pub mod adaptive_wrapper;
 pub mod batch;
 pub mod engine;
 pub mod limiter;
@@ -16,6 +17,7 @@ pub use adaptive::{
     AccelerationMode, AdaptiveConfig, AdaptiveDecision, AdaptiveDownloadTask, AdaptiveEngine,
     AdaptiveTelemetry, TelemetryCallback, WorkScheduler, WorkerStatus, WorkerTelemetry,
 };
+pub use adaptive_wrapper::AdaptiveWrapper;
 pub use batch::expand_batch_pattern;
 pub use engine::{DownloadTask, Engine};
 pub use limiter::TokenBucketLimiter;

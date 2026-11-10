@@ -6,7 +6,6 @@ use super::ed2k::Ed2kPack;
 use super::ftp::FtpPack;
 use super::huggingface::HuggingFacePack;
 use super::m3u8::M3u8Pack;
-use super::{FeaturePackId, FeaturePackManager};
 use crate::adaptive::{
     AccelerationMode, AdaptiveDownloadTask, AdaptiveEngine, AdaptiveTelemetry, TelemetryCallback,
     WorkerStatus, WorkerTelemetry,
@@ -21,33 +20,18 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub struct PackExecutor;
 
 impl PackExecutor {
-    /// Execute a download using the appropriate feature pack pipeline
+    /// Execute a download using the appropriate feature pack pipeline through the AdaptiveWrapper
     pub async fn execute(
         task: AdaptiveDownloadTask,
         engine: Arc<AdaptiveEngine>,
         client: Client,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
-        let pack_target = FeaturePackManager::classify_target(&task.url);
-
-        match pack_target.pack_id {
-            FeaturePackId::HttpPack => engine.download(task, telemetry_cb).await,
-            FeaturePackId::GithubPack => Self::execute_github(task, engine, telemetry_cb).await,
-            FeaturePackId::HuggingFacePack => {
-                Self::execute_huggingface(task, engine, client, telemetry_cb).await
-            }
-            FeaturePackId::M3u8Pack => Self::execute_m3u8(task, client, telemetry_cb).await,
-            FeaturePackId::YtDlpPack => {
-                Self::execute_ytdlp(task, engine, client, telemetry_cb).await
-            }
-            FeaturePackId::FtpPack => Self::execute_ftp(task, telemetry_cb).await,
-            FeaturePackId::BitTorrentPack => Self::execute_bittorrent(task, telemetry_cb).await,
-            FeaturePackId::Ed2kPack => Self::execute_ed2k(task, telemetry_cb).await,
-            FeaturePackId::FfmpegPack => engine.download(task, telemetry_cb).await,
-        }
+        crate::adaptive_wrapper::AdaptiveWrapper::execute(task, engine, client, telemetry_cb).await
     }
 
     /// GitHub Pack: Accelerated mirror resolution & SHA-256 verification
+    #[allow(dead_code)]
     async fn execute_github(
         task: AdaptiveDownloadTask,
         engine: Arc<AdaptiveEngine>,
@@ -57,6 +41,7 @@ impl PackExecutor {
     }
 
     /// Hugging Face Pack: Git-LFS pointer detection and resolution
+    #[allow(dead_code)]
     async fn execute_huggingface(
         task: AdaptiveDownloadTask,
         engine: Arc<AdaptiveEngine>,
@@ -85,7 +70,7 @@ impl PackExecutor {
     }
 
     /// M3U8 Pack: Parse playlist, concurrently download TS segments, and transmux to MP4
-    async fn execute_m3u8(
+    pub(crate) async fn execute_m3u8(
         task: AdaptiveDownloadTask,
         client: Client,
         telemetry_cb: Option<TelemetryCallback>,
@@ -315,7 +300,7 @@ impl PackExecutor {
 
     /// Media Extraction Pipeline: Native In-Process Extractors (YouTube, Vimeo)
     /// Streams directly with the high-performance Adaptive HTTP Engine
-    async fn execute_ytdlp(
+    pub(crate) async fn execute_ytdlp(
         task: AdaptiveDownloadTask,
         engine: Arc<AdaptiveEngine>,
         client: Client,
@@ -388,7 +373,7 @@ impl PackExecutor {
     }
 
     /// FTP Pack: Async TCP wire connection & file streaming
-    async fn execute_ftp(
+    pub(crate) async fn execute_ftp(
         task: AdaptiveDownloadTask,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
@@ -502,7 +487,7 @@ impl PackExecutor {
     }
 
     /// BitTorrent Pack: In-process Torrent and Magnet Swarm Engine via librqbit
-    async fn execute_bittorrent(
+    pub(crate) async fn execute_bittorrent(
         task: AdaptiveDownloadTask,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
@@ -510,7 +495,7 @@ impl PackExecutor {
     }
 
     /// eD2k Pack: eD2k link resolver
-    async fn execute_ed2k(
+    pub(crate) async fn execute_ed2k(
         task: AdaptiveDownloadTask,
         _telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
