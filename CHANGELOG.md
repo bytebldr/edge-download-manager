@@ -22,6 +22,13 @@ All notable changes to Edge Download Manager (EDM) are documented in this file.
 - **Windows Shell & Protocol Integration**: Configured `magnet:` protocol handler and `.torrent` file association (`EDM.TorrentFile`) in NSIS installer hooks and runtime registry, routing external launches to the running EDM instance with automatic window focus.
 - **Desktop UI Ingestion**: Added a `.torrent` file picker dialog in the Add Download modal and native window drag-and-drop ingestion.
 
+#### 5. Intelligent Upfront & Adaptive Wrapper Subsystem (`adaptive_wrapper`)
+- **Universal 9-Pack Pre-Flight & Post-Flight Architecture**: Dedicated module in `packages/engine/src/adaptive_wrapper/` wrapping all 9 protocol engines (HTTP, BitTorrent, FTP, eD2k, M3U8, FFmpeg, yt-dlp, GitHub, Hugging Face).
+- **Sub-600ms Speculative Latency Racing**: Races origin and mirror CDN endpoints (GitHub raw/releases, Hugging Face models) in parallel with strict credential isolation and automatic failover.
+- **Dual-Stream Parallel Pipelining**: Simultaneously downloads high-res video and audio tracks across 16 parallel workers directly in the Adaptive Engine, followed by zero-copy in-process FFmpeg container stitching (`-c copy`).
+- **ProcessGuard & Async Stderr Draining**: Eliminates OS pipe buffer deadlocks during media remuxing by draining stderr concurrently with stdout while streaming real-time heartbeats to NetPulse.
+- **Third-Party Feature Pack Attributions**: Added comprehensive `THIRD_PARTY_CREDITS.md` documenting upstream engines (`librqbit`, `yt-dlp`, `FFmpeg`, `RustCrypto`, `ghproxy`, `HF-Mirror`).
+
 ## [v0.0.9] - 2026-11-08
 
 ### 🚀 Dynamic Media Quality Probing, Modular Architecture & Release Hardening
