@@ -17,3 +17,5 @@ Thumbs.db
 graphify-out/
 # Floorplan (Local architecture maps only)
 floorplan/
+# Local documentation only (not pushed to GitHub)
+docs/

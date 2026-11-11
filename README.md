@@ -137,15 +137,9 @@ No. EDM operates 100% locally on your computer. It never communicates with any t
 
 ---
 
-## 📄 Project Governance & Security
+## 📄 License
 
-- **Code Signing Policy**: [**CODE_SIGNING_POLICY.md**](CODE_SIGNING_POLICY.md)
-- **Security Policy & Disclosure**: [**SECURITY.md**](SECURITY.md)
-- **Privacy Policy**: [**PRIVACY.md**](PRIVACY.md)
-- **Contribution Guidelines**: [**CONTRIBUTING.md**](CONTRIBUTING.md)
-- **Code of Conduct**: [**CODE_OF_CONDUCT.md**](CODE_OF_CONDUCT.md)
-- **License**: Released under the [**GNU General Public License v3.0 (GPL-3.0)**](LICENSE)
-- **Third-Party Credits**: [**THIRD_PARTY_CREDITS.md**](THIRD_PARTY_CREDITS.md)
+Edge Download Manager is released under the [**GNU General Public License v3.0 (GPL-3.0)**](LICENSE).
 
 ---
 
@@ -153,5 +147,6 @@ No. EDM operates 100% locally on your computer. It never communicates with any t
 
 > **Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).**
 
-Official production releases of Edge Download Manager for Windows are digitally signed via SignPath to guarantee software integrity and protect users against tampering. For complete details regarding our signing verification, release authorization, team roles, and build provenance, please review our [**Code Signing Policy**](CODE_SIGNING_POLICY.md).
+Official production releases of Edge Download Manager for Windows are digitally signed to guarantee software integrity and protect users against tampering. All release artifacts are built reproducibly on GitHub Actions from verified source code.
+
 
