@@ -19,6 +19,9 @@
 
 ---
 
+> [!NOTE]
+> **Early Development**: Edge Download Manager (EDM) is currently in active early development (`v0.0.x`). Core acceleration, BitTorrent, and media extraction features are functional, though you may encounter occasional edge-case bugs or rapid updates. Feedback and bug reports are welcome via GitHub Issues!
+
 **Edge Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
 
 Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates file transfers up to 10x using dynamic parallel chunking, automatic BitTorrent & magnet handling, 4K/8K media extraction, and seamless browser extension capture.
@@ -59,12 +62,13 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 
 ### 🧲 In-Process BitTorrent & Magnet Download Manager
 - **Zero Dead-End Downloads**: Opening a `.torrent` file or clicking a `magnet:` link automatically launches the in-process swarm engine to download your content—never leaving you stranded with an inert metadata file.
+- **Automatic Stop-Seeding on Completion**: Immediately closes the swarm session and stops uploading data once a torrent reaches 100%, preserving your upload bandwidth.
 - **Curated Tier-1 Public Tracker Injection**: Automatically injects high-availability public trackers into sparse magnet links for instant DHT peer discovery in under 3 seconds.
 - **Sequential Play-While-Downloading (VOD)**: Prioritizes video pieces sequentially so you can stream and preview `.mp4` and `.mkv` media files before the download finishes.
 
 ### 🎥 4K/8K Media & Video Stream Downloader
-- **YouTube Quick-Download Pill**: Integrates a clean, compact download button directly into YouTube watch pages and shorts next to the Subscribe button.
-- **Dual-Stream Parallel Pipelining**: Simultaneously downloads high-resolution video and audio streams across 16 parallel workers, then stitches them losslessly via in-process FFmpeg (`-c copy`) in under 1 second.
+- **YouTube Dynamic Quality Selector**: Integrates a clean download button directly into YouTube watch pages and shorts, displaying every resolution actually available for that video (8K, 4K, 1440p, 1080p, 720p, 480p, 360p, 240p, 144p) alongside MP3/M4A audio extraction.
+- **Dual-Stream Parallel Pipelining**: Simultaneously downloads high-resolution video and audio streams across parallel workers, then stitches them losslessly via FFmpeg (`-c copy`).
 - **M3U8 / HLS Stream Capture**: Concurrently fetches transport stream segments with in-process AES-128 decryption.
 
 ### ⚡ Intelligent Upfront & Adaptive Wrapper Subsystem
@@ -137,16 +141,31 @@ No. EDM operates 100% locally on your computer. It never communicates with any t
 
 ---
 
+## 🛠️ Building from Source
+
+Prerequisites: **Rust** (stable toolchain), **Node.js** (20+ LTS), and **Visual Studio C++ Build Tools** (Windows SDK).
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/bytebldr/edge-download-manager.git
+cd edge-download-manager
+
+# 2. Build the browser companion extension
+cd extension && npm install && npm run build && cd ..
+
+# 3. Build the desktop UI & run tests
+cd apps/desktop && npm install && npm run build && cd ../..
+cargo test --workspace
+
+# 4. Run the unified release installer build (Windows)
+.\scripts\build-release.ps1
+```
+
+---
+
 ## 📄 License
 
 Edge Download Manager is released under the [**GNU General Public License v3.0 (GPL-3.0)**](LICENSE).
 
----
-
-## 🔏 Code Signing Policy
-
-> **Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).**
-
-Official production releases of Edge Download Manager for Windows are digitally signed to guarantee software integrity and protect users against tampering. All release artifacts are built reproducibly on GitHub Actions from verified source code.
 
 
