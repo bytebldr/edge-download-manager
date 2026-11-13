@@ -165,22 +165,31 @@ export default function SettingsPage({
     }
   };
 
+  // Helper to ensure a Windows known folder path has exactly one trailing \EDM subfolder
+  const ensureSingleEdm = (base: string): string => {
+    if (!base) return "";
+    const normalized = base.replace(/\//g, "\\");
+    const stripped = normalized.replace(/(\\EDM)+$/i, "");
+    return `${stripped}\\EDM`;
+  };
+
   // Legacy path segments that should be migrated to Windows Known Folders
   const LEGACY_PATH_MIGRATIONS: Record<string, (dirs: NonNullable<typeof systemDirsRef.current>) => string> = {
-    "Downloads\\Video":    (d) => `${d.videos}\\EDM`,
-    "Downloads\\Audio":   (d) => `${d.music}\\EDM`,
-    "Downloads\\Music":   (d) => `${d.music}\\EDM`,
-    "Downloads\\Pictures":(d) => `${d.pictures}\\EDM`,
-    "Downloads\\Documents":(d) => `${d.documents}\\EDM`,
+    "Downloads\\Video":    (d) => ensureSingleEdm(d.videos),
+    "Downloads\\Audio":   (d) => ensureSingleEdm(d.music),
+    "Downloads\\Music":   (d) => ensureSingleEdm(d.music),
+    "Downloads\\Pictures":(d) => ensureSingleEdm(d.pictures),
+    "Downloads\\Documents":(d) => ensureSingleEdm(d.documents),
   };
 
   const AUTO_CATEGORY_PATHS = (dirs: NonNullable<typeof systemDirsRef.current>): Record<string, string> => ({
-    music:     `${dirs.music}\\EDM`,
-    pictures:  `${dirs.pictures}\\EDM`,
-    video:     `${dirs.videos}\\EDM`,
+    audio:     ensureSingleEdm(dirs.music),
+    music:     ensureSingleEdm(dirs.music),
+    pictures:  ensureSingleEdm(dirs.pictures),
+    video:     ensureSingleEdm(dirs.videos),
     programs:  `${dirs.downloads}\\Programs`,
     archives:  `${dirs.downloads}\\Archives`,
-    documents: `${dirs.documents}\\EDM`,
+    documents: ensureSingleEdm(dirs.documents),
   });
 
   const handleFolderModeSwitch = async (mode: "auto" | "fixed") => {
@@ -218,11 +227,11 @@ export default function SettingsPage({
 
       let needsSave = false;
       const updatedDownloads = { ...settings.downloads };
-      if (!updatedDownloads.defaultDirectory || updatedDownloads.defaultDirectory.includes("C:\\Users\\Suvesh")) {
+      if (!updatedDownloads.defaultDirectory) {
         updatedDownloads.defaultDirectory = dirs.downloads;
         needsSave = true;
       }
-      if (!updatedDownloads.temporaryDirectory || updatedDownloads.temporaryDirectory.includes("C:\\Users\\Suvesh")) {
+      if (!updatedDownloads.temporaryDirectory) {
         updatedDownloads.temporaryDirectory = dirs.temp || `${dirs.downloads}\\temp`;
         needsSave = true;
       }
@@ -230,24 +239,40 @@ export default function SettingsPage({
       const categoryFolderMap = AUTO_CATEGORY_PATHS(dirs);
 
       const updatedCategories = settings.categories.map((cat) => {
-        const dest = cat.destinationDirectory || "";
-        // 1. Hardcoded user path → migrate
-        if (dest.includes("C:\\Users\\Suvesh")) {
+        let dest = cat.destinationDirectory || "";
+        const catId = cat.id.toLowerCase();
+
+        // 1. Fix duplicate \EDM\EDM occurrences in destination
+        if (dest.includes("\\EDM\\EDM") || dest.includes("/EDM/EDM")) {
+          dest = dest.replace(/([\\/]EDM)+$/gi, "\\EDM");
           needsSave = true;
-          return { ...cat, destinationDirectory: categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}` };
         }
-        // 2. Empty → fill from known-folder map
-        if (!dest) {
+
+        // 2. Audio category in Downloads\Audio -> migrate to Music\EDM
+        if ((catId === "audio" || catId === "music") && (dest.includes("Downloads\\Audio") || dest.includes("Downloads/Audio") || dest.includes("Downloads\\Music") || dest.includes("Downloads/Music"))) {
+          dest = ensureSingleEdm(dirs.music);
           needsSave = true;
-          return { ...cat, destinationDirectory: categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}` };
         }
-        // 3. Legacy Downloads\Video / Downloads\Audio etc. → migrate to proper KF
-        const legacyKey = Object.keys(LEGACY_PATH_MIGRATIONS).find((k) => dest.includes(k));
-        if (legacyKey) {
+
+        // 3. In intelligent categorized mode ("auto"), ensure paths stay strictly mapped to standard folders
+        if (settings.storage.folderMode === "auto" && categoryFolderMap[catId]) {
+          if (dest !== categoryFolderMap[catId]) {
+            dest = categoryFolderMap[catId];
+            needsSave = true;
+          }
+        } else if (!dest) {
+          dest = categoryFolderMap[catId] || `${dirs.downloads}\\${cat.name}`;
           needsSave = true;
-          return { ...cat, destinationDirectory: LEGACY_PATH_MIGRATIONS[legacyKey](dirs) };
+        } else {
+          // Check for legacy migration
+          const legacyKey = Object.keys(LEGACY_PATH_MIGRATIONS).find((k) => dest.includes(k));
+          if (legacyKey) {
+            dest = LEGACY_PATH_MIGRATIONS[legacyKey](dirs);
+            needsSave = true;
+          }
         }
-        return cat;
+
+        return { ...cat, destinationDirectory: dest };
       });
 
       if (needsSave) {

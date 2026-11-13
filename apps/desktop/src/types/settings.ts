@@ -293,18 +293,10 @@ export function loadSettings(): EdmSettings {
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
 
-    // Clean up any stale hardcoded paths from localStorage
-    if (parsed.downloads?.defaultDirectory?.includes("C:\\Users\\Suvesh")) {
-      parsed.downloads.defaultDirectory = "";
-    }
-    if (parsed.downloads?.temporaryDirectory?.includes("C:\\Users\\Suvesh")) {
-      parsed.downloads.temporaryDirectory = "";
-    }
-
     let categories: CategoryRule[] = parsed.categories?.length ? parsed.categories : defaultSettings.categories;
     categories = categories.map((c) => {
-      if (c.destinationDirectory?.includes("C:\\Users\\Suvesh")) {
-        return { ...c, destinationDirectory: "" };
+      if (c.destinationDirectory && (c.destinationDirectory.includes("\\EDM\\EDM") || c.destinationDirectory.includes("/EDM/EDM"))) {
+        return { ...c, destinationDirectory: c.destinationDirectory.replace(/([\\/]EDM)+$/gi, "\\EDM") };
       }
       return c;
     });
