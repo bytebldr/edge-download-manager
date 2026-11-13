@@ -571,10 +571,16 @@ Function .onInit
   ; installs; instead launch the frameless modern setup wizard.
   ; Extracts main binary and essential runtime resources (including
   ; WebView2Loader.dll) to $PLUGINSDIR and hands off to the modern UI.
+  ; Runs for fresh installs, updates, and reinstalls.
   ; ============================================================
   ${IfNot} ${Silent}
   ${AndIf} $PassiveMode <> 1
-  ${AndIf} $UpdateMode <> 1
+    ; Gracefully stop running EDM and NMH processes before extracting/updating
+    nsExec::Exec 'taskkill /F /IM EDM.exe /T'
+    nsExec::Exec 'taskkill /F /IM edm-desktop-app.exe /T'
+    nsExec::Exec 'taskkill /F /IM edm-nmh.exe /T'
+    Sleep 400
+
     InitPluginsDir
     SetOutPath $PLUGINSDIR
     File "${MAINBINARYSRCPATH}"
@@ -781,12 +787,13 @@ Section Install
   WriteRegStr SHCTX "${UNINSTKEY}" "MainBinaryName" "${MAINBINARYNAME}.exe"
 
   ; Registry information for add/remove programs
-  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "${PRODUCTNAME}"
+  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "EDM — Edge Download Manager"
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\""
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "${MANUFACTURER}"
+  WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "bytebldr"
   WriteRegStr SHCTX "${UNINSTKEY}" "InstallLocation" "$\"$INSTDIR$\""
-  WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
+  WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --uninstall"
+  WriteRegStr SHCTX "${UNINSTKEY}" "QuietUninstallString" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --clean-uninstall"
   WriteRegDWORD SHCTX "${UNINSTKEY}" "NoModify" "1"
   WriteRegDWORD SHCTX "${UNINSTKEY}" "NoRepair" "1"
 

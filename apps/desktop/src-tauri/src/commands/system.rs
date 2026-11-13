@@ -142,7 +142,19 @@ fn perform_native_installation_internal(
         }
     }
 
-    // 2. Copy running executable and sibling files to target_dir
+    // 2. Terminate existing background instances of EDM and NMH (excluding our own process)
+    // so destination files are unlocked and not in use
+    let current_pid = std::process::id();
+    let kill_ps = format!(
+        "Get-Process -Name 'EDM','edm-desktop-app','edm-nmh' -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {} }} | Stop-Process -Force",
+        current_pid
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &kill_ps])
+        .output();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // 3. Copy running executable and sibling files to target_dir
     let current_exe =
         std::env::current_exe().map_err(|e| format!("Cannot resolve current exe: {}", e))?;
     let current_dir = current_exe
@@ -190,24 +202,41 @@ fn perform_native_installation_internal(
 
     let edm_exe_str = edm_exe.to_string_lossy().to_string();
 
-    // 3. Desktop shortcut
-    if create_desktop_shortcut {
-        let desktop = std::env::var("USERPROFILE")
-            .map(|p| PathBuf::from(p).join("Desktop").join("EDM.lnk"))
-            .map_err(|e| format!("USERPROFILE not set: {}", e))?;
-
-        let lnk_path = desktop.to_string_lossy().to_string();
+    // 4. Start Menu shortcut (ALWAYS create so EDM appears in Windows Start section)
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let start_menu_dir = PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs");
+        let _ = std::fs::create_dir_all(&start_menu_dir);
+        let start_menu_lnk = start_menu_dir.join("EDM.lnk");
+        let lnk_path = start_menu_lnk.to_string_lossy().to_string();
         let ps_script = format!(
-            r#"$WS = New-Object -ComObject WScript.Shell; $SC = $WS.CreateShortcut('{lnk}'); $SC.TargetPath = '{exe}'; $SC.Save()"#,
+            r#"$WS = New-Object -ComObject WScript.Shell; $SC = $WS.CreateShortcut('{lnk}'); $SC.TargetPath = '{exe}'; $SC.WorkingDirectory = '{workdir}'; $SC.IconLocation = '{exe},0'; $SC.Save()"#,
             lnk = lnk_path.replace('\'', "''"),
             exe = edm_exe_str.replace('\'', "''"),
+            workdir = target_path.to_string_lossy().replace('\'', "''"),
         );
         let _ = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_script])
             .output();
     }
 
-    // 4. Start-on-boot registry entry
+    // 5. Desktop shortcut
+    if create_desktop_shortcut {
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            let desktop = PathBuf::from(userprofile).join("Desktop").join("EDM.lnk");
+            let lnk_path = desktop.to_string_lossy().to_string();
+            let ps_script = format!(
+                r#"$WS = New-Object -ComObject WScript.Shell; $SC = $WS.CreateShortcut('{lnk}'); $SC.TargetPath = '{exe}'; $SC.WorkingDirectory = '{workdir}'; $SC.IconLocation = '{exe},0'; $SC.Save()"#,
+                lnk = lnk_path.replace('\'', "''"),
+                exe = edm_exe_str.replace('\'', "''"),
+                workdir = target_path.to_string_lossy().replace('\'', "''"),
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &ps_script])
+                .output();
+        }
+    }
+
+    // 6. Start-on-boot registry entry
     if start_on_boot {
         if let Ok(key) =
             CURRENT_USER.create(r"Software\Microsoft\Windows\CurrentVersion\Run")
@@ -217,7 +246,7 @@ fn perform_native_installation_internal(
         }
     }
 
-    // 5. Browser integration (Native Messaging Host manifests + registry)
+    // 7. Browser integration (Native Messaging Host manifests + registry)
     if enable_browser_integration {
         let nmh_exe = target_path.join("edm-nmh.exe");
         let nmh_str = nmh_exe.to_string_lossy().to_string();
@@ -287,28 +316,33 @@ fn perform_native_installation_internal(
         }
     }
 
-    // 6. Uninstall registry key
+    // 8. Uninstall registry key with full Windows Settings metadata
+    // Formats: DisplayVersion = "0.0.13", Publisher = "bytebldr", InstallDate = YYYYMMDD
+    // Result in Windows Settings: "0.0.13 | bytebldr | 13-11-2026"
     {
         let uninstall_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM";
         if let Ok(key) = CURRENT_USER.create(uninstall_key) {
             let _ = key.set_string("DisplayName", "EDM — Edge Download Manager");
             let _ = key.set_string("DisplayIcon", &edm_exe_str);
-            let _ = key.set_string("UninstallString", &format!("\"{}\" --clean-uninstall", edm_exe_str));
+            let _ = key.set_string("DisplayVersion", env!("CARGO_PKG_VERSION"));
+            let _ = key.set_string("Publisher", "bytebldr");
+            let now_date = chrono::Local::now().format("%Y%m%d").to_string();
+            let _ = key.set_string("InstallDate", &now_date);
+            let _ = key.set_string("UninstallString", &format!("\"{}\" --uninstall", edm_exe_str));
             let _ = key.set_string("QuietUninstallString", &format!("\"{}\" --clean-uninstall", edm_exe_str));
             let _ = key.set_string("InstallLocation", target_dir);
-            let _ = key.set_string("Publisher", "EDM Project");
             let _ = key.set_u32("NoModify", 1);
             let _ = key.set_u32("NoRepair", 1);
         }
     }
 
-    // 7. Record install dir in EDM software key
+    // 9. Record install dir in EDM software key
     if let Ok(k) = CURRENT_USER.create(r"Software\EDM") {
         let _ = k.set_string("InstallDir", target_dir);
         let _ = k.set_string("AppPath", &edm_exe_str);
     }
 
-    // 8. Spawn installed EDM and exit
+    // 10. Spawn installed EDM and exit installer
     let _ = std::process::Command::new(&edm_exe).spawn();
     std::process::exit(0);
 }
@@ -321,4 +355,171 @@ fn perform_native_installation_internal(
     _enable_browser_integration: bool,
 ) -> Result<(), String> {
     Err("Native installation is only supported on Windows".to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct ExistingInstallationInfo {
+    pub is_installed: bool,
+    pub install_dir: Option<String>,
+    pub version: Option<String>,
+    pub publisher: Option<String>,
+}
+
+#[tauri::command]
+pub fn check_existing_installation() -> ExistingInstallationInfo {
+    #[cfg(windows)]
+    {
+        use std::path::PathBuf;
+        use windows_registry::CURRENT_USER;
+        let mut info = ExistingInstallationInfo {
+            is_installed: false,
+            install_dir: None,
+            version: None,
+            publisher: None,
+        };
+
+        if let Ok(key) = CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM") {
+            info.is_installed = true;
+            if let Ok(v) = key.get_string("DisplayVersion") {
+                info.version = Some(v);
+            }
+            if let Ok(p) = key.get_string("Publisher") {
+                info.publisher = Some(p);
+            }
+            if let Ok(loc) = key.get_string("InstallLocation") {
+                info.install_dir = Some(loc);
+            }
+        }
+
+        if !info.is_installed {
+            if let Ok(key) = CURRENT_USER.open(r"Software\EDM") {
+                if let Ok(dir) = key.get_string("InstallDir") {
+                    info.is_installed = true;
+                    info.install_dir = Some(dir);
+                }
+            }
+        }
+
+        if !info.is_installed {
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                let p = PathBuf::from(local).join("EDM").join("EDM.exe");
+                if p.exists() {
+                    info.is_installed = true;
+                    info.install_dir = Some(p.parent().unwrap().to_string_lossy().to_string());
+                }
+            }
+        }
+
+        info
+    }
+    #[cfg(not(windows))]
+    {
+        ExistingInstallationInfo {
+            is_installed: false,
+            install_dir: None,
+            version: None,
+            publisher: None,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn perform_native_uninstallation(purge_user_data: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        perform_native_uninstallation_internal(purge_user_data)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = purge_user_data;
+        Err("Uninstallation is only supported on Windows".to_string())
+    }
+}
+
+#[cfg(windows)]
+pub fn perform_silent_uninstallation() {
+    let _ = perform_native_uninstallation_internal(false);
+}
+
+#[cfg(windows)]
+fn perform_native_uninstallation_internal(purge_user_data: bool) -> Result<(), String> {
+    use std::path::PathBuf;
+    use windows_registry::CURRENT_USER;
+
+    // 1. Kill other running EDM and NMH processes
+    let current_pid = std::process::id();
+    let kill_ps = format!(
+        "Get-Process -Name 'EDM','edm-desktop-app','edm-nmh' -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {} }} | Stop-Process -Force",
+        current_pid
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &kill_ps])
+        .output();
+
+    // 2. Remove shortcuts
+    if let Ok(desktop_dir) = std::env::var("USERPROFILE") {
+        let lnk = PathBuf::from(desktop_dir).join("Desktop").join("EDM.lnk");
+        let _ = std::fs::remove_file(lnk);
+    }
+    if let Ok(appdata_dir) = std::env::var("APPDATA") {
+        let lnk = PathBuf::from(appdata_dir).join(r"Microsoft\Windows\Start Menu\Programs\EDM.lnk");
+        let _ = std::fs::remove_file(lnk);
+    }
+
+    // 3. Remove Registry Keys
+    let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM");
+    if let Ok(run_key) = CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Run") {
+        let _ = run_key.remove_value("EDM");
+    }
+    let _ = CURRENT_USER.remove_tree(r"Software\EDM");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\magnet");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\.torrent");
+    let _ = CURRENT_USER.remove_tree(r"Software\Classes\EDM.TorrentFile");
+    let _ = CURRENT_USER.remove_tree(r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh");
+    let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh");
+    let _ = CURRENT_USER.remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
+    let _ = CURRENT_USER.remove_tree(r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh");
+
+    // 4. Resolve install directory to delete
+    let mut target_dir: Option<PathBuf> = None;
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            let p_str = parent.to_string_lossy().to_lowercase();
+            if !p_str.contains("temp") && !p_str.contains("target\\release") && !p_str.contains("target\\debug") {
+                target_dir = Some(parent.to_path_buf());
+            }
+        }
+    }
+    if target_dir.is_none() {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let p = PathBuf::from(local).join("EDM");
+            if p.exists() {
+                target_dir = Some(p);
+            }
+        }
+    }
+
+    // 5. Spawn background detached PowerShell script to remove files after this process terminates
+    let target_str = target_dir
+        .as_ref()
+        .map(|p| p.to_string_lossy().replace('\'', "''"))
+        .unwrap_or_default();
+
+    let purge_clause = if purge_user_data {
+        "if (Test-Path $localAppData) { Remove-Item -LiteralPath $localAppData -Recurse -Force -ErrorAction SilentlyContinue }; if (Test-Path $localDesktop) { Remove-Item -LiteralPath $localDesktop -Recurse -Force -ErrorAction SilentlyContinue }"
+    } else {
+        ""
+    };
+
+    let cleanup_script = format!(
+        "Start-Sleep -Seconds 1; Stop-Process -Name 'EDM','edm-desktop-app','edm-nmh' -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; if ('{target}' -ne '' -and (Test-Path '{target}')) {{ Remove-Item -LiteralPath '{target}' -Recurse -Force -ErrorAction SilentlyContinue }}; $localAppData = Join-Path $env:LOCALAPPDATA 'EDM'; $localDesktop = Join-Path $env:LOCALAPPDATA 'com.edm.desktop'; {purge}",
+        target = target_str,
+        purge = purge_clause
+    );
+
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cleanup_script])
+        .spawn();
+
+    Ok(())
 }

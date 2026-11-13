@@ -1026,4 +1026,45 @@ export async function tauriPerformNativeInstallation(opts: {
   // No-op in browser/dev mode — wizard transitions to "done" anyway.
 }
 
+export interface ExistingInstallationInfo {
+  is_installed: boolean;
+  install_dir: string | null;
+  version: string | null;
+  publisher: string | null;
+}
+
+export async function tauriCheckExistingInstallation(): Promise<ExistingInstallationInfo> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return await invoke<ExistingInstallationInfo>("check_existing_installation");
+    } catch (err) {
+      console.warn("Tauri check_existing_installation failed:", err);
+    }
+  }
+  return {
+    is_installed: false,
+    install_dir: null,
+    version: null,
+    publisher: null,
+  };
+}
+
+/**
+ * Invokes the Rust `perform_native_uninstallation` command.
+ * Removes shortcuts, registry entries, and terminates background files.
+ */
+export async function tauriPerformNativeUninstallation(opts: {
+  purgeUserData: boolean;
+}): Promise<void> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("perform_native_uninstallation", {
+      purgeUserData: opts.purgeUserData,
+    });
+    return;
+  }
+  await new Promise((r) => setTimeout(r, 800));
+}
+
 

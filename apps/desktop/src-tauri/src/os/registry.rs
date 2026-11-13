@@ -228,6 +228,10 @@ pub fn set_app_user_model_id() {}
 #[cfg(windows)]
 pub fn purge_all_user_data() {
     use windows_registry::CURRENT_USER;
+    let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM");
+    if let Ok(run_key) = CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Run") {
+        let _ = run_key.remove_value("EDM");
+    }
     let _ = CURRENT_USER.remove_tree(r"Software\EDM");
     let _ = CURRENT_USER.remove_tree(r"Software\Classes\magnet");
     let _ = CURRENT_USER.remove_tree(r"Software\Classes\.torrent");
@@ -238,11 +242,17 @@ pub fn purge_all_user_data() {
         .remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh");
 
+    if let Ok(desktop_dir) = std::env::var("USERPROFILE") {
+        let lnk = PathBuf::from(desktop_dir).join("Desktop").join("EDM.lnk");
+        let _ = std::fs::remove_file(lnk);
+    }
+    if let Ok(appdata_dir) = std::env::var("APPDATA") {
+        let lnk = PathBuf::from(&appdata_dir).join(r"Microsoft\Windows\Start Menu\Programs\EDM.lnk");
+        let _ = std::fs::remove_file(lnk);
+        let _ = std::fs::remove_dir_all(PathBuf::from(&appdata_dir).join("EDM"));
+    }
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         let _ = std::fs::remove_dir_all(PathBuf::from(&local).join("EDM"));
         let _ = std::fs::remove_dir_all(PathBuf::from(&local).join("com.edm.desktop"));
-    }
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        let _ = std::fs::remove_dir_all(PathBuf::from(&appdata).join("EDM"));
     }
 }

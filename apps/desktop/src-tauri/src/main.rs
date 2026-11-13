@@ -84,10 +84,10 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args
         .iter()
-        .any(|a| a == "--clean-uninstall" || a == "--purge-data")
+        .any(|a| a == "--clean-uninstall" || a == "--purge-data" || a == "/S")
     {
         #[cfg(windows)]
-        purge_all_user_data();
+        crate::commands::system::perform_silent_uninstallation();
         return;
     }
 
@@ -548,6 +548,7 @@ fn main() {
             let is_background_boot = args.iter().any(|arg| arg == "--background" || arg == "--listener-only");
             let show_window = args.iter().any(|arg| arg == "--show-window");
             let is_setup_mode = args.iter().any(|arg| arg == "--setup");
+            let is_uninstall_mode = args.iter().any(|arg| arg == "--uninstall" || arg == "-uninstall");
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) =
@@ -567,6 +568,17 @@ fn main() {
                     let _ = window.show();
                     let _ = window.eval("window.location.hash = '#setup'");
                     tracing::info!("EDM launched in installer setup mode (--setup)");
+                } else if is_uninstall_mode {
+                    // Custom Uninstaller wizard mode: fixed 680×440 non-resizable, centred, navigate to #uninstall
+                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 680.0,
+                        height: 440.0,
+                    }));
+                    let _ = window.set_resizable(false);
+                    let _ = window.center();
+                    let _ = window.show();
+                    let _ = window.eval("window.location.hash = '#uninstall'");
+                    tracing::info!("EDM launched in custom uninstaller wizard mode (--uninstall)");
                 } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
                         "EDM started in background mode; destroying window to minimize memory footprint"
@@ -585,102 +597,139 @@ fn main() {
 
             handle_cli_arguments(&app.handle().clone(), &args);
 
-            // Tray Icon Setup
-            let open_i = MenuItem::with_id(app, "open", "Open EDM", true, None::<&str>)?;
-            let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause all", true, None::<&str>)?;
-            let resume_all_i =
-                MenuItem::with_id(app, "resume_all", "Resume all", true, None::<&str>)?;
-            let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            // Tray Icon Setup (only in normal app mode, NOT in setup or uninstaller mode)
+            if !is_setup_mode && !is_uninstall_mode {
+                let open_i = MenuItem::with_id(app, "open", "Open EDM", true, None::<&str>)?;
+                let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause all", true, None::<&str>)?;
+                let resume_all_i =
+                    MenuItem::with_id(app, "resume_all", "Resume all", true, None::<&str>)?;
+                let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+                let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            let tray_menu = Menu::with_items(
-                app,
-                &[&open_i, &pause_all_i, &resume_all_i, &settings_i, &quit_i],
-            )?;
+                let tray_menu = Menu::with_items(
+                    app,
+                    &[&open_i, &pause_all_i, &resume_all_i, &settings_i, &quit_i],
+                )?;
 
-            let tray_icon_bytes = include_bytes!("../icons/icon.ico");
-            let icon_img = tauri::image::Image::from_bytes(tray_icon_bytes).map_err(|e| {
-                tauri::Error::Anyhow(anyhow::anyhow!("Failed to parse icon.ico: {}", e))
-            })?;
+                let tray_icon_bytes = include_bytes!("../icons/icon.ico");
+                let icon_img = tauri::image::Image::from_bytes(tray_icon_bytes).map_err(|e| {
+                    tauri::Error::Anyhow(anyhow::anyhow!("Failed to parse icon.ico: {}", e))
+                })?;
 
-            let tray = TrayIconBuilder::new()
-                .icon(icon_img)
-                .tooltip("EDM — Edge Download Manager")
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(move |app, event| match event.id.as_ref() {
-                    "open" => {
-                        let state = app.state::<AppState>();
-                        let lc = state.lifecycle.clone();
-                        state.rt_handle.spawn(async move {
-                            lc.record_wake(true).await;
-                        });
-                    }
-                    "pause_all" => {
-                        let state = app.state::<AppState>();
-                        let tasks = state.tasks.lock().unwrap();
-                        for handle in tasks.values() {
-                            handle.cancelled.store(true, Ordering::SeqCst);
+                let tray = TrayIconBuilder::new()
+                    .icon(icon_img)
+                    .tooltip("EDM — Edge Download Manager")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "open" => {
+                            let state = app.state::<AppState>();
+                            let lc = state.lifecycle.clone();
+                            state.rt_handle.spawn(async move {
+                                lc.record_wake(true).await;
+                            });
                         }
-                    }
-                    "resume_all" => {
-                        let state = app.state::<AppState>();
-                        if let Ok(records) = state.store.list_all_downloads() {
-                            for r in records {
-                                if r.state == DownloadState::Paused {
-                                    let _ = execute_download(
-                                        &state,
-                                        r.id,
-                                        r.url,
-                                        Some(r.filename),
-                                        Some(PathBuf::from(r.save_dir)),
-                                        Some(r.connections),
-                                        r.size_total,
-                                        None,
-                                        r.referer,
-                                        r.user_agent,
-                                    );
-                                    let _ = state.store.update_download_state(
-                                        r.id,
-                                        DownloadState::Downloading,
-                                        None,
-                                    );
+                        "pause_all" => {
+                            let state = app.state::<AppState>();
+                            let tasks = state.tasks.lock().unwrap();
+                            for handle in tasks.values() {
+                                handle.cancelled.store(true, Ordering::SeqCst);
+                            }
+                        }
+                        "resume_all" => {
+                            let state = app.state::<AppState>();
+                            if let Ok(records) = state.store.list_all_downloads() {
+                                for r in records {
+                                    if r.state == DownloadState::Paused {
+                                        let _ = execute_download(
+                                            &state,
+                                            r.id,
+                                            r.url,
+                                            Some(r.filename),
+                                            Some(PathBuf::from(r.save_dir)),
+                                            Some(r.connections),
+                                            r.size_total,
+                                            None,
+                                            r.referer,
+                                            r.user_agent,
+                                        );
+                                        let _ = state.store.update_download_state(
+                                            r.id,
+                                            DownloadState::Downloading,
+                                            None,
+                                        );
+                                    }
                                 }
                             }
                         }
-                    }
-                    "settings" => {
-                        let state = app.state::<AppState>();
-                        let lc = state.lifecycle.clone();
-                        state.rt_handle.spawn(async move {
-                            lc.record_wake(true).await;
-                        });
-                    }
-                    "quit" => {
-                        let state = app.state::<AppState>();
-                        trigger_graceful_quit(app.clone(), state.inner().clone());
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let state = tray.app_handle().state::<AppState>();
-                        let lc = state.lifecycle.clone();
-                        state.rt_handle.spawn(async move {
-                            lc.record_wake(true).await;
-                        });
-                    }
-                })
-                .build(app)?;
+                        "settings" => {
+                            let state = app.state::<AppState>();
+                            let lc = state.lifecycle.clone();
+                            state.rt_handle.spawn(async move {
+                                lc.record_wake(true).await;
+                            });
+                        }
+                        "quit" => {
+                            let state = app.state::<AppState>();
+                            trigger_graceful_quit(app.clone(), state.inner().clone());
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let state = tray.app_handle().state::<AppState>();
+                            let lc = state.lifecycle.clone();
+                            state.rt_handle.spawn(async move {
+                                lc.record_wake(true).await;
+                            });
+                        }
+                    })
+                    .build(app)?;
 
-            let app_state_ref = app.state::<AppState>();
-            *app_state_ref.tray_handle.lock().unwrap() = Some(tray.clone());
-            *app_state_ref.app_handle.lock().unwrap() = Some(app.handle().clone());
+                *app_state_ref.tray_handle.lock().unwrap() = Some(tray.clone());
+                *app_state_ref.app_handle.lock().unwrap() = Some(app.handle().clone());
+
+                // Background dynamic tray tooltip ticker (every 1 second)
+                let ticker_tasks = app_state_ref.tasks.clone();
+                let ticker_tray = tray.clone();
+                app_state_ref.rt_handle.spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                    loop {
+                        interval.tick().await;
+                        let (active_count, agg_bps) = {
+                            let mut count = 0;
+                            let mut speed = 0u64;
+                            if let Ok(tasks) = ticker_tasks.lock() {
+                                for h in tasks.values() {
+                                    if !h.cancelled.load(Ordering::Relaxed) {
+                                        count += 1;
+                                        if let Ok(lock) = h.telemetry.lock() {
+                                            if let Some(ref telem) = *lock {
+                                                speed += telem.rolling_throughput_bps;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            (count, speed)
+                        };
+
+                        let tooltip = if active_count == 0 {
+                            "EDM — All downloads complete".to_string()
+                        } else {
+                            let mbps = (agg_bps as f64) / (1024.0 * 1024.0);
+                            format!("EDM — {} downloading ({:.1} MB/s)", active_count, mbps)
+                        };
+
+                        let _ = ticker_tray.set_tooltip(Some(tooltip));
+                    }
+                });
+            }
 
             // Initialize theme and palette in ws_manager from store
             if let Ok(Some(settings_str)) = app_state_ref.store.get_setting("app_settings") {
@@ -701,42 +750,6 @@ fn main() {
                     });
                 }
             }
-
-            // Background dynamic tray tooltip ticker (every 1 second)
-            let ticker_tasks = app_state_ref.tasks.clone();
-            let ticker_tray = tray.clone();
-            app_state_ref.rt_handle.spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-                loop {
-                    interval.tick().await;
-                    let (active_count, agg_bps) = {
-                        let mut count = 0;
-                        let mut speed = 0u64;
-                        if let Ok(tasks) = ticker_tasks.lock() {
-                            for h in tasks.values() {
-                                if !h.cancelled.load(Ordering::Relaxed) {
-                                    count += 1;
-                                    if let Ok(lock) = h.telemetry.lock() {
-                                        if let Some(ref telem) = *lock {
-                                            speed += telem.rolling_throughput_bps;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        (count, speed)
-                    };
-
-                    let tooltip = if active_count == 0 {
-                        "EDM — All downloads complete".to_string()
-                    } else {
-                        let mbps = (agg_bps as f64) / (1024.0 * 1024.0);
-                        format!("EDM — {} downloading ({:.1} MB/s)", active_count, mbps)
-                    };
-
-                    let _ = ticker_tray.set_tooltip(Some(tooltip));
-                }
-            });
 
             Ok(())
         })
@@ -798,12 +811,18 @@ fn main() {
             get_power_countdown_status,
             probe_media_page,
             get_default_install_dir,
-            perform_native_installation
+            perform_native_installation,
+            check_existing_installation,
+            perform_native_uninstallation
         ])
         .build(tauri::generate_context!())
         .expect("error while building EDM desktop application")
         .run(|_app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let args: Vec<String> = std::env::args().collect();
+                if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall") {
+                    return;
+                }
                 api.prevent_exit();
             }
         });

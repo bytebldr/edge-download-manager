@@ -27,6 +27,11 @@ pub async fn app_close(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall") {
+        std::process::exit(0);
+    }
+
     let close_to_tray = if let Ok(Some(json_str)) = state.store.get_setting("app_settings") {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
             val.get("general")

@@ -14,6 +14,7 @@ import {
   tauriStartDragging,
   tauriPerformNativeInstallation,
   tauriGetDefaultInstallDir,
+  tauriCheckExistingInstallation,
 } from "../services/tauriBridge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -33,17 +34,31 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
   const [startOnBoot, setStartOnBoot] = useState(true);
   const [browserIntegration, setBrowserIntegration] = useState(true);
   const [phase, setPhase] = useState<InstallPhase>("config");
+  const [isUpdate, setIsUpdate] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Preparing...");
 
-  // Resolve default install path from native backend on mount
+  // Resolve install path and check existing installation on mount
   useEffect(() => {
-    tauriGetDefaultInstallDir().then((dir) => {
-      if (dir) {
-        setInstallPath(dir);
-      } else {
-        setInstallPath("C:\\Users\\" + (window.location.pathname.split("/")[2] || "User") + "\\AppData\\Local\\EDM");
+    tauriCheckExistingInstallation().then((info) => {
+      if (info.is_installed) {
+        setIsUpdate(true);
+        if (info.install_dir) {
+          setInstallPath(info.install_dir);
+          return;
+        }
       }
+      tauriGetDefaultInstallDir().then((dir) => {
+        if (dir) {
+          setInstallPath(dir);
+        } else {
+          setInstallPath(
+            "C:\\Users\\" +
+              (window.location.pathname.split("/")[2] || "User") +
+              "\\AppData\\Local\\EDM"
+          );
+        }
+      });
     });
   }, []);
 
@@ -236,11 +251,25 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
             <>
               <div className="mb-6">
                 <h2 className="text-[17px] font-bold text-white tracking-tight mb-1">
-                  Welcome to EDM Setup
+                  {isUpdate ? "Welcome to EDM Update" : "Welcome to EDM Setup"}
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
-                  Configure installation settings
+                  {isUpdate
+                    ? "Update or repair your installation to v0.0.13"
+                    : "Configure installation settings"}
                 </p>
+                {isUpdate && (
+                  <div
+                    className="mt-2.5 px-3 py-1.5 rounded-lg text-[11px] text-[#A78BFA] flex items-center gap-2"
+                    style={{
+                      background: "rgba(139,92,246,0.1)",
+                      border: "1px solid rgba(139,92,246,0.25)",
+                    }}
+                  >
+                    <span>✦</span>
+                    <span>Existing installation detected. All settings and history will be preserved.</span>
+                  </div>
+                )}
               </div>
 
               {/* Destination directory */}
@@ -428,7 +457,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                     e.currentTarget.style.transform = "translateY(-1px)";
                   }}
                 >
-                  Install Now
+                  {isUpdate ? "Update Now" : "Install Now"}
                 </button>
               </div>
             </>
@@ -439,10 +468,10 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
             <div className="flex flex-col h-full justify-center">
               <div className="mb-6">
                 <h2 className="text-[17px] font-bold text-white tracking-tight mb-1">
-                  Installing EDM
+                  {isUpdate ? "Updating EDM" : "Installing EDM"}
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
-                  Please wait while EDM is being set up…
+                  {isUpdate ? "Please wait while EDM is being updated…" : "Please wait while EDM is being set up…"}
                 </p>
               </div>
 
@@ -530,10 +559,10 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                   </svg>
                 </div>
                 <h2 className="text-[17px] font-bold text-white tracking-tight mb-1">
-                  Installation Complete
+                  {isUpdate ? "Update Complete" : "Installation Complete"}
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
-                  EDM has been installed to{" "}
+                  {isUpdate ? "EDM has been successfully updated to v0.0.13 at " : "EDM has been installed to "}
                   <span className="text-[#9CA3AF] font-mono text-[11px]">
                     {installPath}
                   </span>
