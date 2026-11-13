@@ -523,34 +523,63 @@ export default function App() {
 
     tauriGetSystemUserDirs().then((dirs) => {
       if (!dirs) return;
+      const ensureSingleEdm = (base: string): string => {
+        if (!base) return "";
+        const normalized = base.replace(/\//g, "\\");
+        const stripped = normalized.replace(/(\\EDM)+$/i, "");
+        return `${stripped}\\EDM`;
+      };
+
+      const categoryFolderMap: Record<string, string> = {
+        audio: ensureSingleEdm(dirs.music),
+        music: ensureSingleEdm(dirs.music),
+        video: ensureSingleEdm(dirs.videos),
+        pictures: ensureSingleEdm(dirs.pictures),
+        documents: ensureSingleEdm(dirs.documents),
+        programs: `${dirs.downloads}\\Programs`,
+        archives: `${dirs.downloads}\\Archives`,
+      };
+
       setSettings((current) => {
         let changed = false;
         const downloads = { ...current.downloads };
-        if (!downloads.defaultDirectory || downloads.defaultDirectory.includes("C:\\Users\\Suvesh")) {
+        if (!downloads.defaultDirectory) {
           downloads.defaultDirectory = dirs.downloads;
           changed = true;
         }
-        if (!downloads.temporaryDirectory || downloads.temporaryDirectory.includes("C:\\Users\\Suvesh")) {
+        if (!downloads.temporaryDirectory) {
           downloads.temporaryDirectory = dirs.temp || `${dirs.downloads}\\temp`;
           changed = true;
         }
-        const categoryFolderMap: Record<string, string> = {
-          programs: `${dirs.downloads}\\Programs`,
-          video: `${dirs.downloads}\\Video`,
-          audio: `${dirs.downloads}\\Audio`,
-          pictures: `${dirs.downloads}\\Pictures`,
-          documents: `${dirs.downloads}\\Documents`,
-          archives: `${dirs.downloads}\\Archives`,
-        };
+
         const categories = current.categories.map((c) => {
-          if (!c.destinationDirectory || c.destinationDirectory.includes("C:\\Users\\Suvesh")) {
+          let dest = c.destinationDirectory || "";
+          const catId = c.id.toLowerCase();
+
+          // 1. Fix duplicate \EDM\EDM occurrences
+          if (dest.includes("\\EDM\\EDM") || dest.includes("/EDM/EDM")) {
+            dest = dest.replace(/([\\/]EDM)+$/gi, "\\EDM");
             changed = true;
-            return {
-              ...c,
-              destinationDirectory: categoryFolderMap[c.id.toLowerCase()] || `${dirs.downloads}\\${c.name}`,
-            };
           }
-          return c;
+
+          // 2. Audio in Downloads -> migrate to Music\EDM
+          if ((catId === "audio" || catId === "music") && (dest.includes("Downloads\\Audio") || dest.includes("Downloads/Audio") || dest.includes("Downloads\\Music") || dest.includes("Downloads/Music"))) {
+            dest = ensureSingleEdm(dirs.music);
+            changed = true;
+          }
+
+          // 3. In intelligent categorized mode ("auto"), ensure paths stay strictly mapped to standard folders
+          if (current.storage.folderMode === "auto" && categoryFolderMap[catId]) {
+            if (dest !== categoryFolderMap[catId]) {
+              dest = categoryFolderMap[catId];
+              changed = true;
+            }
+          } else if (!dest) {
+            dest = categoryFolderMap[catId] || `${dirs.downloads}\\${c.name}`;
+            changed = true;
+          }
+
+          return { ...c, destinationDirectory: dest };
         });
 
         if (changed) {
@@ -774,8 +803,29 @@ export default function App() {
     }
 
     const conns = customConns || settings.downloads.maxConnectionsPerFile || 8;
-    const targetDir = (customSaveDir && customSaveDir.trim()) || settings.downloads.defaultDirectory;
     const finalCategory = (customCategory && customCategory !== "auto") ? (customCategory as DownloadItem["category"]) : categoryName;
+
+    // Intelligent Categorization: if user didn't explicitly pick a custom save directory,
+    // route into the matching category's destinationDirectory!
+    let targetDir = (customSaveDir && customSaveDir.trim()) || "";
+    if (!targetDir || targetDir === settings.downloads.defaultDirectory) {
+      if (settings.storage.folderMode === "auto") {
+        const catRule = settings.categories.find((c) =>
+          c.enabled && (
+            c.name.toLowerCase() === finalCategory.toLowerCase() ||
+            c.id.toLowerCase() === finalCategory.toLowerCase() ||
+            (finalCategory === "Compressed" && (c.id === "archives" || c.name === "Archives")) ||
+            (finalCategory === "Music" && (c.id === "audio" || c.name === "Audio"))
+          )
+        );
+        if (catRule && catRule.destinationDirectory) {
+          targetDir = catRule.destinationDirectory;
+        }
+      }
+    }
+    if (!targetDir) {
+      targetDir = settings.downloads.defaultDirectory;
+    }
 
     const backendRes = await tauriStartDownload({
       url: targetUrl,

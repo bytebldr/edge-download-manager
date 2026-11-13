@@ -335,6 +335,12 @@ export function saveSettings(settings: EdmSettings): void {
     document.documentElement.setAttribute("data-mode", settings.general.theme === "system" ? "dark" : settings.general.theme);
     document.documentElement.setAttribute("data-palette", settings.general.palette);
     document.documentElement.setAttribute("data-theme", settings.general.theme === "system" ? "dark" : settings.general.theme);
+    // Sync to native backend store
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      import("../services/tauriBridge").then(({ tauriSaveSettings }) => {
+        tauriSaveSettings(settings).catch(() => {});
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error("Failed to save settings", err);
   }

@@ -31,10 +31,41 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     finalUrl: string;
   } | null>(null);
 
+  const detectCategoryName = (fname: string): string => {
+    const ext = fname.split(".").pop()?.toLowerCase() || "";
+    if (["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv"].includes(ext)) return "Video";
+    if (["mp3", "flac", "wav", "aac", "ogg", "m4a"].includes(ext)) return "Music";
+    if (["zip", "rar", "7z", "tar", "gz", "iso", "bin"].includes(ext)) return "Compressed";
+    if (["pdf", "doc", "docx", "txt", "xlsx", "pptx"].includes(ext)) return "Documents";
+    if (["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif"].includes(ext)) return "Pictures";
+    const matched = settings.categories.find((c) => c.enabled && c.extensions.includes(ext));
+    return matched ? matched.name : "Programs";
+  };
+
+  const effectiveCategory = addCategory === "auto" ? detectCategoryName(fileNameInput || urlInput) : addCategory;
+
+  const getAutoDestination = (catName: string): string => {
+    if (settings.storage.folderMode === "auto") {
+      const cat = settings.categories.find(
+        (c) =>
+          c.enabled &&
+          (c.name.toLowerCase() === catName.toLowerCase() ||
+            c.id.toLowerCase() === catName.toLowerCase() ||
+            (catName === "Compressed" && (c.id === "archives" || c.name === "Archives")) ||
+            (catName === "Music" && (c.id === "audio" || c.name === "Audio")))
+      );
+      if (cat?.destinationDirectory) return cat.destinationDirectory;
+    }
+    return settings.downloads.defaultDirectory;
+  };
+
+  const currentDestination = addSaveDir || getAutoDestination(effectiveCategory);
+
   const resetState = () => {
     setUrlInput("");
     setFileNameInput("");
     setProbeResult(null);
+    setAddSaveDir("");
     onClose();
   };
 
@@ -95,8 +126,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   const handleBrowseAddDir = async () => {
     try {
-      const currentDir = addSaveDir || settings.downloads.defaultDirectory;
-      const chosen = await tauriSelectDownloadDirectory(currentDir);
+      const chosen = await tauriSelectDownloadDirectory(currentDestination);
       if (chosen) {
         setAddSaveDir(chosen);
       }
@@ -124,9 +154,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     onAdd(
       urlInput.trim(),
       fileNameInput.trim(),
-      addCategory,
+      effectiveCategory,
       addConnections,
-      addSaveDir || settings.downloads.defaultDirectory
+      currentDestination
     );
     resetState();
   };
@@ -260,7 +290,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    value={addSaveDir || settings.downloads.defaultDirectory}
+                    value={currentDestination}
                     onChange={(e) => setAddSaveDir(e.target.value)}
                     className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] font-mono"
                   />

@@ -68,11 +68,88 @@ pub fn execute_download(
     };
     let clean_name = edm_core::sanitizer::Sanitizer::sanitize_filename(&raw_name);
 
-    let save_path = save_dir.unwrap_or_else(|| {
-        std::env::var("USERPROFILE")
-            .map(|p| PathBuf::from(p).join("Downloads"))
-            .unwrap_or_else(|_| std::env::temp_dir())
-    });
+    let default_downloads_path = std::env::var("USERPROFILE")
+        .map(|p| PathBuf::from(p).join("Downloads"))
+        .unwrap_or_else(|_| std::env::temp_dir());
+
+    let mut save_path = save_dir.clone().unwrap_or_else(|| default_downloads_path.clone());
+
+    // Intelligent Categorization routing:
+    // If save_dir is None or matches the default Downloads root, route into category folder
+    let ext = clean_name
+        .split('.')
+        .next_back()
+        .unwrap_or("")
+        .to_lowercase();
+
+    if save_dir.is_none() || save_path == default_downloads_path {
+        let mut routed_path: Option<PathBuf> = None;
+
+        if let Ok(Some(json_str)) = state.store.get_setting("app_settings") {
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                let is_auto = settings
+                    .get("storage")
+                    .and_then(|s| s.get("folderMode"))
+                    .and_then(|m| m.as_str())
+                    .map(|m| m == "auto")
+                    .unwrap_or(true);
+
+                if is_auto {
+                    if let Some(cats) = settings.get("categories").and_then(|c| c.as_array()) {
+                        for cat in cats {
+                            let enabled = cat.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                            if !enabled {
+                                continue;
+                            }
+                            let matches = cat
+                                .get("extensions")
+                                .and_then(|exts| exts.as_array())
+                                .map(|arr| {
+                                    arr.iter().any(|e| {
+                                        e.as_str()
+                                            .map(|s| s.trim_start_matches('.').eq_ignore_ascii_case(&ext))
+                                            .unwrap_or(false)
+                                    })
+                                })
+                                .unwrap_or(false);
+
+                            if matches {
+                                if let Some(dest) = cat.get("destinationDirectory").and_then(|d| d.as_str()) {
+                                    if !dest.trim().is_empty() {
+                                        routed_path = Some(PathBuf::from(dest.trim()));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to standard user directories if app_settings did not specify a category path
+        if routed_path.is_none() {
+            let dirs = crate::os::get_system_user_dirs_internal();
+            if ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.videos));
+            } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.music));
+            } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.pictures));
+            } else if ["pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.documents));
+            } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.downloads).join("Archives"));
+            } else if ["exe", "msi", "apk", "bat", "cmd", "ps1", "appx", "msix"].contains(&ext.as_str()) {
+                routed_path = Some(PathBuf::from(dirs.downloads).join("Programs"));
+            }
+        }
+
+        if let Some(target) = routed_path {
+            let _ = std::fs::create_dir_all(&target);
+            save_path = target;
+        }
+    }
 
     // Security Guard: Prevent writing to sensitive system directories or Startup folders
     let path_str = save_path.to_string_lossy().to_lowercase();
