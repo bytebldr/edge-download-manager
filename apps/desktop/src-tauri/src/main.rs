@@ -797,6 +797,7 @@ fn main() {
             cancel_power_countdown,
             get_power_countdown_status,
             probe_media_page,
+            get_default_install_dir,
             perform_native_installation
         ])
         .build(tauri::generate_context!())

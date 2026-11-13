@@ -74,6 +74,20 @@ pub fn get_disk_free_space(path: Option<String>) -> Result<serde_json::Value, St
 }
 
 #[command]
+pub fn get_default_install_dir() -> String {
+    #[cfg(windows)]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            return format!("{}\\EDM", local);
+        }
+        if let Ok(user) = std::env::var("USERPROFILE") {
+            return format!("{}\\AppData\\Local\\EDM", user);
+        }
+    }
+    std::env::temp_dir().join("EDM").to_string_lossy().to_string()
+}
+
+#[command]
 pub async fn perform_native_installation(
     target_dir: String,
     create_desktop_shortcut: bool,
@@ -104,9 +118,29 @@ fn perform_native_installation_internal(
 
     let target_path = PathBuf::from(target_dir);
 
-    // 1. Create target directory
-    std::fs::create_dir_all(&target_path)
-        .map_err(|e| format!("Failed to create target directory: {}", e))?;
+    // 1. Create target directory (with UAC elevation fallback if permission denied)
+    if let Err(e) = std::fs::create_dir_all(&target_path) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(5) {
+            let escaped_target = target_path.to_string_lossy().replace('\'', "''");
+            let ps_elevate = format!(
+                "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command New-Item -ItemType Directory -Force -Path ''{}'''",
+                escaped_target
+            );
+            let status = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &ps_elevate])
+                .status()
+                .map_err(|se| format!("Failed to request administrator permissions: {}", se))?;
+
+            if !status.success() || !target_path.exists() {
+                return Err(format!(
+                    "Administrator privileges are required to install to '{}'. Please accept the UAC prompt or choose a user directory (e.g. %LOCALAPPDATA%\\EDM).",
+                    target_dir
+                ));
+            }
+        } else {
+            return Err(format!("Failed to create target directory: {}", e));
+        }
+    }
 
     // 2. Copy running executable and sibling files to target_dir
     let current_exe =
@@ -115,17 +149,33 @@ fn perform_native_installation_internal(
         .parent()
         .ok_or("Cannot resolve current exe directory")?;
 
-    // Copy every file from the running exe's directory to target_dir
+    let mut needs_elevated_copy = false;
     if let Ok(entries) = std::fs::read_dir(current_dir) {
         for entry in entries.flatten() {
             let src = entry.path();
             if src.is_file() {
                 let dst = target_path.join(entry.file_name());
                 if let Err(e) = std::fs::copy(&src, &dst) {
-                    tracing::warn!("Installer: could not copy {:?} → {:?}: {}", src, dst, e);
+                    if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(5) {
+                        needs_elevated_copy = true;
+                    } else {
+                        tracing::warn!("Installer: could not copy {:?} → {:?}: {}", src, dst, e);
+                    }
                 }
             }
         }
+    }
+
+    if needs_elevated_copy {
+        let escaped_src = current_dir.to_string_lossy().replace('\'', "''");
+        let escaped_target = target_path.to_string_lossy().replace('\'', "''");
+        let ps_copy_elevated = format!(
+            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command Copy-Item -Path ''{}\\*'' -Destination ''{}'' -Recurse -Force'",
+            escaped_src, escaped_target
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps_copy_elevated])
+            .status();
     }
 
     let edm_exe = target_path.join("EDM.exe");
@@ -191,10 +241,32 @@ fn perform_native_installation_internal(
         let firefox_manifest_path = target_path.join("com.edm.nmh.firefox.json");
 
         if let Ok(content) = serde_json::to_string_pretty(&chromium_manifest) {
-            let _ = std::fs::write(&chromium_manifest_path, &content);
+            if let Err(_) = std::fs::write(&chromium_manifest_path, &content) {
+                let temp_m = std::env::temp_dir().join("com.edm.nmh.json");
+                if std::fs::write(&temp_m, &content).is_ok() {
+                    let _ = std::process::Command::new("powershell")
+                        .args(["-NoProfile", "-Command", &format!(
+                            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command Copy-Item -Path ''{}'' -Destination ''{}'' -Force'",
+                            temp_m.to_string_lossy().replace('\'', "''"),
+                            chromium_manifest_path.to_string_lossy().replace('\'', "''")
+                        )])
+                        .status();
+                }
+            }
         }
         if let Ok(content) = serde_json::to_string_pretty(&firefox_manifest) {
-            let _ = std::fs::write(&firefox_manifest_path, &content);
+            if let Err(_) = std::fs::write(&firefox_manifest_path, &content) {
+                let temp_m = std::env::temp_dir().join("com.edm.nmh.firefox.json");
+                if std::fs::write(&temp_m, &content).is_ok() {
+                    let _ = std::process::Command::new("powershell")
+                        .args(["-NoProfile", "-Command", &format!(
+                            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command Copy-Item -Path ''{}'' -Destination ''{}'' -Force'",
+                            temp_m.to_string_lossy().replace('\'', "''"),
+                            firefox_manifest_path.to_string_lossy().replace('\'', "''")
+                        )])
+                        .status();
+                }
+            }
         }
 
         let chromium_manifest_str = chromium_manifest_path.to_string_lossy().to_string();

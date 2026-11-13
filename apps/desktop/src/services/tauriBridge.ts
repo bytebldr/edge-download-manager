@@ -991,6 +991,18 @@ export async function tauriSendSystemNotification(title: string, message: string
 
 export const openFolderDialog = tauriSelectDownloadDirectory;
 
+export async function tauriGetDefaultInstallDir(): Promise<string> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return await invoke<string>("get_default_install_dir");
+    } catch (err) {
+      console.warn("Tauri get_default_install_dir failed:", err);
+    }
+  }
+  return "";
+}
+
 /**
  * Invokes the Rust `perform_native_installation` command.
  * Copies EDM to target_dir, optionally creates shortcut, startup registry key,

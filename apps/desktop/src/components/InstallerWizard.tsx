@@ -13,6 +13,7 @@ import {
   tauriWindowClose,
   tauriStartDragging,
   tauriPerformNativeInstallation,
+  tauriGetDefaultInstallDir,
 } from "../services/tauriBridge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -27,9 +28,7 @@ type InstallPhase = "config" | "installing" | "done";
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
-  const [installPath, setInstallPath] = useState<string>(
-    "C:\\Program Files\\EDM"
-  );
+  const [installPath, setInstallPath] = useState<string>("");
   const [createShortcut, setCreateShortcut] = useState(true);
   const [startOnBoot, setStartOnBoot] = useState(true);
   const [browserIntegration, setBrowserIntegration] = useState(true);
@@ -37,13 +36,15 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Preparing...");
 
-  // Resolve default install path from env on mount
+  // Resolve default install path from native backend on mount
   useEffect(() => {
-    const localAppData =
-      (typeof process !== "undefined" && (process as NodeJS.Process & { env?: Record<string, string | undefined> }).env?.LOCALAPPDATA) || "";
-    if (localAppData) {
-      setInstallPath(`${localAppData}\\EDM`);
-    }
+    tauriGetDefaultInstallDir().then((dir) => {
+      if (dir) {
+        setInstallPath(dir);
+      } else {
+        setInstallPath("C:\\Users\\" + (window.location.pathname.split("/")[2] || "User") + "\\AppData\\Local\\EDM");
+      }
+    });
   }, []);
 
   const handleBrowse = useCallback(async () => {
