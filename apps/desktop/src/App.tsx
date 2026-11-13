@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
+import InstallerWizard from "./components/InstallerWizard";
 import { RefreshLinkModal } from "./components/RefreshLinkModal";
 import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
@@ -168,7 +169,21 @@ export const generateSpeedSvgPath = (history: number[] = [], peakBps: number = 0
   return { linePath, areaPath };
 };
 
+// ── Installer mode detection ──────────────────────────────────────────────
+function detectInstallerMode(): boolean {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("mode") === "setup") return true;
+  if (window.location.hash === "#setup") return true;
+  // Tauri: check command-line args via URL param injected by launcher
+  if (params.get("installer") === "1") return true;
+  return false;
+}
+
 export default function App() {
+  // If running as installer, render InstallerWizard full-screen
+  const [installerMode, setInstallerMode] = useState<boolean>(detectInstallerMode);
+
   const [activeView, setActiveView] = useState<"downloads" | "settings">(
     () => {
       if (typeof window !== "undefined") {
@@ -188,6 +203,33 @@ export default function App() {
       }
     });
   }, []);
+
+  // Listen for hash changes to toggle installer mode (#setup / #setup-exit)
+  useEffect(() => {
+    const handleHashForInstaller = () => {
+      if (window.location.hash === "#setup") {
+        setInstallerMode(true);
+      } else if (installerMode && window.location.hash !== "#setup") {
+        setInstallerMode(false);
+      }
+    };
+    window.addEventListener("hashchange", handleHashForInstaller);
+    return () => window.removeEventListener("hashchange", handleHashForInstaller);
+  }, [installerMode]);
+
+  // ── Installer mode short-circuit: render InstallerWizard full-screen ──────
+  if (installerMode) {
+    return (
+      <InstallerWizard
+        onDone={() => {
+          setInstallerMode(false);
+          if (window.location.hash === "#setup") {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          }
+        }}
+      />
+    );
+  }
 
   const mode = settings.general.theme === "system" ? "dark" : settings.general.theme;
   const palette = settings.general.palette;

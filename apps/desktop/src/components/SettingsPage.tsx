@@ -139,6 +139,7 @@ export default function SettingsPage({
   const [diskSpace, setDiskSpace] = useState<DiskFreeSpace | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isProgrammaticScrollRef = useRef(false);
+  const systemDirsRef = useRef<{ downloads: string; documents: string; music: string; pictures: string; videos: string; temp: string } | null>(null);
 
   useEffect(() => {
     tauriGetDiskFreeSpace(settings.downloads.defaultDirectory).then((res) => {
@@ -164,9 +165,57 @@ export default function SettingsPage({
     }
   };
 
+  // Legacy path segments that should be migrated to Windows Known Folders
+  const LEGACY_PATH_MIGRATIONS: Record<string, (dirs: NonNullable<typeof systemDirsRef.current>) => string> = {
+    "Downloads\\Video":    (d) => `${d.videos}\\EDM`,
+    "Downloads\\Audio":   (d) => `${d.music}\\EDM`,
+    "Downloads\\Music":   (d) => `${d.music}\\EDM`,
+    "Downloads\\Pictures":(d) => `${d.pictures}\\EDM`,
+    "Downloads\\Documents":(d) => `${d.documents}\\EDM`,
+  };
+
+  const AUTO_CATEGORY_PATHS = (dirs: NonNullable<typeof systemDirsRef.current>): Record<string, string> => ({
+    music:     `${dirs.music}\\EDM`,
+    pictures:  `${dirs.pictures}\\EDM`,
+    video:     `${dirs.videos}\\EDM`,
+    programs:  `${dirs.downloads}\\Programs`,
+    archives:  `${dirs.downloads}\\Archives`,
+    documents: `${dirs.documents}\\EDM`,
+  });
+
+  const handleFolderModeSwitch = async (mode: "auto" | "fixed") => {
+    const dirs = systemDirsRef.current ?? await tauriGetSystemUserDirs();
+    if (dirs) systemDirsRef.current = dirs;
+
+    let updatedCats = settings.categories;
+    if (mode === "auto" && dirs) {
+      const autoMap = AUTO_CATEGORY_PATHS(dirs);
+      updatedCats = settings.categories.map((cat) => ({
+        ...cat,
+        destinationDirectory: autoMap[cat.id.toLowerCase()] ?? cat.destinationDirectory,
+      }));
+    } else if (mode === "fixed") {
+      const base = settings.downloads.defaultDirectory;
+      updatedCats = settings.categories.map((cat) => ({
+        ...cat,
+        destinationDirectory: `${base}\\${cat.name}`,
+      }));
+    }
+
+    const updated = {
+      ...settings,
+      storage: { ...settings.storage, folderMode: mode },
+      categories: updatedCats,
+    };
+    onUpdateSettings(updated);
+    saveSettings(updated);
+  };
+
   useEffect(() => {
     tauriGetSystemUserDirs().then((dirs) => {
       if (!dirs) return;
+      systemDirsRef.current = dirs;
+
       let needsSave = false;
       const updatedDownloads = { ...settings.downloads };
       if (!updatedDownloads.defaultDirectory || updatedDownloads.defaultDirectory.includes("C:\\Users\\Suvesh")) {
@@ -178,20 +227,25 @@ export default function SettingsPage({
         needsSave = true;
       }
 
-      const categoryFolderMap: Record<string, string> = {
-        programs: `${dirs.downloads}\\Programs`,
-        video: `${dirs.downloads}\\Video`,
-        audio: `${dirs.downloads}\\Audio`,
-        pictures: `${dirs.downloads}\\Pictures`,
-        documents: `${dirs.downloads}\\Documents`,
-        archives: `${dirs.downloads}\\Archives`,
-      };
+      const categoryFolderMap = AUTO_CATEGORY_PATHS(dirs);
 
       const updatedCategories = settings.categories.map((cat) => {
-        if (!cat.destinationDirectory || cat.destinationDirectory.includes("C:\\Users\\Suvesh")) {
-          const autoDest = categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}`;
+        const dest = cat.destinationDirectory || "";
+        // 1. Hardcoded user path → migrate
+        if (dest.includes("C:\\Users\\Suvesh")) {
           needsSave = true;
-          return { ...cat, destinationDirectory: autoDest };
+          return { ...cat, destinationDirectory: categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}` };
+        }
+        // 2. Empty → fill from known-folder map
+        if (!dest) {
+          needsSave = true;
+          return { ...cat, destinationDirectory: categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}` };
+        }
+        // 3. Legacy Downloads\Video / Downloads\Audio etc. → migrate to proper KF
+        const legacyKey = Object.keys(LEGACY_PATH_MIGRATIONS).find((k) => dest.includes(k));
+        if (legacyKey) {
+          needsSave = true;
+          return { ...cat, destinationDirectory: LEGACY_PATH_MIGRATIONS[legacyKey](dirs) };
         }
         return cat;
       });
@@ -957,7 +1011,7 @@ export default function SettingsPage({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Option 1: Automatic Folder Routing Card */}
                   <div
-                    onClick={() => update("storage", { folderMode: "auto" })}
+                    onClick={() => handleFolderModeSwitch("auto")}
                     className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                       settings.storage.folderMode === "auto"
                         ? "bg-[var(--bg-active)] border-[var(--accent)] ring-1 ring-[var(--accent-glow)] shadow-md"
@@ -1023,7 +1077,7 @@ export default function SettingsPage({
 
                   {/* Option 2: Fixed Folder Card */}
                   <div
-                    onClick={() => update("storage", { folderMode: "fixed" })}
+                    onClick={() => handleFolderModeSwitch("fixed")}
                     className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                       settings.storage.folderMode === "fixed"
                         ? "bg-[var(--bg-active)] border-[var(--accent)] ring-1 ring-[var(--accent-glow)] shadow-md"
@@ -1236,20 +1290,20 @@ export default function SettingsPage({
                 </div>
 
                 <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)]">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs table-fixed">
                     <thead className="bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                       <tr>
-                        <th className="py-2 px-3 w-8">Active</th>
-                        <th className="py-2 px-3">Category</th>
-                        <th className="py-2 px-3">Extensions</th>
-                        <th className="py-2 px-3">Destination Path</th>
-                        <th className="py-2 px-3 text-right">Action</th>
+                        <th className="py-2 px-3 w-12 text-center">Active</th>
+                        <th className="py-2 px-3 w-28">Category</th>
+                        <th className="py-2 px-3 w-5/12 min-w-[220px]">Extensions</th>
+                        <th className="py-2 px-3 flex-1 min-w-[220px]">Destination Path</th>
+                        <th className="py-2 px-3 w-14 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border-dim)] font-mono text-[11px]">
                       {settings.categories.map((cat) => (
                         <tr key={cat.id} className="hover:bg-[var(--bg-card-hover)]">
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-2 px-3 w-12 text-center">
                             <input
                               type="checkbox"
                               checked={cat.enabled}
@@ -1263,20 +1317,20 @@ export default function SettingsPage({
                               className="w-4 h-4 rounded accent-[var(--accent)] cursor-pointer"
                             />
                           </td>
-                          <td className="py-2 px-3 font-semibold text-[var(--text-primary)]">{cat.name}</td>
-                          <td className="py-2 px-3">
-                            <div className="flex flex-wrap gap-1">
+                          <td className="py-2 px-3 w-28 font-semibold text-[var(--text-primary)]">{cat.name}</td>
+                          <td className="py-2 px-3 w-5/12 min-w-[220px]">
+                            <div className="flex flex-wrap gap-1.5 items-center">
                               {cat.extensions.map((ext) => (
                                 <span
                                   key={ext}
-                                  className="px-1 py-0.2 rounded bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px]"
+                                  className="px-1 py-0.5 rounded bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[10px]"
                                 >
                                   .{ext}
                                 </span>
                               ))}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-[var(--text-muted)] max-w-xs">
+                          <td className="py-2 px-3 text-[var(--text-muted)]">
                             <div className="flex items-center justify-between gap-1.5">
                               <span className="truncate flex-1 font-mono text-[11px]" title={cat.destinationDirectory || "Inherit default"}>
                                 {cat.destinationDirectory || "(Inherit default)"}
@@ -1290,7 +1344,7 @@ export default function SettingsPage({
                               </button>
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-right">
+                          <td className="py-2 px-3 w-14 text-right">
                             <button
                               onClick={() => handleDeleteCategory(cat.id)}
                               className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
