@@ -991,4 +991,27 @@ export async function tauriSendSystemNotification(title: string, message: string
 
 export const openFolderDialog = tauriSelectDownloadDirectory;
 
+/**
+ * Invokes the Rust `perform_native_installation` command.
+ * Copies EDM to target_dir, optionally creates shortcut, startup registry key,
+ * browser integration manifests, and writes the uninstall registry entry.
+ */
+export async function tauriPerformNativeInstallation(opts: {
+  targetDir: string;
+  createDesktopShortcut: boolean;
+  startOnBoot: boolean;
+  enableBrowserIntegration: boolean;
+}): Promise<void> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("perform_native_installation", {
+      targetDir: opts.targetDir,
+      createDesktopShortcut: opts.createDesktopShortcut,
+      startOnBoot: opts.startOnBoot,
+      enableBrowserIntegration: opts.enableBrowserIntegration,
+    });
+  }
+  // No-op in browser/dev mode — wizard transitions to "done" anyway.
+}
+
 

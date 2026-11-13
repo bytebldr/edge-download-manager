@@ -7,11 +7,12 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
-import { openFolderDialog } from "../services/tauriBridge";
 import {
+  openFolderDialog,
   tauriWindowMinimize,
   tauriWindowClose,
   tauriStartDragging,
+  tauriPerformNativeInstallation,
 } from "../services/tauriBridge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -54,28 +55,49 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
     }
   }, [installPath]);
 
-  // Simulated install sequence (real hooks can be swapped in)
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  // Real install: invokes Rust `perform_native_installation` with smooth progress simulation
   const handleInstall = useCallback(async () => {
     setPhase("installing");
-    const steps: [number, string][] = [
+    setErrorText(null);
+
+    // Animate progress up to 90% while backend works; snap to 100% on success
+    const preSteps: [number, string][] = [
       [10, "Extracting files…"],
       [30, "Installing core engine…"],
       [55, "Registering native helpers…"],
       [70, createShortcut ? "Creating desktop shortcut…" : "Skipping shortcut…"],
       [85, startOnBoot ? "Adding startup entry…" : "Skipping startup entry…"],
-      [95, browserIntegration ? "Registering browser integration…" : "Skipping browser integration…"],
-      [100, "Installation complete!"],
+      [90, browserIntegration ? "Registering browser integration…" : "Skipping browser integration…"],
     ];
 
-    for (const [pct, msg] of steps) {
-      await new Promise<void>((r) => setTimeout(r, 480));
+    for (const [pct, msg] of preSteps) {
+      await new Promise<void>((r) => setTimeout(r, 350));
       setProgress(pct);
       setStatusText(msg);
     }
 
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setPhase("done");
-  }, [createShortcut, startOnBoot, browserIntegration]);
+    try {
+      await tauriPerformNativeInstallation({
+        targetDir: installPath,
+        createDesktopShortcut: createShortcut,
+        startOnBoot,
+        enableBrowserIntegration: browserIntegration,
+      });
+      // Success
+      setProgress(100);
+      setStatusText("Installation complete!");
+      await new Promise<void>((r) => setTimeout(r, 500));
+      setPhase("done");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorText(msg || "Installation failed. Please try again.");
+      setProgress(0);
+      setStatusText("Error");
+      setPhase("config");
+    }
+  }, [createShortcut, startOnBoot, browserIntegration, installPath]);
 
   const handleLaunch = useCallback(() => {
     onDone();
@@ -342,6 +364,19 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                   </label>
                 ))}
               </div>
+
+              {/* Error banner */}
+              {errorText && (
+                <div
+                  className="mb-4 px-3 py-2 rounded-lg text-[11.5px] text-red-300"
+                  style={{
+                    background: "rgba(239,68,68,0.08)",
+                    border: "1px solid rgba(239,68,68,0.25)",
+                  }}
+                >
+                  ⚠ {errorText}
+                </div>
+              )}
 
               {/* Action buttons */}
               <div className="mt-auto flex items-center gap-3">

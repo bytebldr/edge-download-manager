@@ -547,6 +547,7 @@ fn main() {
             let is_autostart_boot = args.iter().any(|arg| arg == "--autostart");
             let is_background_boot = args.iter().any(|arg| arg == "--background" || arg == "--listener-only");
             let show_window = args.iter().any(|arg| arg == "--show-window");
+            let is_setup_mode = args.iter().any(|arg| arg == "--setup");
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) =
@@ -554,14 +555,25 @@ fn main() {
                 {
                     let _ = window.set_icon(icon);
                 }
-                let _ = window.center();
 
-                if (is_autostart_boot || is_background_boot) && !show_window {
+                if is_setup_mode {
+                    // Installer / setup wizard mode: fixed 680×440 non-resizable, centred, navigate to #setup
+                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 680.0,
+                        height: 440.0,
+                    }));
+                    let _ = window.set_resizable(false);
+                    let _ = window.center();
+                    let _ = window.show();
+                    let _ = window.eval("window.location.hash = '#setup'");
+                    tracing::info!("EDM launched in installer setup mode (--setup)");
+                } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
                         "EDM started in background mode; destroying window to minimize memory footprint"
                     );
                     let _ = window.destroy();
                 } else {
+                    let _ = window.center();
                     let _ = window.show();
                     let _ = window.set_focus();
                     tracing::info!(
@@ -784,7 +796,8 @@ fn main() {
             delete_queue,
             cancel_power_countdown,
             get_power_countdown_status,
-            probe_media_page
+            probe_media_page,
+            perform_native_installation
         ])
         .build(tauri::generate_context!())
         .expect("error while building EDM desktop application")

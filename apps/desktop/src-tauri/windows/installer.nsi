@@ -566,6 +566,33 @@ Function .onInit
     !insertmacro MULTIUSER_INIT
   !endif
 
+  ; ============================================================
+  ; EDM UI-DELEGATE: Skip all Win32 wizard pages for interactive
+  ; installs; instead launch the frameless modern setup wizard.
+  ; Extracts main binary and essential runtime resources (including
+  ; WebView2Loader.dll) to $PLUGINSDIR and hands off to the modern UI.
+  ; ============================================================
+  ${IfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+  ${AndIf} $UpdateMode <> 1
+    InitPluginsDir
+    SetOutPath $PLUGINSDIR
+    File "${MAINBINARYSRCPATH}"
+    {{#each resources_dirs}}
+      CreateDirectory "$PLUGINSDIR\\{{this}}"
+    {{/each}}
+    {{#each resources}}
+      File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
+    {{/each}}
+    {{#each binaries}}
+      File /a "/oname={{this}}" "{{no-escape @key}}"
+    {{/each}}
+
+    ; Launch the modern frameless setup UI (Image 2)
+    ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
+    Quit
+  ${EndIf}
+
   ; Abort downgrades if they are disabled, in the modes that skip the reinstall page choice:
   ; silent, passive and update
   !if "${ALLOWDOWNGRADES}" == "false"
