@@ -33,6 +33,8 @@ import {
   RotateCcw,
   Copy,
   Check,
+  Image,
+  Sparkles,
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
@@ -42,7 +44,7 @@ import { AddDownloadModal } from "./components/AddDownloadModal";
 import { MediaModal } from "./components/MediaModal";
 import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
-import { loadSettings, saveSettings, EdmSettings } from "./types/settings";
+import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
 import { motion, AnimatePresence } from "motion/react";
 import { viewVariants } from "./utils/motion";
@@ -67,6 +69,11 @@ import {
   tauriCheckDuplicateDownload,
   tauriSetSpeedLimit,
   tauriOnDragDrop,
+  tauriSendSystemNotification,
+  tauriCheckForUpdates,
+  tauriInstallUpdate,
+  tauriGetSystemUserDirs,
+  UpdateCheckResult,
 } from "./services/tauriBridge";
 
 export interface WorkerInfo {
@@ -81,7 +88,7 @@ export interface WorkerInfo {
 export interface DownloadItem {
   id: string;
   name: string;
-  category: "Video" | "Music" | "Documents" | "Compressed" | "Programs" | "Other";
+  category: "Video" | "Music" | "Documents" | "Compressed" | "Programs" | "Pictures" | "Other";
   sizeTotal: number;
   sizeDone: number;
   speed: string;
@@ -211,6 +218,8 @@ export default function App() {
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const [speedLimit, setSpeedLimit] = useState<string>("Unlimited");
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [showUpdateBanner, setShowUpdateBanner] = useState<boolean>(false);
   const notifiedCompletedIdsRef = useRef<Set<string>>(new Set());
 
   const handleSpeedLimitChange = (val: string) => {
@@ -227,7 +236,34 @@ export default function App() {
     tauriSetSpeedLimit(limitMap[val] ?? null);
   };
 
-  const triggerCompletionNotification = (filename: string, id: string) => {
+  useEffect(() => {
+    if (settings.general.autoCheckUpdates) {
+      tauriCheckForUpdates().then((res) => {
+        if (res && res.update_available) {
+          setUpdateInfo(res);
+          setShowUpdateBanner(true);
+        }
+      }).catch((err) => {
+        console.warn("Auto update check failed:", err);
+      });
+    }
+  }, [settings.general.autoCheckUpdates]);
+
+  const handleBannerUpdate = async () => {
+    if (!updateInfo) return;
+    if (updateInfo.download_url) {
+      try {
+        await tauriInstallUpdate(updateInfo.download_url);
+      } catch (err) {
+        console.warn("Update installation trigger failed:", err);
+        setActiveView("settings");
+      }
+    } else {
+      setActiveView("settings");
+    }
+  };
+
+  const triggerCompletionNotification = (filename: string, id: string, filePath?: string) => {
     if (notifiedCompletedIdsRef.current.has(id)) return;
     notifiedCompletedIdsRef.current.add(id);
 
@@ -257,23 +293,13 @@ export default function App() {
       } catch {}
     }
 
-    // OS Notification banner if enabled
-    if (settings.notifications.downloadCompleted && typeof window !== "undefined" && "Notification" in window) {
-      try {
-        if (Notification.permission === "granted") {
-          new Notification("EDM Download Complete", {
-            body: `${filename} has finished downloading.`,
-          });
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission().then((perm) => {
-            if (perm === "granted") {
-              new Notification("EDM Download Complete", {
-                body: `${filename} has finished downloading.`,
-              });
-            }
-          });
-        }
-      } catch {}
+    // OS Notification banner if enabled (Native Windows Toast only; no in-app alert)
+    if (settings.notifications.downloadCompleted) {
+      tauriSendSystemNotification(
+        "EDM Download Complete",
+        `${filename} has finished downloading.`,
+        filePath
+      );
     }
   };
 
@@ -443,8 +469,56 @@ export default function App() {
   useEffect(() => {
     tauriLoadSettings().then((backendSettings) => {
       if (backendSettings) {
+        if (!backendSettings.categories?.some((c) => c.id === "pictures")) {
+          const picCat = defaultSettings.categories.find((c) => c.id === "pictures");
+          if (picCat) {
+            backendSettings.categories = [...(backendSettings.categories || []), picCat];
+          }
+        }
         setSettings(backendSettings);
       }
+    });
+
+    tauriGetSystemUserDirs().then((dirs) => {
+      if (!dirs) return;
+      setSettings((current) => {
+        let changed = false;
+        const downloads = { ...current.downloads };
+        if (!downloads.defaultDirectory || downloads.defaultDirectory.includes("C:\\Users\\Suvesh")) {
+          downloads.defaultDirectory = dirs.downloads;
+          changed = true;
+        }
+        if (!downloads.temporaryDirectory || downloads.temporaryDirectory.includes("C:\\Users\\Suvesh")) {
+          downloads.temporaryDirectory = dirs.temp || `${dirs.downloads}\\temp`;
+          changed = true;
+        }
+        const categoryFolderMap: Record<string, string> = {
+          programs: `${dirs.downloads}\\Programs`,
+          video: `${dirs.downloads}\\Video`,
+          audio: `${dirs.downloads}\\Audio`,
+          pictures: `${dirs.downloads}\\Pictures`,
+          documents: `${dirs.downloads}\\Documents`,
+          archives: `${dirs.downloads}\\Archives`,
+        };
+        const categories = current.categories.map((c) => {
+          if (!c.destinationDirectory || c.destinationDirectory.includes("C:\\Users\\Suvesh")) {
+            changed = true;
+            return {
+              ...c,
+              destinationDirectory: categoryFolderMap[c.id.toLowerCase()] || `${dirs.downloads}\\${c.name}`,
+            };
+          }
+          return c;
+        });
+
+        if (changed) {
+          const next = { ...current, downloads, categories };
+          saveSettings(next);
+          tauriSaveSettings(next);
+          return next;
+        }
+        return current;
+      });
     });
   }, []);
 
@@ -458,7 +532,7 @@ export default function App() {
 
       setDownloads((prev) => {
         const existingMap = new Map(prev.map((item) => [item.id, item]));
-        const validCategories = ["Video", "Music", "Documents", "Compressed", "Programs", "Other"] as const;
+        const validCategories = ["Video", "Music", "Documents", "Compressed", "Programs", "Pictures", "Other"] as const;
         const stateMap: Record<string, "downloading" | "paused" | "queued" | "completed" | "failed"> = {
           downloading: "downloading",
           verifying: "downloading",
@@ -494,7 +568,7 @@ export default function App() {
           const rawState = stateMap[b.state] || (existing?.state || "downloading");
           const isCompleted = b.state === "completed" || (rawState === "completed" && pct >= 100);
           if (existing && existing.state !== "completed" && isCompleted) {
-            triggerCompletionNotification(b.filename, b.id);
+            triggerCompletionNotification(b.filename, b.id, b.save_dir ? `${b.save_dir}\\${b.filename}` : undefined);
           }
           const itemState = isCompleted ? ("completed" as const) : rawState;
           const finalTotal = isCompleted && total === 0 && done > 0 ? done : total;
@@ -631,6 +705,8 @@ export default function App() {
       categoryName = "Compressed";
     } else if (["pdf", "doc", "docx", "txt", "xlsx", "pptx"].includes(ext)) {
       categoryName = "Documents";
+    } else if (["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif"].includes(ext)) {
+      categoryName = "Pictures";
     } else {
       const matchedCat = settings.categories.find((c) => c.enabled && c.extensions.includes(ext));
       categoryName = (matchedCat ? matchedCat.name : "Programs") as DownloadItem["category"];
@@ -1143,6 +1219,9 @@ export default function App() {
         return Archive;
       case "documents":
         return FileText;
+      case "pictures":
+      case "images":
+        return Image;
       case "programs":
       default:
         return FileCode;
@@ -1161,6 +1240,9 @@ export default function App() {
         return "text-orange-400";
       case "documents":
         return "text-emerald-400";
+      case "pictures":
+      case "images":
+        return "text-cyan-400";
       case "programs":
       default:
         return "text-[var(--accent)]";
@@ -1179,6 +1261,9 @@ export default function App() {
         return <Archive className="w-4 h-4 text-orange-400" />;
       case "documents":
         return <FileText className="w-4 h-4 text-emerald-400" />;
+      case "pictures":
+      case "images":
+        return <Image className="w-4 h-4 text-cyan-400" />;
       case "programs":
       default:
         return <FileCode className="w-4 h-4 text-[var(--accent)]" />;
@@ -2320,6 +2405,54 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          FLOATING IN-APP UPDATE BANNER (Astryx Chassis Pill)
+      ────────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showUpdateBanner && updateInfo && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs max-w-lg select-none"
+          >
+            {/* Shiny Badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] shrink-0">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span>Update Available: v{updateInfo.latest_version}</span>
+            </div>
+
+            {/* Teaser Description */}
+            <div className="flex-1 min-w-0 pr-1">
+              <p className="truncate font-medium text-[var(--text-primary)] text-[12px]">
+                {updateInfo.release_name || `EDM v${updateInfo.latest_version}`}
+              </p>
+              <p className="truncate text-[10px] text-[var(--text-muted)]">
+                {updateInfo.release_notes ? updateInfo.release_notes.replace(/[\r\n]+/g, " ").slice(0, 50) : "Performance enhancements & bug fixes"}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleBannerUpdate}
+                className="btn-primary-3d px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <span>Update Now</span>
+              </button>
+              <button
+                onClick={() => setShowUpdateBanner(false)}
+                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

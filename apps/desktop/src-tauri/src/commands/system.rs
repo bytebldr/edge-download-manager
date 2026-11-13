@@ -39,6 +39,24 @@ pub fn get_system_downloads_dir() -> String {
 }
 
 #[command]
+pub fn get_system_user_dirs() -> SystemUserDirs {
+    get_system_user_dirs_internal()
+}
+
+#[command]
+pub async fn send_system_notification(
+    title: String,
+    message: String,
+    path: Option<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        send_system_notification_internal(&title, &message, path.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[command]
 pub async fn select_download_directory(
     default_path: Option<String>,
 ) -> Result<Option<String>, String> {

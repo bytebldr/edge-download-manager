@@ -31,9 +31,13 @@ impl PipelinedWriterHandle {
         total_size: Option<u64>,
         channel_capacity: usize,
     ) -> Result<Self, io::Error> {
-        let final_path = target_dir.as_ref().join(filename);
+        let target_ref = target_dir.as_ref();
+        if !target_ref.exists() {
+            std::fs::create_dir_all(target_ref)?;
+        }
+        let final_path = target_ref.join(filename);
         let part_filename = format!("{}.edmpart", filename);
-        let part_path = target_dir.as_ref().join(part_filename);
+        let part_path = target_ref.join(part_filename);
 
         let file = OpenOptions::new()
             .read(true)

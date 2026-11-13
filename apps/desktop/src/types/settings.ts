@@ -3,6 +3,7 @@ import type { FeaturePackId } from "./featurePacks";
 export interface CategoryRule {
   id: string;
   name: string;
+  icon?: string;
   enabled: boolean;
   extensions: string[];
   destinationDirectory: string;
@@ -130,8 +131,8 @@ export const defaultSettings: EdmSettings = {
     showConnectionBoundaries: false,
   },
   downloads: {
-    defaultDirectory: "C:\\Users\\Suvesh\\Downloads",
-    temporaryDirectory: "C:\\Users\\Suvesh\\AppData\\Local\\Temp\\edm_chunks",
+    defaultDirectory: "",
+    temporaryDirectory: "",
     maxActiveDownloads: 3,
     globalSpeedLimitBytesPerSecond: null,
     maxConnectionsPerFile: 6,
@@ -161,41 +162,65 @@ export const defaultSettings: EdmSettings = {
     {
       id: "programs",
       name: "Programs",
+      icon: "FileCode",
       enabled: true,
-      extensions: ["exe", "msi", "iso", "dmg", "deb", "rpm", "bin"],
-      destinationDirectory: "C:\\Users\\Suvesh\\Downloads\\Programs",
+      extensions: ["exe", "msi", "bat", "cmd", "ps1", "sh", "appx", "msix", "apk", "jar", "vbs", "reg", "bin"],
+      destinationDirectory: "",
       priority: "high",
     },
     {
       id: "video",
       name: "Video",
+      icon: "Film",
       enabled: true,
-      extensions: ["mp4", "mkv", "avi", "mov", "webm", "flv", "ts"],
-      destinationDirectory: "C:\\Users\\Suvesh\\Downloads\\Video",
+      extensions: [
+        "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts", "mts", "m2ts", "vob", "ogv", "3gp", "3g2", "rm", "rmvb", "divx", "asf"
+      ],
+      destinationDirectory: "",
       priority: "normal",
     },
     {
       id: "audio",
       name: "Audio",
+      icon: "Music",
       enabled: true,
-      extensions: ["mp3", "flac", "wav", "aac", "ogg", "m4a"],
-      destinationDirectory: "C:\\Users\\Suvesh\\Downloads\\Audio",
+      extensions: [
+        "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus", "aiff", "alac", "mid", "midi", "ape", "ac3", "dts", "amr"
+      ],
+      destinationDirectory: "",
       priority: "normal",
     },
     {
-      id: "archives",
-      name: "Archives",
+      id: "pictures",
+      name: "Pictures",
+      icon: "Image",
       enabled: true,
-      extensions: ["zip", "rar", "7z", "tar", "gz", "xz", "bz2"],
-      destinationDirectory: "C:\\Users\\Suvesh\\Downloads\\Archives",
+      extensions: [
+        "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif", "psd", "ai", "raw", "cr2", "nef", "heic", "heif", "dng"
+      ],
+      destinationDirectory: "",
       priority: "normal",
     },
     {
       id: "documents",
       name: "Documents",
+      icon: "FileText",
       enabled: true,
-      extensions: ["pdf", "docx", "xlsx", "pptx", "epub", "txt"],
-      destinationDirectory: "C:\\Users\\Suvesh\\Downloads\\Documents",
+      extensions: [
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods", "odp", "csv", "tsv", "md", "epub", "mobi", "azw3", "djvu", "pages", "numbers", "key"
+      ],
+      destinationDirectory: "",
+      priority: "normal",
+    },
+    {
+      id: "archives",
+      name: "Archives",
+      icon: "Archive",
+      enabled: true,
+      extensions: [
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "dmg", "img", "vhd", "vhdx", "tgz", "tbz2", "cab", "cpio", "z", "lzma", "pkg", "deb", "rpm"
+      ],
+      destinationDirectory: "",
       priority: "normal",
     },
   ],
@@ -267,6 +292,28 @@ export function loadSettings(): EdmSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
+
+    // Clean up any stale hardcoded paths from localStorage
+    if (parsed.downloads?.defaultDirectory?.includes("C:\\Users\\Suvesh")) {
+      parsed.downloads.defaultDirectory = "";
+    }
+    if (parsed.downloads?.temporaryDirectory?.includes("C:\\Users\\Suvesh")) {
+      parsed.downloads.temporaryDirectory = "";
+    }
+
+    let categories: CategoryRule[] = parsed.categories?.length ? parsed.categories : defaultSettings.categories;
+    categories = categories.map((c) => {
+      if (c.destinationDirectory?.includes("C:\\Users\\Suvesh")) {
+        return { ...c, destinationDirectory: "" };
+      }
+      return c;
+    });
+
+    if (!categories.some((c) => c.id === "pictures")) {
+      const picCat = defaultSettings.categories.find((c) => c.id === "pictures");
+      if (picCat) categories.push(picCat);
+    }
+
     // Deep merge to ensure all new fields in defaultSettings are present
     return {
       ...defaultSettings,
@@ -281,7 +328,7 @@ export function loadSettings(): EdmSettings {
       security: { ...defaultSettings.security, ...parsed.security },
       advanced: { ...defaultSettings.advanced, ...parsed.advanced },
       featurePacks: { ...defaultSettings.featurePacks, ...parsed.featurePacks },
-      categories: parsed.categories?.length ? parsed.categories : defaultSettings.categories,
+      categories,
     };
   } catch (err) {
     console.error("Failed to parse settings, falling back to defaults", err);

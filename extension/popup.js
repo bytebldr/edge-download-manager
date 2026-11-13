@@ -17,6 +17,7 @@ const CATEGORY_SVGS = {
   music: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`,
   compressed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`,
   document: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`,
+  pictures: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`,
   programs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`
 };
 function formatBytes(bytes) {
@@ -604,16 +605,19 @@ class PopupController {
       let catClass = "tile-programs";
       let catSvg = CATEGORY_SVGS.programs;
       const ext = item.filename.split(".").pop()?.toLowerCase() || "";
-      if (["mp4", "mkv", "webm", "avi", "mov", "flv", "m4v"].includes(ext)) {
+      if (["mp4", "mkv", "webm", "avi", "mov", "flv", "m4v", "ts", "mts", "m2ts", "vob", "ogv", "3gp", "3g2", "rm", "rmvb", "divx", "asf"].includes(ext)) {
         catClass = "tile-video";
         catSvg = CATEGORY_SVGS.video;
-      } else if (["mp3", "flac", "wav", "m4a", "aac", "ogg", "wma"].includes(ext)) {
+      } else if (["mp3", "flac", "wav", "m4a", "aac", "ogg", "wma", "opus", "aiff", "alac", "mid", "midi", "ape", "ac3", "dts", "amr"].includes(ext)) {
         catClass = "tile-music";
         catSvg = CATEGORY_SVGS.music;
-      } else if (["zip", "rar", "7z", "tar", "gz", "iso", "bin", "7zip"].includes(ext)) {
+      } else if (["zip", "rar", "7z", "tar", "gz", "iso", "bin", "7zip", "bz2", "xz", "dmg", "img", "vhd", "vhdx", "tgz", "tbz2", "cab", "cpio", "z", "lzma", "pkg", "deb", "rpm"].includes(ext)) {
         catClass = "tile-compressed";
         catSvg = CATEGORY_SVGS.compressed;
-      } else if (["pdf", "doc", "docx", "txt", "xlsx", "pptx", "epub", "csv"].includes(ext)) {
+      } else if (["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif", "psd", "ai", "raw", "cr2", "nef", "heic", "heif", "dng"].includes(ext)) {
+        catClass = "tile-pictures";
+        catSvg = CATEGORY_SVGS.pictures;
+      } else if (["pdf", "doc", "docx", "txt", "xlsx", "pptx", "epub", "csv", "rtf", "odt", "ods", "odp", "tsv", "md", "mobi", "azw3", "djvu", "pages", "numbers", "key"].includes(ext)) {
         catClass = "tile-document";
         catSvg = CATEGORY_SVGS.document;
       }

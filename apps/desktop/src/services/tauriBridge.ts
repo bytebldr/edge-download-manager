@@ -936,3 +936,59 @@ export async function tauriOnDragDrop(onFilesDropped: (paths: string[]) => void)
   return undefined;
 }
 
+export interface SystemUserDirs {
+  downloads: string;
+  documents: string;
+  music: string;
+  pictures: string;
+  videos: string;
+  temp: string;
+}
+
+export async function tauriGetSystemUserDirs(): Promise<SystemUserDirs | null> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return await invoke<SystemUserDirs>("get_system_user_dirs");
+    } catch (err) {
+      console.warn("Tauri get_system_user_dirs failed:", err);
+    }
+  }
+  return null;
+}
+
+export async function tauriSendSystemNotification(title: string, message: string, path?: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("send_system_notification", {
+        title,
+        message,
+        path: path || null,
+        file_path: path || null,
+      });
+      return;
+    } catch (err) {
+      console.warn("Tauri send_system_notification failed:", err);
+    }
+  }
+
+  // Graceful browser fallback
+  if (typeof window !== "undefined" && "Notification" in window) {
+    try {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body: message });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((perm) => {
+          if (perm === "granted") {
+            new Notification(title, { body: message });
+          }
+        });
+      }
+    } catch {}
+  }
+}
+
+export const openFolderDialog = tauriSelectDownloadDirectory;
+
+

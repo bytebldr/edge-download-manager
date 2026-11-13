@@ -78,7 +78,7 @@ Var WixMode
 Var OldMainBinaryName
 
 Name "${PRODUCTNAME}"
-BrandingText "${COPYRIGHT}"
+BrandingText "EDM — Fast, Intelligent Native Download Accelerator"
 OutFile "${OUTFILE}"
 
 ; We don't actually use this value as default install path,
@@ -167,6 +167,8 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
+!define MUI_WELCOMEPAGE_TITLE "Welcome to EDM Setup"
+!define MUI_WELCOMEPAGE_TEXT "Setup will guide you through installing EDM — the fast, intelligent native download accelerator.$\r$\n$\r$\nEnjoy multi-threaded segmentation, intelligent categories, and real-time browser integration.$\r$\n$\r$\nClick Next to continue."
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 
@@ -439,6 +441,8 @@ Var AppStartMenuFolder
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
 !define MUI_FINISHPAGE_NOAUTOCLOSE
+!define MUI_FINISHPAGE_TITLE "Completing EDM Setup"
+!define MUI_FINISHPAGE_TEXT "EDM has been successfully installed on your computer.$\r$\n$\r$\nClick Finish to launch EDM and start downloading at maximum speed."
 ; Use show readme button in the finish page as a button create a desktop shortcut
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"

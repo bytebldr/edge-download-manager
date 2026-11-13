@@ -52,6 +52,8 @@ import {
   tauriInstallUpdate,
   tauriListenOtaProgress,
   tauriSelectDownloadDirectory,
+  openFolderDialog,
+  tauriGetSystemUserDirs,
   tauriGetDiskFreeSpace,
   tauriSetAutostart,
   DiskFreeSpace,
@@ -120,7 +122,6 @@ export default function SettingsPage({
 }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [searchQuery, setSearchQuery] = useState("");
-  const [packCategoryFilter, setPackCategoryFilter] = useState<"all" | "core" | "p2p" | "media" | "mirrors" | "network">("all");
   const [customCatName, setCustomCatName] = useState("");
   const [customCatExt, setCustomCatExt] = useState("");
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
@@ -152,7 +153,60 @@ export default function SettingsPage({
     }
   };
 
+  const handleBrowseCategoryFolder = async (catId: string, currentPath: string) => {
+    const chosen = await openFolderDialog(currentPath || settings.downloads.defaultDirectory);
+    if (chosen) {
+      const updatedCats = settings.categories.map((c) =>
+        c.id === catId ? { ...c, destinationDirectory: chosen } : c
+      );
+      onUpdateSettings({ ...settings, categories: updatedCats });
+      saveSettings({ ...settings, categories: updatedCats });
+    }
+  };
+
   useEffect(() => {
+    tauriGetSystemUserDirs().then((dirs) => {
+      if (!dirs) return;
+      let needsSave = false;
+      const updatedDownloads = { ...settings.downloads };
+      if (!updatedDownloads.defaultDirectory || updatedDownloads.defaultDirectory.includes("C:\\Users\\Suvesh")) {
+        updatedDownloads.defaultDirectory = dirs.downloads;
+        needsSave = true;
+      }
+      if (!updatedDownloads.temporaryDirectory || updatedDownloads.temporaryDirectory.includes("C:\\Users\\Suvesh")) {
+        updatedDownloads.temporaryDirectory = dirs.temp || `${dirs.downloads}\\temp`;
+        needsSave = true;
+      }
+
+      const categoryFolderMap: Record<string, string> = {
+        programs: `${dirs.downloads}\\Programs`,
+        video: `${dirs.downloads}\\Video`,
+        audio: `${dirs.downloads}\\Audio`,
+        pictures: `${dirs.downloads}\\Pictures`,
+        documents: `${dirs.downloads}\\Documents`,
+        archives: `${dirs.downloads}\\Archives`,
+      };
+
+      const updatedCategories = settings.categories.map((cat) => {
+        if (!cat.destinationDirectory || cat.destinationDirectory.includes("C:\\Users\\Suvesh")) {
+          const autoDest = categoryFolderMap[cat.id.toLowerCase()] || `${dirs.downloads}\\${cat.name}`;
+          needsSave = true;
+          return { ...cat, destinationDirectory: autoDest };
+        }
+        return cat;
+      });
+
+      if (needsSave) {
+        const nextSettings = {
+          ...settings,
+          downloads: updatedDownloads,
+          categories: updatedCategories,
+        };
+        onUpdateSettings(nextSettings);
+        saveSettings(nextSettings);
+      }
+    });
+
     tauriGetAppVersion().then((v) => {
       if (v) setAppVersion(v);
     });
@@ -1222,8 +1276,19 @@ export default function SettingsPage({
                               ))}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-[var(--text-muted)] truncate max-w-xs">
-                            {cat.destinationDirectory}
+                          <td className="py-2 px-3 text-[var(--text-muted)] max-w-xs">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="truncate flex-1 font-mono text-[11px]" title={cat.destinationDirectory || "Inherit default"}>
+                                {cat.destinationDirectory || "(Inherit default)"}
+                              </span>
+                              <button
+                                onClick={() => handleBrowseCategoryFolder(cat.id, cat.destinationDirectory)}
+                                className="p-1 rounded hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0 cursor-pointer"
+                                title="Browse folder..."
+                              >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                           <td className="py-2 px-3 text-right">
                             <button
@@ -1295,45 +1360,9 @@ export default function SettingsPage({
                 </div>
               </div>
 
-              {/* Category Filter Pills */}
-              <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-[var(--bg-chassis)] border border-[var(--border-subtle)]">
-                {(
-                  [
-                    { id: "all", label: "All Packs", count: 9 },
-                    { id: "core", label: "Core HTTP", count: 1 },
-                    { id: "p2p", label: "P2P & Swarm", count: 2 },
-                    { id: "media", label: "Media & Streams", count: 3 },
-                    { id: "mirrors", label: "AI & Hub Mirrors", count: 2 },
-                    { id: "network", label: "FTP Protocols", count: 1 },
-                  ] as const
-                ).map((tab) => {
-                  const isActive = packCategoryFilter === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setPackCategoryFilter(tab.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer flex items-center gap-2 ${
-                        isActive
-                          ? "btn-primary-3d text-white font-semibold shadow-sm"
-                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-                      }`}
-                    >
-                      <span>{tab.label}</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                          isActive ? "bg-white/20 text-white font-semibold" : "bg-[var(--bg-card)] text-[var(--text-muted)]"
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
               {/* Feature Packs Compact Cards Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {FEATURE_PACKS.filter((p) => packCategoryFilter === "all" || p.category === packCategoryFilter).map((pack) => {
+                {FEATURE_PACKS.map((pack) => {
                   return (
                     <motion.div
                       key={pack.id}

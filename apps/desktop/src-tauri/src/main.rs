@@ -766,6 +766,8 @@ fn main() {
             is_wizard_completed,
             set_wizard_completed,
             get_system_downloads_dir,
+            get_system_user_dirs,
+            send_system_notification,
             select_download_directory,
             select_torrent_file,
             get_disk_free_space,

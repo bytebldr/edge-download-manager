@@ -122,7 +122,7 @@ export const FEATURE_PACKS: FeaturePackMeta[] = [
     id: "yt_dlp_pack",
     name: "yt-dlp Video & Audio Extractor Pack",
     category: "media",
-    version: "2026.02.01",
+    version: "2026.10.26",
     description: "YouTube and supported-site video/audio extraction",
     details: "Universal online video engine supporting 1,000+ streaming sites. Extracts best quality video/audio streams, subtitles, and executes parallel dual-pipelining with zero-copy stream stitching.",
     protocols: ["youtube.com", "youtu.be", "twitter.com", "x.com", "instagram.com", "tiktok.com", "twitch.tv", "bilibili.com", "vimeo.com"],

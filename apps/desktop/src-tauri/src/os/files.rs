@@ -229,6 +229,91 @@ pub fn send_to_recycle_bin(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::remove_file(path)
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SystemUserDirs {
+    pub downloads: String,
+    pub documents: String,
+    pub music: String,
+    pub pictures: String,
+    pub videos: String,
+    pub temp: String,
+}
+
+pub fn get_system_user_dirs_internal() -> SystemUserDirs {
+    #[cfg(windows)]
+    {
+        let user_profile =
+            std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".to_string());
+        let profile_path = PathBuf::from(&user_profile);
+
+        let temp_dir = if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+            PathBuf::from(local_app).join("Temp").join("edm_chunks")
+        } else {
+            profile_path
+                .join("AppData")
+                .join("Local")
+                .join("Temp")
+                .join("edm_chunks")
+        };
+
+        SystemUserDirs {
+            downloads: profile_path.join("Downloads").to_string_lossy().to_string(),
+            documents: profile_path
+                .join("Documents")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            music: profile_path
+                .join("Music")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            pictures: profile_path
+                .join("Pictures")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            videos: profile_path
+                .join("Videos")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            temp: temp_dir.to_string_lossy().to_string(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let home_path = PathBuf::from(&home);
+        let temp_dir = std::env::temp_dir().join("edm_chunks");
+
+        SystemUserDirs {
+            downloads: home_path.join("Downloads").to_string_lossy().to_string(),
+            documents: home_path
+                .join("Documents")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            music: home_path
+                .join("Music")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            pictures: home_path
+                .join("Pictures")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            videos: home_path
+                .join("Videos")
+                .join("EDM")
+                .to_string_lossy()
+                .to_string(),
+            temp: temp_dir.to_string_lossy().to_string(),
+        }
+    }
+}
+
 pub fn get_system_downloads_dir_internal() -> String {
     #[cfg(windows)]
     {
@@ -358,4 +443,33 @@ pub fn get_disk_free_space_internal(path: Option<String>) -> Result<serde_json::
         "free_bytes": 0,
         "pct_free": 50
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_user_dirs_structure_and_no_upfront_creation() {
+        let dirs = get_system_user_dirs_internal();
+        assert!(!dirs.downloads.is_empty());
+        assert!(!dirs.documents.is_empty());
+        assert!(!dirs.music.is_empty());
+        assert!(!dirs.pictures.is_empty());
+        assert!(!dirs.videos.is_empty());
+        assert!(!dirs.temp.is_empty());
+
+        assert!(dirs.downloads.ends_with("Downloads"));
+        assert!(
+            dirs.documents.ends_with("Documents\\EDM")
+                || dirs.documents.ends_with("Documents/EDM")
+        );
+        assert!(dirs.music.ends_with("Music\\EDM") || dirs.music.ends_with("Music/EDM"));
+        assert!(
+            dirs.pictures.ends_with("Pictures\\EDM")
+                || dirs.pictures.ends_with("Pictures/EDM")
+        );
+        assert!(dirs.videos.ends_with("Videos\\EDM") || dirs.videos.ends_with("Videos/EDM"));
+        assert!(dirs.temp.ends_with("edm_chunks"));
+    }
 }

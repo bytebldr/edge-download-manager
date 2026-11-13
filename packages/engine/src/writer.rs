@@ -29,9 +29,13 @@ impl FileWriter {
         filename: &str,
         total_size: Option<u64>,
     ) -> Result<Self, WriterError> {
-        let final_path = target_dir.as_ref().join(filename);
+        let target_ref = target_dir.as_ref();
+        if !target_ref.exists() {
+            std::fs::create_dir_all(target_ref)?;
+        }
+        let final_path = target_ref.join(filename);
         let part_filename = format!("{}.edmpart", filename);
-        let part_path = target_dir.as_ref().join(part_filename);
+        let part_path = target_ref.join(part_filename);
 
         let file = OpenOptions::new()
             .read(true)
@@ -179,5 +183,23 @@ impl FileWriter {
         }
 
         Ok(self.final_path.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jit_directory_creation() {
+        let temp_dir = std::env::temp_dir().join(format!("edm_test_jit_{}", uuid::Uuid::new_v4()));
+        assert!(!temp_dir.exists());
+
+        let writer = FileWriter::new(&temp_dir, "test.bin", Some(1024));
+        assert!(writer.is_ok());
+        assert!(temp_dir.exists());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
