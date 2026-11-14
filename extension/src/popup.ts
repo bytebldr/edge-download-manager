@@ -1733,6 +1733,10 @@ class PopupController {
 }
 
 // Instantiate on popup load
-document.addEventListener("DOMContentLoaded", () => {
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    (window as any).__app = new PopupController();
+  });
+} else {
   (window as any).__app = new PopupController();
-});
+}

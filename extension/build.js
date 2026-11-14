@@ -32,7 +32,7 @@ try {
     ],
     outdir: tempDir,
     target: 'es2020',
-    bundle: false
+    bundle: true
   });
   console.log('[EDM] esbuild transpile successful.');
 } catch (e) {
