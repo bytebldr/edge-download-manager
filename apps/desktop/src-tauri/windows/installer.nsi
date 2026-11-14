@@ -607,6 +607,16 @@ Function .onInit
       Goto plugins_wv2_done
 plugins_wv2_done:
 
+    ; Ensure edm-nmh.exe is co-located in $PLUGINSDIR next to ${MAINBINARYNAME}.exe
+    IfFileExists "$PLUGINSDIR\edm-nmh.exe" plugins_nmh_done 0
+    IfFileExists "$PLUGINSDIR\_up_\_up_\_up_\target\release\edm-nmh.exe" 0 +3
+      CopyFiles /SILENT "$PLUGINSDIR\_up_\_up_\_up_\target\release\edm-nmh.exe" "$PLUGINSDIR\edm-nmh.exe"
+      Goto plugins_nmh_done
+    IfFileExists "$PLUGINSDIR\resources\edm-nmh.exe" 0 +3
+      CopyFiles /SILENT "$PLUGINSDIR\resources\edm-nmh.exe" "$PLUGINSDIR\edm-nmh.exe"
+      Goto plugins_nmh_done
+plugins_nmh_done:
+
     ; Launch the modern frameless setup UI (Image 2)
     ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
     ; Clean up the temporary extracted setup files immediately
