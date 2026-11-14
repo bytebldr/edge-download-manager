@@ -73,7 +73,7 @@ async function autoDetectAndSetToken() {
         if (chrome.runtime.lastError || !response) {
           return resolve(null);
         }
-        if (response.token && typeof response.token === "string" && response.token.length >= 32) {
+        if (response.token && typeof response.token === "string" && response.token.length >= 32 && !response.token.startsWith("ed0000000000")) {
           resolve(response.token);
         } else {
           resolve(null);
@@ -89,7 +89,7 @@ async function autoDetectAndSetToken() {
   }
   const headers = {
     "X-EDM-Client": "extension",
-    "X-EDM-Extension-Id": typeof chrome !== "undefined" && chrome.runtime?.id ? chrome.runtime.id : "extension"
+    "X-EDM-Extension-Id": typeof chrome !== "undefined" && chrome.runtime?.id ? chrome.runtime.id : "ginpdimhcdbojbhemgjedghkeolbcmgj"
   };
   for (const url of ["http://127.0.0.1:14370/token", "http://localhost:14370/token"]) {
     try {
@@ -100,7 +100,7 @@ async function autoDetectAndSetToken() {
       });
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.token && typeof data.token === "string" && data.token.length >= 32) {
+        if (data && data.token && typeof data.token === "string" && data.token.length >= 32 && !data.token.startsWith("ed0000000000")) {
           await chrome.storage.local.set({ edm_ws_token: data.token });
           console.log("[EDM Extension] Successfully auto-detected token from HTTP handshake!");
           return data.token;
@@ -295,7 +295,10 @@ async function connectWebSocketPromise(timeoutMs = 8e3) {
     if (socket && socket.readyState === WebSocket.OPEN && connectionStatus === "connected") {
       return true;
     }
-    await new Promise((r) => setTimeout(r, 150));
+    if (!socket || socket.readyState === WebSocket.CLOSED) {
+      connectWebSocket();
+    }
+    await new Promise((r) => setTimeout(r, 200));
   }
   return socket !== null && socket.readyState === WebSocket.OPEN && connectionStatus === "connected";
 }
@@ -987,10 +990,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (connectionStatus === "asleep" || connectionStatus === "disconnected" || !socket || socket.readyState !== WebSocket.OPEN) {
         try {
           const wakeRes = await wakeDesktop(false);
-          if (wakeRes && wakeRes.token) {
-            testToken = wakeRes.token;
+          if (wakeRes) {
+            if (!wakeRes.ok) {
+              sendResponse({ ok: false, error: wakeRes.error || "Failed to wake EDM Desktop" });
+              return;
+            }
+            if (wakeRes.token) {
+              testToken = wakeRes.token;
+            }
           }
-        } catch {
+        } catch (err) {
+          sendResponse({ ok: false, error: err?.message || "Failed to wake EDM Desktop" });
+          return;
         }
       }
       const timer = setTimeout(() => {

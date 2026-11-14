@@ -227,7 +227,16 @@ fn ensure_webview2_loader(exe: &Path) {
         candidate_sources.push(PathBuf::from(&local).join("EDM").join("WebView2Loader.dll"));
     }
 
-    // 3. Check HKCU\Software\EDM InstallDir
+    // 3. Check current helper executable directory (canonical when running from target/release or install dir)
+    if let Ok(cur_exe) = env::current_exe() {
+        if let Some(cur_parent) = cur_exe.parent() {
+            candidate_sources.push(cur_parent.join("WebView2Loader.dll"));
+            candidate_sources.push(cur_parent.join(r"resources\WebView2Loader.dll"));
+            candidate_sources.push(cur_parent.join(r"_up_\_up_\_up_\target\release\WebView2Loader.dll"));
+        }
+    }
+
+    // 4. Check HKCU\Software\EDM InstallDir
     #[cfg(windows)]
     {
         use windows_registry::CURRENT_USER;

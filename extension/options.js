@@ -140,8 +140,10 @@ function checkStatus() {
     }
     if (resp.connectionStatus === "connected") {
       updateBadge("connected", `Connected (${resp.activeTasks || 0} active)`);
-    } else if (resp.connectionStatus === "connecting") {
+    } else if (resp.connectionStatus === "connecting" || resp.connectionStatus === "waking") {
       updateBadge("disconnected", "Connecting...");
+    } else if (resp.connectionStatus === "asleep") {
+      updateBadge("connected", "Asleep (Wakes on download)");
     } else {
       updateBadge("disconnected", "Disconnected");
     }
