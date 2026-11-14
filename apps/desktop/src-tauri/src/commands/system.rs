@@ -421,23 +421,44 @@ pub fn check_existing_installation() -> ExistingInstallationInfo {
         };
 
         if let Ok(key) = CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM") {
-            info.is_installed = true;
-            if let Ok(v) = key.get_string("DisplayVersion") {
-                info.version = Some(v);
-            }
-            if let Ok(p) = key.get_string("Publisher") {
-                info.publisher = Some(p);
-            }
+            let mut valid = false;
             if let Ok(loc) = key.get_string("InstallLocation") {
-                info.install_dir = Some(loc);
+                let clean_loc = loc.trim_matches('"');
+                let dir_path = PathBuf::from(clean_loc);
+                let lower = clean_loc.to_lowercase();
+                if !lower.contains(r"\temp\")
+                    && !lower.contains("nsd")
+                    && (dir_path.join("EDM.exe").exists() || dir_path.join("edm-desktop-app.exe").exists())
+                {
+                    valid = true;
+                    info.install_dir = Some(clean_loc.to_string());
+                }
+            }
+            if valid {
+                info.is_installed = true;
+                if let Ok(v) = key.get_string("DisplayVersion") {
+                    info.version = Some(v);
+                }
+                if let Ok(p) = key.get_string("Publisher") {
+                    info.publisher = Some(p);
+                }
             }
         }
 
         if !info.is_installed {
             if let Ok(key) = CURRENT_USER.open(r"Software\EDM") {
                 if let Ok(dir) = key.get_string("InstallDir") {
-                    info.is_installed = true;
-                    info.install_dir = Some(dir);
+                    let dir_path = PathBuf::from(&dir);
+                    let lower = dir.to_lowercase();
+                    // Ignore transient/temp/extracted paths so they are never detected as existing installs
+                    if !lower.contains(r"\temp\")
+                        && !lower.contains("nsd")
+                        && !lower.contains("target")
+                        && (dir_path.join("EDM.exe").exists() || dir_path.join("edm-desktop-app.exe").exists())
+                    {
+                        info.is_installed = true;
+                        info.install_dir = Some(dir);
+                    }
                 }
             }
         }

@@ -596,6 +596,8 @@ Function .onInit
 
     ; Launch the modern frameless setup UI (Image 2)
     ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
+    ; Clean up the temporary extracted setup files immediately
+    RMDir /r "$PLUGINSDIR"
     Quit
   ${EndIf}
 

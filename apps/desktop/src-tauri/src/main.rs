@@ -585,6 +585,15 @@ fn main() {
                     );
                     let _ = window.destroy();
                 } else {
+                    let _ = window.set_resizable(true);
+                    let _ = window.set_min_size(Some(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 950.0,
+                        height: 660.0,
+                    })));
+                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 950.0,
+                        height: 660.0,
+                    }));
                     let _ = window.center();
                     let _ = window.show();
                     let _ = window.set_focus();

@@ -41,9 +41,11 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
   // Resolve install path and check existing installation on mount
   useEffect(() => {
     tauriCheckExistingInstallation().then((info) => {
-      if (info.is_installed) {
-        setIsUpdate(true);
-        if (info.install_dir) {
+      if (info.is_installed && info.install_dir) {
+        const lower = info.install_dir.toLowerCase();
+        // Disallow temporary/extracted folders from being considered an existing installation
+        if (!lower.includes("\\temp\\") && !lower.includes("nsd")) {
+          setIsUpdate(true);
           setInstallPath(info.install_dir);
           return;
         }
@@ -117,6 +119,14 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
 
   const handleLaunch = useCallback(() => {
     onDone();
+  }, [onDone]);
+
+  const handleCancel = useCallback(() => {
+    try {
+      tauriWindowClose();
+    } catch {
+      onDone();
+    }
   }, [onDone]);
 
   // ── Window drag on header ──────────────────────────────────────────────────
@@ -411,7 +421,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
               {/* Action buttons */}
               <div className="mt-auto flex items-center gap-3">
                 <button
-                  onClick={onDone}
+                  onClick={handleCancel}
                   className="h-9 px-5 text-[12.5px] font-medium rounded-lg transition-colors cursor-pointer"
                   style={{
                     color: "#6B7280",

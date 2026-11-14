@@ -38,8 +38,6 @@ import {
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
-import InstallerWizard from "./components/InstallerWizard";
-import UninstallerWizard from "./components/UninstallerWizard";
 import { RefreshLinkModal } from "./components/RefreshLinkModal";
 import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
@@ -170,30 +168,7 @@ export const generateSpeedSvgPath = (history: number[] = [], peakBps: number = 0
   return { linePath, areaPath };
 };
 
-// ── Installer & Uninstaller mode detection ──────────────────────────────
-function detectInstallerMode(): boolean {
-  if (typeof window === "undefined") return false;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("mode") === "setup") return true;
-  if (window.location.hash === "#setup") return true;
-  if (params.get("installer") === "1") return true;
-  return false;
-}
-
-function detectUninstallerMode(): boolean {
-  if (typeof window === "undefined") return false;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("mode") === "uninstall") return true;
-  if (window.location.hash === "#uninstall") return true;
-  if (params.get("uninstall") === "1") return true;
-  return false;
-}
-
 export default function App() {
-  // If running as installer or uninstaller, render custom wizards full-screen
-  const [installerMode, setInstallerMode] = useState<boolean>(detectInstallerMode);
-  const [uninstallerMode, setUninstallerMode] = useState<boolean>(detectUninstallerMode);
-
   const [activeView, setActiveView] = useState<"downloads" | "settings">(
     () => {
       if (typeof window !== "undefined") {
@@ -213,51 +188,6 @@ export default function App() {
       }
     });
   }, []);
-
-  // Listen for hash changes to toggle installer/uninstaller mode
-  useEffect(() => {
-    const handleHashChange = () => {
-      if (window.location.hash === "#setup") {
-        setInstallerMode(true);
-      } else if (installerMode && window.location.hash !== "#setup") {
-        setInstallerMode(false);
-      }
-
-      if (window.location.hash === "#uninstall") {
-        setUninstallerMode(true);
-      } else if (uninstallerMode && window.location.hash !== "#uninstall") {
-        setUninstallerMode(false);
-      }
-    };
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, [installerMode, uninstallerMode]);
-
-  // ── Uninstaller mode short-circuit: render UninstallerWizard full-screen ──
-  if (uninstallerMode) {
-    return (
-      <UninstallerWizard
-        onDone={() => {
-          setUninstallerMode(false);
-          tauriWindowClose();
-        }}
-      />
-    );
-  }
-
-  // ── Installer mode short-circuit: render InstallerWizard full-screen ──────
-  if (installerMode) {
-    return (
-      <InstallerWizard
-        onDone={() => {
-          setInstallerMode(false);
-          if (window.location.hash === "#setup") {
-            window.history.replaceState(null, "", window.location.pathname + window.location.search);
-          }
-        }}
-      />
-    );
-  }
 
   const mode = settings.general.theme === "system" ? "dark" : settings.general.theme;
   const palette = settings.general.palette;
