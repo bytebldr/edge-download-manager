@@ -46,8 +46,8 @@ pub async fn app_close(
     };
 
     if close_to_tray {
-        tracing::info!("Closing main window and destroying WebView2 to reclaim memory");
-        let _ = window.destroy();
+        tracing::info!("Hiding main window to tray");
+        let _ = window.hide();
         state.lifecycle.check_lifecycle_step(0, false).await;
     } else {
         trigger_graceful_quit(window.app_handle().clone(), state.inner().clone());

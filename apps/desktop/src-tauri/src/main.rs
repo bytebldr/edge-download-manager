@@ -581,9 +581,9 @@ fn main() {
                     tracing::info!("EDM launched in custom uninstaller wizard mode (--uninstall)");
                 } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
-                        "EDM started in background mode; destroying window to minimize memory footprint"
+                        "EDM started in background mode; keeping window hidden"
                     );
-                    let _ = window.destroy();
+                    let _ = window.hide();
                 } else {
                     let _ = window.set_resizable(true);
                     let _ = window.set_min_size(Some(tauri::Size::Logical(tauri::LogicalSize {

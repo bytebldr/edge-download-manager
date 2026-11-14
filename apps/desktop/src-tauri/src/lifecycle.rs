@@ -149,8 +149,8 @@ impl LifecycleManager {
                 let builder =
                     WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
                         .title("EDM — Edge Download Manager")
-                        .inner_size(1080.0, 720.0)
-                        .min_inner_size(800.0, 500.0)
+                        .inner_size(950.0, 660.0)
+                        .min_inner_size(950.0, 660.0)
                         .center()
                         .decorations(false)
                         .transparent(false);
@@ -174,8 +174,8 @@ impl LifecycleManager {
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(is_visible) = window.is_visible() {
                     if !is_visible {
-                        info!("Destroying hidden main window to release WebView2 processes and memory");
-                        let _ = window.destroy();
+                        info!("Main window is closed/hidden; maintaining lightweight background state");
+                        let _ = window.hide();
                     }
                 }
             }

@@ -1170,10 +1170,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         testToken = await getToken();
       }
 
-      // 2. If EDM is not connected or asleep, attempt auto-wake via NMH before failing
-      if (connectionStatus === "asleep" || connectionStatus === "disconnected") {
+      // 2. If EDM is not connected or asleep, auto-wake via NMH before testing
+      if (connectionStatus === "asleep" || connectionStatus === "disconnected" || !socket || socket.readyState !== WebSocket.OPEN) {
         try {
-          await checkIfEdmRunning();
+          const wakeRes = await wakeDesktop(false);
+          if (wakeRes && wakeRes.token) {
+            testToken = wakeRes.token;
+          }
         } catch {}
       }
 

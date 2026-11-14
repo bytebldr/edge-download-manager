@@ -984,9 +984,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!testToken || testToken.length < 32 || testToken.startsWith("ed0000000000")) {
         testToken = await getToken();
       }
-      if (connectionStatus === "asleep" || connectionStatus === "disconnected") {
+      if (connectionStatus === "asleep" || connectionStatus === "disconnected" || !socket || socket.readyState !== WebSocket.OPEN) {
         try {
-          await checkIfEdmRunning();
+          const wakeRes = await wakeDesktop(false);
+          if (wakeRes && wakeRes.token) {
+            testToken = wakeRes.token;
+          }
         } catch {
         }
       }

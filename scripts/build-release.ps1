@@ -79,6 +79,15 @@ if ($hasCl) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Tauri application build failed" }
 
+# Provision updated EDM.exe to LocalAppData if existing installation is present
+$desktopBuilt = "$RootDir/target/release/edm-desktop-app.exe"
+if ((Test-Path $desktopBuilt) -and (Test-Path "$env:LOCALAPPDATA/EDM")) {
+    Get-Process -Name EDM -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 300
+    Copy-Item -Path $desktopBuilt -Destination "$env:LOCALAPPDATA/EDM/EDM.exe" -Force
+    Write-Host "Provisioned updated EDM.exe to $env:LOCALAPPDATA/EDM/" -ForegroundColor Green
+}
+
 # 6. CI Safety Check: Fail if release installer or packaged assets contain localhost:1420
 Write-Host "`n[6/6] Verifying Release Installer for embedded assets..." -ForegroundColor Yellow
 $setupExe = Get-ChildItem -Path "$RootDir/target" -Recurse -Filter "EDM_*_x64-setup.exe" | Select-Object -First 1
