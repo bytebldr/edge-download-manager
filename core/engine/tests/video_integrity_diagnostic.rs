@@ -294,11 +294,13 @@ pub async fn run_diagnostic_matrix_test(
             );
             server_handle.abort();
             return VerificationReport {
-                is_identical: false,
+                file_a_path: golden_path.to_string_lossy().to_string(),
+                file_b_path: String::new(),
                 file_a_size: TEST_FILE_SIZE,
                 file_b_size: 0,
                 file_a_sha256: "GOLDEN".to_string(),
                 file_b_sha256: format!("ERROR: {}", e),
+                is_identical: false,
                 total_diff_bytes: TEST_FILE_SIZE,
                 total_diff_ranges: 1,
                 diff_ranges: vec![],

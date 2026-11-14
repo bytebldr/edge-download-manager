@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 /// Parse a semver string (e.g. "0.0.14", "v0.0.13", "1.2.3-beta") into (major, minor, patch).
 pub fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
-    let clean = v.trim().trim_start_matches(|c| c == 'v' || c == 'V');
+    let clean = v.trim().trim_start_matches(['v', 'V']);
     let core = clean.split(&['-', '+'][..]).next()?.trim();
     let parts: Vec<&str> = core.split('.').collect();
     if parts.len() < 3 {
