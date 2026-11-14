@@ -172,11 +172,18 @@ btnSave.addEventListener("click", () => {
     }
   });
 });
-btnTest.addEventListener("click", () => {
-  const token = inputToken.value.trim();
+btnTest.addEventListener("click", async () => {
+  let token = inputToken.value.trim();
   testFeedback.className = "feedback-msg";
   testFeedback.textContent = "Testing connection to 127.0.0.1:14370...";
   btnTest.disabled = true;
+  if (!token || token.length < 32) {
+    const stored = await chrome.storage.local.get("edm_ws_token");
+    if (stored.edm_ws_token && stored.edm_ws_token.length >= 32) {
+      token = stored.edm_ws_token;
+      inputToken.value = token;
+    }
+  }
   chrome.runtime.sendMessage({ action: "test_token", token }, (resp) => {
     btnTest.disabled = false;
     if (chrome.runtime.lastError) {

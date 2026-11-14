@@ -1159,59 +1159,86 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.action === "test_token") {
-    const testToken = msg.token;
+    let testToken = (msg.token && typeof msg.token === "string") ? msg.token.trim() : "";
     const start = Date.now();
     let testWs: WebSocket | null = null;
     let finished = false;
 
-    const timer = setTimeout(() => {
-      if (!finished) {
-        finished = true;
-        if (testWs) testWs.close();
-        sendResponse({ ok: false, error: "Connection timed out after 3 seconds" });
+    (async () => {
+      // 1. If testToken is empty, fall back to storage or auto-detect
+      if (!testToken || testToken.length < 32 || testToken.startsWith("ed0000000000")) {
+        testToken = await getToken();
       }
-    }, 3000);
 
-    try {
-      testWs = new WebSocket(WS_URL);
-      testWs.onopen = () => {
-        testWs?.send(JSON.stringify({ type: "hello", token: testToken }));
-      };
-      testWs.onmessage = (event) => {
-        if (!finished) {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "ready") {
-              finished = true;
-              clearTimeout(timer);
-              const latency = Date.now() - start;
-              testWs?.close();
-              sendResponse({ ok: true, latency });
-            }
-          } catch {}
-        }
-      };
-      testWs.onerror = () => {
-        if (!finished) {
-          finished = true;
-          clearTimeout(timer);
-          sendResponse({ ok: false, error: "WebSocket connection error to 127.0.0.1:14370" });
-        }
-      };
-      testWs.onclose = () => {
-        if (!finished) {
-          finished = true;
-          clearTimeout(timer);
-          sendResponse({ ok: false, error: "Connection closed (Invalid token or origin)" });
-        }
-      };
-    } catch (e: any) {
-      if (!finished) {
-        finished = true;
-        clearTimeout(timer);
-        sendResponse({ ok: false, error: e?.message || "Failed to initiate WebSocket test" });
+      // 2. If EDM is not connected or asleep, attempt auto-wake via NMH before failing
+      if (connectionStatus === "asleep" || connectionStatus === "disconnected") {
+        try {
+          await checkIfEdmRunning();
+        } catch {}
       }
-    }
+
+      const timer = setTimeout(() => {
+        if (!finished) {
+          finished = true;
+          if (testWs) testWs.close();
+          sendResponse({ ok: false, error: "Connection timed out after 3 seconds" });
+        }
+      }, 3500);
+
+      try {
+        testWs = new WebSocket(WS_URL);
+        testWs.onopen = () => {
+          testWs?.send(
+            JSON.stringify({
+              type: "hello",
+              token: testToken,
+              browser: detectCurrentBrowser(),
+              version: chrome.runtime.getManifest().version,
+              extension_id: chrome.runtime.id,
+            })
+          );
+        };
+        testWs.onmessage = (event) => {
+          if (!finished) {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.type === "ready") {
+                finished = true;
+                clearTimeout(timer);
+                const latency = Date.now() - start;
+                testWs?.close();
+                // Ensure saved token matches the tested working token
+                if (testToken && testToken.length >= 32) {
+                  chrome.storage.local.set({ edm_ws_token: testToken });
+                }
+                sendResponse({ ok: true, latency });
+              }
+            } catch {}
+          }
+        };
+        testWs.onerror = () => {
+          if (!finished) {
+            finished = true;
+            clearTimeout(timer);
+            sendResponse({ ok: false, error: "WebSocket connection error to 127.0.0.1:14370" });
+          }
+        };
+        testWs.onclose = () => {
+          if (!finished) {
+            finished = true;
+            clearTimeout(timer);
+            sendResponse({ ok: false, error: "Connection closed (Invalid token or origin)" });
+          }
+        };
+      } catch (e: any) {
+        if (!finished) {
+          finished = true;
+          clearTimeout(timer);
+          sendResponse({ ok: false, error: e?.message || "Failed to initiate WebSocket test" });
+        }
+      }
+    })();
+
     return true;
   }
 
