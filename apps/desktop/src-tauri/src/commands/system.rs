@@ -178,6 +178,23 @@ fn perform_native_installation_internal(
         }
     }
 
+    // Helper to recursively locate a target file in candidate trees
+    fn find_file_recursive(dir: &std::path::Path, target_name: &str) -> Option<PathBuf> {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.is_file() && p.file_name().and_then(|n| n.to_str()) == Some(target_name) {
+                    return Some(p);
+                } else if p.is_dir() {
+                    if let Some(found) = find_file_recursive(&p, target_name) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     // Ensure edm-nmh.exe is found and copied to target_path\edm-nmh.exe
     let target_nmh = target_path.join("edm-nmh.exe");
     if !target_nmh.exists() {
@@ -198,22 +215,6 @@ fn perform_native_installation_internal(
             }
         }
         if !copied_nmh {
-            // Recursive scan of current_dir
-            fn find_file_recursive(dir: &std::path::Path, target_name: &str) -> Option<PathBuf> {
-                if let Ok(rd) = std::fs::read_dir(dir) {
-                    for entry in rd.flatten() {
-                        let p = entry.path();
-                        if p.is_file() && p.file_name().and_then(|n| n.to_str()) == Some(target_name) {
-                            return Some(p);
-                        } else if p.is_dir() {
-                            if let Some(found) = find_file_recursive(&p, target_name) {
-                                return Some(found);
-                            }
-                        }
-                    }
-                }
-                None
-            }
             if let Some(found_nmh) = find_file_recursive(current_dir, "edm-nmh.exe") {
                 let _ = std::fs::copy(&found_nmh, &target_nmh);
             }
