@@ -35,11 +35,18 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
   const [browserIntegration, setBrowserIntegration] = useState(true);
   const [phase, setPhase] = useState<InstallPhase>("config");
   const [isUpdate, setIsUpdate] = useState(false);
+  const [appVersion, setAppVersion] = useState("0.0.14");
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Preparing...");
 
-  // Resolve install path and check existing installation on mount
+  // Resolve runtime version, install path and check existing installation on mount
   useEffect(() => {
+    import("@tauri-apps/api/app")
+      .then((m) => m.getVersion())
+      .then((ver) => {
+        if (ver) setAppVersion(ver);
+      })
+      .catch(() => {});
     tauriCheckExistingInstallation().then((info) => {
       if (info.is_installed && info.install_dir) {
         const lower = info.install_dir.toLowerCase();
@@ -248,7 +255,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
               color: "#A78BFA",
             }}
           >
-            v0.0.14
+            v{appVersion}
           </div>
         </aside>
 
@@ -265,7 +272,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
                   {isUpdate
-                    ? "Update your installation to v0.0.14"
+                    ? `Update your installation to v${appVersion}`
                     : "Configure installation settings"}
                 </p>
               </div>
@@ -294,7 +301,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-semibold text-white tracking-tight">
-                        Ready to update to v0.0.14
+                        Ready to update to v{appVersion}
                       </div>
                       <div className="text-[11.5px] text-[#9CA3AF] truncate mt-0.5 font-mono" title={installPath}>
                         {installPath}

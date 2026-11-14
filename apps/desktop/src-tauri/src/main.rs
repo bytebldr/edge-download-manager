@@ -530,6 +530,11 @@ fn main() {
                 state.rt_handle.spawn(async move {
                     lc.record_wake(true).await;
                 });
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.unminimize();
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
             } else {
                 state.rt_handle.spawn(async move {
                     lc.record_wake(false).await;
@@ -545,6 +550,18 @@ fn main() {
         .setup(|app| {
             let app_state_ref = app.state::<AppState>();
             app_state_ref.lifecycle.set_app_handle(app.handle().clone());
+
+            // Post-update verification: check if previous OTA update applied cleanly
+            if let Ok(Some(pending)) = app_state_ref.store.get_setting("pending_update_version") {
+                if !pending.is_empty() {
+                    let _ = app_state_ref.store.set_setting("pending_update_version", "");
+                    tracing::info!(
+                        "Post-update verification: actively running build v{}, previous target '{}'",
+                        env!("CARGO_PKG_VERSION"),
+                        pending
+                    );
+                }
+            }
 
             let args: Vec<String> = std::env::args().collect();
             let is_autostart_boot = args.iter().any(|arg| arg == "--autostart");

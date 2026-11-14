@@ -249,6 +249,14 @@ pub async fn install_update(
         ));
     }
 
+    let current_ver = env!("CARGO_PKG_VERSION").to_string();
+    tracing::info!(
+        "OTA update package downloaded ({} bytes). Current version: v{}, installer: {}",
+        downloaded,
+        current_ver,
+        installer_path.display()
+    );
+
     let _ = app.emit(
         "ota-progress",
         OtaProgress {
@@ -259,15 +267,38 @@ pub async fn install_update(
         },
     );
 
-    // Launch installer detached
+    // Save target pending update flag in store for post-update verification
+    let _ = state.store.set_setting("pending_update_version", &installer_path.to_string_lossy());
+    let _ = state.store.checkpoint();
+
+    // Launch installer detached with silent arguments and clean relaunch sequence
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x00000008;
-        let mut cmd = std::process::Command::new(&installer_path);
+
+        // Resolve canonical EDM.exe target for post-update relaunch
+        let target_exe = std::env::current_exe()
+            .ok()
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\Default\AppData\Local\EDM\EDM.exe"));
+
+        let runner_script = format!(
+            "timeout /t 2 /nobreak >nul & \"{}\" /S & timeout /t 1 /nobreak >nul & start \"\" \"{}\"",
+            installer_path.to_string_lossy(),
+            target_exe.to_string_lossy()
+        );
+
+        tracing::info!(
+            "Launching detached silent OTA updater runner: installer='{}', relaunch='{}'",
+            installer_path.display(),
+            target_exe.display()
+        );
+
+        let mut cmd = std::process::Command::new("cmd.exe");
+        cmd.args(["/c", &runner_script]);
         cmd.creation_flags(DETACHED_PROCESS);
         cmd.spawn()
-            .map_err(|e| format!("Failed to launch update installer: {}", e))?;
+            .map_err(|e| format!("Failed to launch update installer runner: {}", e))?;
     }
 
     #[cfg(not(windows))]
@@ -277,7 +308,8 @@ pub async fn install_update(
             .map_err(|e| format!("Failed to launch update installer: {}", e))?;
     }
 
-    // Gracefully shut down EDM so the installer can replace files without conflict
+    // Gracefully shut down EDM so the installer can replace locked binaries without conflict
+    tracing::info!("Triggering graceful shutdown of EDM for in-place OTA update...");
     crate::trigger_graceful_quit(app, state.inner().clone());
 
     Ok(())

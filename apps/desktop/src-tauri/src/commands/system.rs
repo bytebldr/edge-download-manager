@@ -239,11 +239,12 @@ fn perform_native_installation_internal(
     let edm_exe = target_path.join("EDM.exe");
     let edm_desktop_exe = target_path.join("edm-desktop-app.exe");
 
-    // Ensure bidirectional co-location between EDM.exe and edm-desktop-app.exe
-    if edm_exe.exists() && !edm_desktop_exe.exists() {
-        let _ = std::fs::copy(&edm_exe, &edm_desktop_exe);
-    } else if edm_desktop_exe.exists() && !edm_exe.exists() {
+    // Ensure bidirectional co-location between EDM.exe and edm-desktop-app.exe,
+    // always synchronizing and updating both binaries to the newest payload.
+    if edm_desktop_exe.exists() {
         let _ = std::fs::copy(&edm_desktop_exe, &edm_exe);
+    } else if edm_exe.exists() {
+        let _ = std::fs::copy(&edm_exe, &edm_desktop_exe);
     }
 
     let edm_exe_str = edm_exe.to_string_lossy().to_string();

@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod extensions;
+pub mod version;
+pub use version::{compare_versions, compare_versions_num, parse_semver};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\edm_ipc_service";

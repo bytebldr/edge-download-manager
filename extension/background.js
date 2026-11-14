@@ -1,3 +1,4 @@
+import { compareVersions } from "./utils/version";
 const WS_URL = "ws://127.0.0.1:14370";
 let socket = null;
 let connectionStatus = "asleep";
@@ -32,7 +33,8 @@ function checkAndPerformAutoReload(expectedVersion) {
   if (!expectedVersion) return;
   const currentVersion = chrome.runtime.getManifest().version;
   chrome.storage.local.set({ expected_extension_version: expectedVersion });
-  if (expectedVersion === currentVersion) {
+  const cmp = compareVersions(currentVersion, expectedVersion);
+  if (cmp >= 0) {
     pendingReload = false;
     chrome.storage.local.set({ edm_update_status: "latest" });
     return;
@@ -1153,22 +1155,48 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg.action === "check_update") {
-    try {
-      chrome.runtime.requestUpdateCheck((status, details) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ ok: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({
-            ok: true,
-            status,
-            // "throttled" | "no_update" | "update_available"
-            version: details?.version || chrome.runtime.getManifest().version
-          });
+    (async () => {
+      let appVer = null;
+      try {
+        const diag = await checkNmhHealth();
+        if (diag.report?.app_version) {
+          appVer = diag.report.app_version;
+          await chrome.storage.local.set({ expected_extension_version: appVer });
         }
-      });
-    } catch (err) {
-      sendResponse({ ok: false, error: err?.message || "Update check failed" });
-    }
+      } catch {
+      }
+      if (!appVer) {
+        const store = await chrome.storage.local.get("expected_extension_version");
+        if (store && store.expected_extension_version) {
+          appVer = store.expected_extension_version;
+        }
+      }
+      if (appVer) {
+        const currentVer = chrome.runtime.getManifest().version;
+        const cmp = compareVersions(currentVer, appVer);
+        sendResponse({
+          ok: true,
+          status: cmp < 0 ? "update_available" : cmp > 0 ? "ahead" : "no_update",
+          version: appVer
+        });
+        return;
+      }
+      try {
+        chrome.runtime.requestUpdateCheck((status, details) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+          } else {
+            sendResponse({
+              ok: true,
+              status,
+              version: details?.version || chrome.runtime.getManifest().version
+            });
+          }
+        });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || "Update check failed" });
+      }
+    })();
     return true;
   }
   if (msg.action === "reload_extension") {

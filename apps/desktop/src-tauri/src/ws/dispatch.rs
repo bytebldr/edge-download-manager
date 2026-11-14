@@ -51,10 +51,19 @@ pub async fn handle_ws_connection(
         Err(err_resp)
     };
 
-    let ws_stream = match tokio_tungstenite::accept_hdr_async(stream, callback).await {
-        Ok(ws) => ws,
-        Err(e) => {
+    let ws_stream = match tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio_tungstenite::accept_hdr_async(stream, callback),
+    )
+    .await
+    {
+        Ok(Ok(ws)) => ws,
+        Ok(Err(e)) => {
             warn!("Rejected WebSocket handshake from {}: {}", peer_addr, e);
+            return;
+        }
+        Err(_) => {
+            warn!("WebSocket handshake from {} timed out after 5s", peer_addr);
             return;
         }
     };

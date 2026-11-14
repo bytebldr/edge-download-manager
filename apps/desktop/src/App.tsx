@@ -72,6 +72,7 @@ import {
   tauriSendSystemNotification,
   tauriCheckForUpdates,
   tauriInstallUpdate,
+  tauriListenOtaProgress,
   tauriGetSystemUserDirs,
   UpdateCheckResult,
 } from "./services/tauriBridge";
@@ -220,6 +221,9 @@ export default function App() {
   const [speedLimit, setSpeedLimit] = useState<string>("Unlimited");
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [showUpdateBanner, setShowUpdateBanner] = useState<boolean>(false);
+  const [updateBannerState, setUpdateBannerState] = useState<"available" | "downloading" | "installing" | "failed">("available");
+  const [updateBannerProgress, setUpdateBannerProgress] = useState<number>(0);
+  const [updateBannerError, setUpdateBannerError] = useState<string | null>(null);
   const notifiedCompletedIdsRef = useRef<Set<string>>(new Set());
 
   const handleSpeedLimitChange = (val: string) => {
@@ -241,7 +245,10 @@ export default function App() {
       tauriCheckForUpdates().then((res) => {
         if (res && res.update_available) {
           setUpdateInfo(res);
-          setShowUpdateBanner(true);
+          const dismissed = localStorage.getItem("edm_dismissed_update_version");
+          if (dismissed !== res.latest_version) {
+            setShowUpdateBanner(true);
+          }
         }
       }).catch((err) => {
         console.warn("Auto update check failed:", err);
@@ -249,14 +256,36 @@ export default function App() {
     }
   }, [settings.general.autoCheckUpdates]);
 
+  const handleDismissUpdateBanner = () => {
+    if (updateInfo?.latest_version) {
+      try {
+        localStorage.setItem("edm_dismissed_update_version", updateInfo.latest_version);
+      } catch {}
+    }
+    setShowUpdateBanner(false);
+  };
+
   const handleBannerUpdate = async () => {
     if (!updateInfo) return;
     if (updateInfo.download_url) {
+      setUpdateBannerState("downloading");
+      setUpdateBannerProgress(0);
+      setUpdateBannerError(null);
+
+      let unlistenFn: (() => void) | null = null;
       try {
+        unlistenFn = await tauriListenOtaProgress((progress) => {
+          setUpdateBannerProgress(Math.round(progress.percent));
+          if (progress.status === "ready" || progress.percent >= 100) {
+            setUpdateBannerState("installing");
+          }
+        });
         await tauriInstallUpdate(updateInfo.download_url);
-      } catch (err) {
+      } catch (err: any) {
         console.warn("Update installation trigger failed:", err);
-        setActiveView("settings");
+        setUpdateBannerState("failed");
+        setUpdateBannerError(err?.message || String(err) || "Failed to download update");
+        if (unlistenFn) unlistenFn();
       }
     } else {
       setActiveView("settings");
@@ -2466,36 +2495,85 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs max-w-lg select-none"
+            role="alert"
+            aria-label="Update notification"
+            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs max-w-xl w-[92vw] sm:w-auto select-none"
           >
-            {/* Shiny Badge */}
+            {/* Green Badge Accent */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] shrink-0">
               <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-              <span>Update Available: v{updateInfo.latest_version}</span>
+              <span>Update Available</span>
             </div>
 
-            {/* Teaser Description */}
+            {/* Clean Structured Content */}
             <div className="flex-1 min-w-0 pr-1">
-              <p className="truncate font-medium text-[var(--text-primary)] text-[12px]">
-                {updateInfo.release_name || `EDM v${updateInfo.latest_version}`}
-              </p>
-              <p className="truncate text-[10px] text-[var(--text-muted)]">
-                {updateInfo.release_notes ? updateInfo.release_notes.replace(/[\r\n]+/g, " ").slice(0, 50) : "Performance enhancements & bug fixes"}
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-[var(--text-primary)] text-[12px] truncate">
+                  EDM v{updateInfo.latest_version} is ready to install
+                </span>
+                {updateInfo.html_url && updateInfo.html_url.startsWith("https://") && (
+                  <a
+                    href={updateInfo.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 shrink-0 inline-flex items-center gap-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Release notes ↗
+                  </a>
+                )}
+              </div>
+
+              {updateBannerState === "downloading" ? (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all duration-200"
+                      style={{ width: `${updateBannerProgress}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-mono font-medium shrink-0">
+                    {updateBannerProgress}%
+                  </span>
+                </div>
+              ) : updateBannerState === "installing" ? (
+                <p className="text-[10.5px] text-blue-400 animate-pulse mt-0.5">
+                  Installing update and restarting EDM...
+                </p>
+              ) : updateBannerState === "failed" ? (
+                <p className="text-[10.5px] text-rose-400 mt-0.5 truncate" title={updateBannerError || ""}>
+                  ⚠ {updateBannerError || "Installation failed"}
+                </p>
+              ) : (
+                <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">
+                  Fast native download accelerator update
+                </p>
+              )}
             </div>
 
-            {/* Actions */}
+            {/* Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleBannerUpdate}
-                className="btn-primary-3d px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-sm flex items-center gap-1.5"
+                disabled={updateBannerState === "downloading" || updateBannerState === "installing"}
+                className="btn-primary-3d px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Install software update"
               >
-                <span>Update Now</span>
+                {updateBannerState === "downloading" ? (
+                  <span>Downloading...</span>
+                ) : updateBannerState === "installing" ? (
+                  <span>Restarting...</span>
+                ) : updateBannerState === "failed" ? (
+                  <span>Retry</span>
+                ) : (
+                  <span>Update Now</span>
+                )}
               </button>
               <button
-                onClick={() => setShowUpdateBanner(false)}
+                onClick={handleDismissUpdateBanner}
                 className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors cursor-pointer"
-                title="Dismiss"
+                title="Dismiss update banner"
+                aria-label="Dismiss update banner"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

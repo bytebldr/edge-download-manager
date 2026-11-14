@@ -25,21 +25,34 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["yt-main.js"],
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "yt-main.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["yt-main.js"],
-      "matches": ["*://*.youtube.com/*"]
+      "resources": [
+        "yt-main.js"
+      ],
+      "matches": [
+        "*://*.youtube.com/*"
+      ]
     }
   ],
   "action": {

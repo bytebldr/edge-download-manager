@@ -1,5 +1,7 @@
 // EDM Live Download Dashboard - Main Popup Controller
 
+import { compareVersions } from "./utils/version";
+
 interface DownloadItem {
   id: string;
   url: string;
@@ -1091,13 +1093,30 @@ class PopupController {
             <span style="color: #8fa0be;">Installed Version: <strong style="color: #FFFFFF;">v${this.currentVersion}</strong></span>
             <span style="color: #8fa0be;">Expected: <strong style="color: #FFFFFF;">v${this.expectedVersion || this.currentVersion}</strong></span>
           </div>
-          <div style="font-size: 11px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-            <span style="color: #8fa0be;">Status:</span>
-            <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 600; background: ${this.expectedVersion && this.expectedVersion !== this.currentVersion ? '#B45309' : '#065F46'}; color: #FFFFFF;">
-              ${this.expectedVersion && this.expectedVersion !== this.currentVersion ? `Update Available (v${this.expectedVersion})` : 'Up to Date'}
-            </span>
-            <span style="color: #64748B; font-size: 10px; margin-left: auto; text-transform: capitalize;">${escapeHtml(this.detectedBrowser)}</span>
-          </div>
+          ${(() => {
+            const cmp = compareVersions(this.currentVersion, this.expectedVersion || this.currentVersion);
+            let badgeBg = "#065F46";
+            let statusText = "Up to Date";
+            let tooltip = "Installed extension matches desktop application version.";
+            if (cmp < 0) {
+              badgeBg = "#B45309";
+              statusText = `Update Available (v${this.expectedVersion})`;
+              tooltip = `A newer extension version is provided by EDM Desktop v${this.expectedVersion}.`;
+            } else if (cmp > 0) {
+              badgeBg = "#2563EB";
+              statusText = `Ahead of app (v${this.expectedVersion || this.currentVersion})`;
+              tooltip = `Installed extension (v${this.currentVersion}) is newer than desktop application (v${this.expectedVersion}).`;
+            }
+            return `
+              <div style="font-size: 11px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <span style="color: #8fa0be;">Status:</span>
+                <span title="${escapeHtml(tooltip)}" style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 600; background: ${badgeBg}; color: #FFFFFF; cursor: help;">
+                  ${escapeHtml(statusText)}
+                </span>
+                <span style="color: #64748B; font-size: 10px; margin-left: auto; text-transform: capitalize;">${escapeHtml(this.detectedBrowser)}</span>
+              </div>
+            `;
+          })()}
           <div style="display: flex; gap: 8px; align-items: center;">
             <button id="popupBtnCheckUpdate" class="btn-3d" style="height: 34px; padding: 0 12px; font-size: 11px;">Check for Updates</button>
             <button id="popupBtnReloadExt" class="btn-3d btn-primary" style="height: 34px; padding: 0 12px; font-size: 11px; background: #2563EB;">Reload Extension</button>
@@ -1382,22 +1401,23 @@ class PopupController {
       btnCheckUpdate.addEventListener("click", () => {
         if (updateFeedback) {
           updateFeedback.style.color = "#8FA0BE";
-          updateFeedback.textContent = "Checking for extension updates...";
+          updateFeedback.textContent = "Checking for extension updates against EDM Desktop...";
         }
         btnCheckUpdate.disabled = true;
 
         chrome.runtime.sendMessage({ action: "check_update" }, (resp) => {
           btnCheckUpdate.disabled = false;
           if (resp && resp.ok) {
-            if (resp.status === "update_available") {
+            const cmp = compareVersions(this.currentVersion, resp.version);
+            if (cmp < 0) {
               if (updateFeedback) {
                 updateFeedback.style.color = "#10B981";
                 updateFeedback.textContent = `Update available (v${resp.version})! Click Reload Extension to apply.`;
               }
-            } else if (resp.status === "throttled") {
+            } else if (cmp > 0) {
               if (updateFeedback) {
-                updateFeedback.style.color = "#8FA0BE";
-                updateFeedback.textContent = "Update checks are throttled by Chrome. Try again shortly.";
+                updateFeedback.style.color = "#60A5FA";
+                updateFeedback.textContent = `Installed extension (v${this.currentVersion}) is ahead of running app (v${resp.version}).`;
               }
             } else if (updateFeedback) {
               updateFeedback.style.color = "#10B981";
@@ -1405,7 +1425,7 @@ class PopupController {
             }
           } else if (updateFeedback) {
             updateFeedback.style.color = "#EF4444";
-            updateFeedback.textContent = resp?.error || "Update check failed.";
+            updateFeedback.textContent = resp?.error || "Couldn't reach EDM Desktop. Ensure EDM application is running.";
           }
         });
       });
@@ -1497,6 +1517,27 @@ class PopupController {
     const helperOk = rep.helper_path && rep.browsers.some((b: any) => b.helper_registered && b.manifest_exists);
     const appOk = rep.app_installed;
     const wsOk = rep.ws_port_ready || this.connectionState === "connected";
+    const hasWakeError = Boolean(rep.last_wake_error);
+
+    let coreStatusText = "HEALTHY";
+    let coreBadgeClass = "diag-badge-ok";
+    if (hasWakeError) {
+      coreStatusText = "ATTENTION NEEDED";
+      coreBadgeClass = "diag-badge-err";
+    } else if (!appOk || !helperOk) {
+      coreStatusText = "CONFIG ERROR";
+      coreBadgeClass = "diag-badge-err";
+    } else if (!wsOk) {
+      coreStatusText = "STANDBY (SLEEPING)";
+      coreBadgeClass = "diag-badge-warn";
+    }
+
+    let wakeTimeDisplay = "Standby (Wakes on download)";
+    if (hasWakeError) {
+      wakeTimeDisplay = "— (Wake Failed)";
+    } else if (rep.time_to_ready_ms !== null && rep.time_to_ready_ms !== undefined) {
+      wakeTimeDisplay = `${rep.time_to_ready_ms} ms`;
+    }
 
     return `
       <div class="diag-view">
@@ -1504,6 +1545,7 @@ class PopupController {
           <div style="font-size:12px; font-weight:700;">Host &amp; Wake Diagnostics</div>
           <div class="diag-actions">
             <button id="btnCopyDiag" class="btn-3d" style="font-size:10px; padding:3px 8px;">📋 Copy report</button>
+            <button id="btnTestWakeDiag" class="btn-3d" style="font-size:10px; padding:3px 8px;">⚡ Test Wake</button>
             <button id="btnRepairDiag" class="btn-3d btn-primary" style="font-size:10px; padding:3px 8px;" ${this.isRepairing ? "disabled" : ""}>
               ${this.isRepairing ? "Repairing..." : "🔧 Repair"}
             </button>
@@ -1516,8 +1558,8 @@ class PopupController {
         <div class="diag-card">
           <div class="diag-card-title">
             <span>Core Components</span>
-            <span class="diag-badge ${appOk && helperOk ? "diag-badge-ok" : "diag-badge-err"}">
-              ${appOk && helperOk ? "HEALTHY" : "ATTENTION NEEDED"}
+            <span class="diag-badge ${coreBadgeClass}">
+              ${coreStatusText}
             </span>
           </div>
 
@@ -1539,8 +1581,15 @@ class PopupController {
           </div>
 
           <div class="diag-row">
+            <span class="diag-label">Live WebSocket Sync</span>
+            <span class="diag-badge ${this.connectionState === "connected" ? "diag-badge-ok" : this.connectionState === "connecting" ? "diag-badge-warn" : "diag-badge-err"}">
+              ${this.connectionState.toUpperCase()}
+            </span>
+          </div>
+
+          <div class="diag-row">
             <span class="diag-label">Cold-Start Wake Time</span>
-            <span class="diag-val">${rep.time_to_ready_ms !== null && rep.time_to_ready_ms !== undefined ? `${rep.time_to_ready_ms} ms` : "Instant / Sleeping"}</span>
+            <span class="diag-val">${wakeTimeDisplay}</span>
           </div>
 
           <div class="diag-row">
@@ -1604,6 +1653,7 @@ class PopupController {
 
   private attachDiagnosticsEvents() {
     const btnCopy = document.getElementById("btnCopyDiag");
+    const btnTestWake = document.getElementById("btnTestWakeDiag");
     const btnRepair = document.getElementById("btnRepairDiag");
     const toast = document.getElementById("diagToast");
 
@@ -1618,6 +1668,40 @@ class PopupController {
             toast.style.color = "#34D399";
             toast.innerText = "✓ Diagnostics report copied to clipboard!";
             setTimeout(() => { toast.style.display = "none"; }, 2500);
+          }
+        });
+      });
+    }
+
+    if (btnTestWake) {
+      btnTestWake.addEventListener("click", () => {
+        btnTestWake.setAttribute("disabled", "true");
+        btnTestWake.innerText = "Waking...";
+        if (toast) {
+          toast.style.display = "block";
+          toast.style.background = "rgba(37, 99, 235, 0.2)";
+          toast.style.border = "1px solid rgba(37, 99, 235, 0.4)";
+          toast.style.color = "#60A5FA";
+          toast.innerText = "Sending wake signal to Native Messaging Host...";
+        }
+
+        chrome.runtime.sendMessage({ action: "wake_desktop", show_window: false }, (resp) => {
+          btnTestWake.removeAttribute("disabled");
+          btnTestWake.innerText = "⚡ Test Wake";
+          if (resp && resp.ok) {
+            if (toast) {
+              toast.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+              toast.style.color = "#34D399";
+              toast.innerText = "✓ EDM Desktop woken successfully! WebSocket port 14370 ready.";
+              setTimeout(() => { toast.style.display = "none"; }, 3500);
+            }
+          } else if (toast) {
+            toast.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+            toast.style.color = "#F87171";
+            toast.innerText = `⚠ Wake test failed: ${resp?.error || "Timeout waiting for EDM desktop"}`;
+          }
+          if (this.port) {
+            this.port.postMessage({ type: "get_diagnostics" });
           }
         });
       });

@@ -90,19 +90,33 @@ if (Test-Path $buildRsPath) {
 }
 
 # -----------------------------------------------------------------------------
-# Invariant 6: Version parity across manifests
+# Invariant 6: Version parity across all manifests and packages (Single Source of Truth)
 # -----------------------------------------------------------------------------
-Write-Host "`n[Check 6/6] Verifying version alignment across packages..." -ForegroundColor Yellow
+Write-Host "`n[Check 6/6] Verifying version alignment across all packages and manifests..." -ForegroundColor Yellow
 $tauriConf = Get-Content "$RootDir/apps/desktop/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$expectedVersion = $tauriConf.version
 $extManifest = Get-Content "$RootDir/extension/manifest.json" -Raw | ConvertFrom-Json
+$desktopPkg = Get-Content "$RootDir/apps/desktop/package.json" -Raw | ConvertFrom-Json
+$extPkg = Get-Content "$RootDir/extension/package.json" -Raw | ConvertFrom-Json
+$extChromium = if (Test-Path "$RootDir/extension/manifest.chromium.json") { Get-Content "$RootDir/extension/manifest.chromium.json" -Raw | ConvertFrom-Json } else { $null }
+$extFirefox = if (Test-Path "$RootDir/extension/manifest.firefox.json") { Get-Content "$RootDir/extension/manifest.firefox.json" -Raw | ConvertFrom-Json } else { $null }
+
 $cargoToml = Get-Content "$RootDir/Cargo.toml" -Raw
-$cargoMatch = [regex]::Match($cargoToml, 'version\s*=\s*"([^"]+)"')
+$cargoMatch = [regex]::Match($cargoToml, '\[workspace\.package\][\s\S]*?version\s*=\s*"([^"]+)"')
 $cargoVer = if ($cargoMatch.Success) { $cargoMatch.Groups[1].Value } else { "" }
 
-if ($tauriConf.version -ne $extManifest.version -or $tauriConf.version -ne $cargoVer) {
-    $Failures += "VERSION MISMATCH: Cargo ($cargoVer), Tauri ($($tauriConf.version)), Extension ($($extManifest.version)) are not in sync."
+$mismatches = @()
+if ($cargoVer -ne $expectedVersion) { $mismatches += "Cargo.toml ($cargoVer)" }
+if ($desktopPkg.version -ne $expectedVersion) { $mismatches += "apps/desktop/package.json ($($desktopPkg.version))" }
+if ($extPkg.version -ne $expectedVersion) { $mismatches += "extension/package.json ($($extPkg.version))" }
+if ($extManifest.version -ne $expectedVersion) { $mismatches += "extension/manifest.json ($($extManifest.version))" }
+if ($extChromium -and $extChromium.version -ne $expectedVersion) { $mismatches += "extension/manifest.chromium.json ($($extChromium.version))" }
+if ($extFirefox -and $extFirefox.version -ne $expectedVersion) { $mismatches += "extension/manifest.firefox.json ($($extFirefox.version))" }
+
+if ($mismatches.Count -gt 0) {
+    $Failures += "VERSION MISMATCH against tauri.conf.json ($expectedVersion): $($mismatches -join ', '). Run 'node scripts/bump-version.mjs' to sync."
 } else {
-    Write-Host "  PASS: All manifests aligned to version $($tauriConf.version)." -ForegroundColor Green
+    Write-Host "  PASS: All 7 manifests aligned to single source of truth version $expectedVersion." -ForegroundColor Green
 }
 
 # -----------------------------------------------------------------------------

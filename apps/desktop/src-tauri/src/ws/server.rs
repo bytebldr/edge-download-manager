@@ -66,6 +66,12 @@ pub async fn start_ws_server(manager: Arc<WsManager>) {
                     }
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
+                if peek_len == 0 {
+                    // Empty probe or client disconnected during peek; release connection counter and drop cleanly
+                    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+                    return;
+                }
+
                 let peek_str = String::from_utf8_lossy(&peek_buf[..peek_len]);
 
                 if peek_str.starts_with("GET /token")
@@ -110,6 +116,12 @@ pub async fn start_ws_server_on(
                     }
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
+                if peek_len == 0 {
+                    // Empty probe or client disconnected during peek; release connection counter and drop cleanly
+                    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+                    return;
+                }
+
                 let peek_str = String::from_utf8_lossy(&peek_buf[..peek_len]);
 
                 if peek_str.starts_with("GET /token")

@@ -392,9 +392,9 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
         const DETACHED_PROCESS: u32 = 0x00000008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         let mut cmd = std::process::Command::new(exe);
         cmd.arg(arg)
@@ -403,11 +403,10 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
 
-        let flags = if show_window {
-            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        } else {
-            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-        };
+        // For GUI applications (Tauri / WebView2), do NOT pass CREATE_NO_WINDOW as it breaks
+        // Chromium/WebView2 thread and message dispatch initialization. The --background CLI
+        // argument instructs EDM to hide its window automatically.
+        let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
         cmd.creation_flags(flags);
 
         match cmd.spawn() {
@@ -459,22 +458,36 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
 }
 
 fn is_ws_server_ready() -> bool {
+    use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
     if let Ok(addr) = "127.0.0.1:14370".parse::<SocketAddr>() {
-        TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
-    } else {
-        false
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
+            let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+            // Send quick probe header so ws_server peek resolves cleanly without hanging
+            let _ = stream.write_all(b"GET /token HTTP/1.1\r\nHost: 127.0.0.1:14370\r\nConnection: close\r\n\r\n");
+            let mut buf = [0u8; 64];
+            if let Ok(n) = stream.read(&mut buf) {
+                return n > 0;
+            }
+            return true;
+        }
     }
+    false
 }
 
 fn wait_for_ws_server(timeout_secs: u64) -> bool {
     let start = Instant::now();
     let limit = Duration::from_secs(timeout_secs);
+    let mut delay_ms = 50;
     while start.elapsed() < limit {
         if is_ws_server_ready() {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(150));
+        std::thread::sleep(Duration::from_millis(delay_ms));
+        if delay_ms < 300 {
+            delay_ms = (delay_ms * 3) / 2;
+        }
     }
     is_ws_server_ready()
 }
@@ -789,24 +802,30 @@ async fn forward_to_edm_desktop(msg: &ExtensionMessage) -> Option<AppReply> {
         .build()
         .ok()?;
     let body = serde_json::to_string(msg).ok()?;
-    let resp = client
-        .post("http://127.0.0.1:8998/api")
-        .header("x-edm-token", token)
-        .header(
-            "Origin",
-            "chrome-extension://ginpdimhcdbojbhemgjedghkeolbcmgj",
-        )
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
-        .await
-        .ok()?;
-    if resp.status().is_success() {
-        let bytes = resp.bytes().await.ok()?;
-        serde_json::from_slice::<AppReply>(&bytes).ok()
-    } else {
-        None
+    let endpoints = ["http://127.0.0.1:14370/api", "http://127.0.0.1:8998/api"];
+    for endpoint in &endpoints {
+        if let Ok(resp) = client
+            .post(*endpoint)
+            .header("x-edm-token", &token)
+            .header(
+                "Origin",
+                "chrome-extension://ginpdimhcdbojbhemgjedghkeolbcmgj",
+            )
+            .header("Content-Type", "application/json")
+            .body(body.clone())
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Ok(rep) = serde_json::from_slice::<AppReply>(&bytes) {
+                        return Some(rep);
+                    }
+                }
+            }
+        }
     }
+    None
 }
 
 async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> AppReply {

@@ -50,14 +50,12 @@ found_nmh:
     Goto done_webview2
 done_webview2:
 
-  ; Ensure BOTH edm-desktop-app.exe and EDM.exe exist in $INSTDIR for seamless compatibility
-  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 +3
-    IfFileExists "$INSTDIR\EDM.exe" +2 0
-      CopyFiles /SILENT "$INSTDIR\edm-desktop-app.exe" "$INSTDIR\EDM.exe"
+  ; Ensure BOTH edm-desktop-app.exe and EDM.exe exist in $INSTDIR and are ALWAYS overwritten with the newest payload
+  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 +2
+    CopyFiles /SILENT "$INSTDIR\edm-desktop-app.exe" "$INSTDIR\EDM.exe"
 
-  IfFileExists "$INSTDIR\EDM.exe" 0 +3
-    IfFileExists "$INSTDIR\edm-desktop-app.exe" +2 0
-      CopyFiles /SILENT "$INSTDIR\EDM.exe" "$INSTDIR\edm-desktop-app.exe"
+  IfFileExists "$INSTDIR\EDM.exe" 0 +2
+    CopyFiles /SILENT "$INSTDIR\EDM.exe" "$INSTDIR\edm-desktop-app.exe"
 
   ; Mirror WebView2Loader.dll into %LOCALAPPDATA%\EDM if INSTDIR is different
   IfFileExists "$INSTDIR\WebView2Loader.dll" 0 +2

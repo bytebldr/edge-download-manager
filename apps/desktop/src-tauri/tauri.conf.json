@@ -31,9 +31,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "windows": {
       "nsis": {
+        "installMode": "currentUser",
         "template": "windows/installer.nsi",
         "installerIcon": "icons/icon.ico",
         "headerImage": "windows/nsis-header.bmp",
