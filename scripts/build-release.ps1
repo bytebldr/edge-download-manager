@@ -79,13 +79,21 @@ if ($hasCl) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Tauri application build failed" }
 
-# Provision updated EDM.exe to LocalAppData if existing installation is present
+# Provision updated EDM.exe and WebView2Loader.dll to LocalAppData if existing installation is present
 $desktopBuilt = "$RootDir/target/release/edm-desktop-app.exe"
-if ((Test-Path $desktopBuilt) -and (Test-Path "$env:LOCALAPPDATA/EDM")) {
+$wv2Built = "$RootDir/target/release/WebView2Loader.dll"
+if (Test-Path "$env:LOCALAPPDATA/EDM") {
     Get-Process -Name EDM -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 300
-    Copy-Item -Path $desktopBuilt -Destination "$env:LOCALAPPDATA/EDM/EDM.exe" -Force
-    Write-Host "Provisioned updated EDM.exe to $env:LOCALAPPDATA/EDM/" -ForegroundColor Green
+    if (Test-Path $desktopBuilt) {
+        Copy-Item -Path $desktopBuilt -Destination "$env:LOCALAPPDATA/EDM/EDM.exe" -Force
+        Copy-Item -Path $desktopBuilt -Destination "$env:LOCALAPPDATA/EDM/edm-desktop-app.exe" -Force
+        Write-Host "Provisioned updated EDM.exe to $env:LOCALAPPDATA/EDM/" -ForegroundColor Green
+    }
+    if ((Test-Path $wv2Built) -and (Get-Item $wv2Built).Length -gt 1000) {
+        Copy-Item -Path $wv2Built -Destination "$env:LOCALAPPDATA/EDM/WebView2Loader.dll" -Force
+        Write-Host "Provisioned updated WebView2Loader.dll to $env:LOCALAPPDATA/EDM/" -ForegroundColor Green
+    }
 }
 
 # 6. CI Safety Check: Fail if release installer or packaged assets contain localhost:1420

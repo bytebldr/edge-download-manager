@@ -220,6 +220,33 @@ fn perform_native_installation_internal(
         }
     }
 
+    // Ensure WebView2Loader.dll is found and copied to target_path\WebView2Loader.dll
+    let target_wv2 = target_path.join("WebView2Loader.dll");
+    if !target_wv2.exists() {
+        let candidate_paths = [
+            current_dir.join("WebView2Loader.dll"),
+            current_dir.join("resources").join("WebView2Loader.dll"),
+            current_dir.join("resources").join("target").join("release").join("WebView2Loader.dll"),
+            current_dir.join("_up_").join("_up_").join("_up_").join("target").join("release").join("WebView2Loader.dll"),
+        ];
+        let mut copied_wv2 = false;
+        for c in &candidate_paths {
+            if c.exists() && c.metadata().map(|m| m.len()).unwrap_or(0) > 1000 {
+                if let Ok(_) = std::fs::copy(c, &target_wv2) {
+                    copied_wv2 = true;
+                    break;
+                }
+            }
+        }
+        if !copied_wv2 {
+            if let Some(found_wv2) = find_file_recursive(current_dir, "WebView2Loader.dll") {
+                if found_wv2.metadata().map(|m| m.len()).unwrap_or(0) > 1000 {
+                    let _ = std::fs::copy(&found_wv2, &target_wv2);
+                }
+            }
+        }
+    }
+
     if needs_elevated_copy {
         let escaped_src = current_dir.to_string_lossy().replace('\'', "''");
         let escaped_target = target_path.to_string_lossy().replace('\'', "''");
