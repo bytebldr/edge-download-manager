@@ -43,7 +43,16 @@ pub async fn start_ws_server(manager: Arc<WsManager>) {
 
     let srv_mgr = manager.clone();
     tokio::spawn(async move {
-        while let Ok((stream, peer_addr)) = listener.accept().await {
+        loop {
+            let (stream, peer_addr) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    warn!("WebSocket listener accept error: {}. Retrying in 50ms...", e);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
+            };
+
             let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
             if active >= MAX_CONCURRENT_CONNECTIONS {
                 warn!(
@@ -98,7 +107,16 @@ pub async fn start_ws_server_on(
     let srv_mgr = manager.clone();
 
     tokio::spawn(async move {
-        while let Ok((stream, peer_addr)) = listener.accept().await {
+        loop {
+            let (stream, peer_addr) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    warn!("WebSocket listener accept error on test server: {}. Retrying in 50ms...", e);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
+            };
+
             let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
             if active >= MAX_CONCURRENT_CONNECTIONS {
                 drop(stream);

@@ -461,14 +461,13 @@ fn is_ws_server_ready() -> bool {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
     if let Ok(addr) = "127.0.0.1:14370".parse::<SocketAddr>() {
-        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
-            let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) {
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+            let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
             // Send quick probe header so ws_server peek resolves cleanly without hanging
-            let _ = stream.write_all(b"GET /token HTTP/1.1\r\nHost: 127.0.0.1:14370\r\nConnection: close\r\n\r\n");
-            let mut buf = [0u8; 64];
-            if let Ok(n) = stream.read(&mut buf) {
-                return n > 0;
+            if stream.write_all(b"GET /token HTTP/1.1\r\nHost: 127.0.0.1:14370\r\nConnection: close\r\n\r\n").is_ok() {
+                let mut buf = [0u8; 32];
+                let _ = stream.read(&mut buf);
             }
             return true;
         }
