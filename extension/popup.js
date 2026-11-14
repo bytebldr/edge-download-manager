@@ -78,8 +78,8 @@ class PopupController {
     __publicField(this, "notifyFail", true);
     __publicField(this, "youtubePillEnabled", true);
     __publicField(this, "auditLogs", ["Popup initialized"]);
-    __publicField(this, "currentVersion", "0.0.9");
-    __publicField(this, "expectedVersion", "0.0.9");
+    __publicField(this, "currentVersion", "0.0.14");
+    __publicField(this, "expectedVersion", "0.0.14");
     __publicField(this, "updateStatus", "latest");
     __publicField(this, "detectedBrowser", "browser");
     __publicField(this, "pollInterval", null);
@@ -1242,7 +1242,7 @@ class PopupController {
               }
             } else if (updateFeedback) {
               updateFeedback.style.color = "#10B981";
-              updateFeedback.textContent = "Extension is up to date (v0.0.5).";
+              updateFeedback.textContent = `Extension is up to date (v${this.currentVersion}).`;
             }
           } else if (updateFeedback) {
             updateFeedback.style.color = "#EF4444";
@@ -1419,7 +1419,7 @@ class PopupController {
           ` : ""}
           <div class="diag-row">
             <span class="diag-label">Extension Version</span>
-            <span class="diag-val">v${this.currentVersion || "0.0.8"}</span>
+            <span class="diag-val">v${this.currentVersion || "0.0.14"}</span>
           </div>
           <div class="diag-row">
             <span class="diag-label">Operating System</span>

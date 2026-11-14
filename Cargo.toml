@@ -1,17 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-    "packages/engine",
-    "packages/store",
-    "packages/ipc",
-    "packages/browser-host",
-    "packages/cli",
-    "packages/mock-server",
+    "core/engine",
+    "core/database",
+    "core/protocol",
+    "core/bridge",
+    "apps/cli",
     "apps/desktop/src-tauri",
 ]
 
 [workspace.package]
-version = "0.0.13"
+version = "0.0.14"
 edition = "2021"
 authors = ["bytebldr"]
 license = "GPL-3.0-only"

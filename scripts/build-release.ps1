@@ -45,7 +45,14 @@ if (Test-Path $nmhBuilt) {
 
 # 4. Ensure WebView2Loader.dll is in target/release
 Write-Host "`n[4/6] Verifying WebView2Loader.dll..." -ForegroundColor Yellow
-$wv2Source = Get-ChildItem -Path "$RootDir/target" -Recurse -Filter "WebView2Loader.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "target[\\/]release[\\/]WebView2Loader\.dll" -and $_.Length -gt 1000 -and $_.FullName -match "x64" } | Select-Object -First 1
+$vendorWv2 = "$RootDir/assets/vendor/win-x64/WebView2Loader.dll"
+$wv2Source = $null
+
+if ((Test-Path $vendorWv2) -and (Get-Item $vendorWv2).Length -gt 1000) {
+    $wv2Source = Get-Item $vendorWv2
+} else {
+    $wv2Source = Get-ChildItem -Path "$RootDir/target" -Recurse -Filter "WebView2Loader.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "target[\\/]release[\\/]WebView2Loader\.dll" -and $_.Length -gt 1000 -and $_.FullName -match "x64" } | Select-Object -First 1
+}
 
 if (-not $wv2Source) {
     $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { "$env:USERPROFILE/.cargo" }
@@ -56,7 +63,7 @@ if ($wv2Source) {
     Copy-Item -Path $wv2Source.FullName -Destination "$RootDir/target/release/WebView2Loader.dll" -Force
     Write-Host "Copied valid WebView2Loader.dll ($($wv2Source.Length) bytes) to target/release/ from $($wv2Source.FullName)" -ForegroundColor Green
 } else {
-    Write-Warning "WebView2Loader.dll not found in target or cargo cache."
+    Write-Warning "WebView2Loader.dll not found in assets/vendor, target, or cargo cache."
 }
 
 $destWv2 = "$RootDir/target/release/WebView2Loader.dll"

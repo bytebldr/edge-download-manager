@@ -114,8 +114,8 @@ class PopupController {
   private notifyFail: boolean = true;
   private youtubePillEnabled: boolean = true;
   private auditLogs: string[] = ["Popup initialized"];
-  private currentVersion: string = "0.0.9";
-  private expectedVersion: string = "0.0.9";
+  private currentVersion: string = "0.0.14";
+  private expectedVersion: string = "0.0.14";
   private updateStatus: string = "latest";
   private detectedBrowser: string = "browser";
 
@@ -1401,7 +1401,7 @@ class PopupController {
               }
             } else if (updateFeedback) {
               updateFeedback.style.color = "#10B981";
-              updateFeedback.textContent = "Extension is up to date (v0.0.5).";
+              updateFeedback.textContent = `Extension is up to date (v${this.currentVersion}).`;
             }
           } else if (updateFeedback) {
             updateFeedback.style.color = "#EF4444";
@@ -1591,7 +1591,7 @@ class PopupController {
           ` : ""}
           <div class="diag-row">
             <span class="diag-label">Extension Version</span>
-            <span class="diag-val">v${this.currentVersion || "0.0.8"}</span>
+            <span class="diag-val">v${this.currentVersion || "0.0.14"}</span>
           </div>
           <div class="diag-row">
             <span class="diag-label">Operating System</span>

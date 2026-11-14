@@ -80,6 +80,9 @@ fn open_persistent_store() -> Store {
 }
 
 fn main() {
+    #[cfg(windows)]
+    crate::os::assets::ensure_runtime_environment();
+
     let t_boot = std::time::Instant::now();
     let args: Vec<String> = std::env::args().collect();
     if args

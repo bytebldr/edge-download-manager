@@ -36,14 +36,17 @@ found_nmh:
 
   ; Ensure WebView2Loader.dll is co-located next to the executables in $INSTDIR
   IfFileExists "$INSTDIR\WebView2Loader.dll" done_webview2 0
-  IfFileExists "$INSTDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" 0 +3
-    CopyFiles /SILENT "$INSTDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
-    Goto done_webview2
   IfFileExists "$INSTDIR\resources\WebView2Loader.dll" 0 +3
     CopyFiles /SILENT "$INSTDIR\resources\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
     Goto done_webview2
-  IfFileExists "$INSTDIR\resources\target\release\WebView2Loader.dll" 0 +3
-    CopyFiles /SILENT "$INSTDIR\resources\target\release\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
+  IfFileExists "$INSTDIR\_up_\_up_\_up_\assets\vendor\win-x64\WebView2Loader.dll" 0 +3
+    CopyFiles /SILENT "$INSTDIR\_up_\_up_\_up_\assets\vendor\win-x64\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
+    Goto done_webview2
+  IfFileExists "$INSTDIR\resources\assets\vendor\win-x64\WebView2Loader.dll" 0 +3
+    CopyFiles /SILENT "$INSTDIR\resources\assets\vendor\win-x64\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
+    Goto done_webview2
+  IfFileExists "$INSTDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" 0 +3
+    CopyFiles /SILENT "$INSTDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" "$INSTDIR\WebView2Loader.dll"
     Goto done_webview2
 done_webview2:
 
@@ -132,7 +135,7 @@ done_webview2:
   WriteRegStr HKCU "Software\EDM" "AppPath" "$INSTDIR\EDM.exe"
 done_apppath:
   WriteRegStr HKCU "Software\EDM" "NmhPath" "$LOCALAPPDATA\EDM\edm-nmh.exe"
-  WriteRegStr HKCU "Software\EDM" "Version" "0.0.13"
+  WriteRegStr HKCU "Software\EDM" "Version" "0.0.14"
 
   WriteRegStr HKCU "Software\Classes\edm" "" "URL:EDM Protocol"
   WriteRegStr HKCU "Software\Classes\edm" "URL Protocol" ""

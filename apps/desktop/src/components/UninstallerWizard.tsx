@@ -191,7 +191,7 @@ export const UninstallerWizard: React.FC<UninstallerWizardProps> = ({ onDone }) 
                 color: "#9CA3AF",
               }}
             >
-              v0.0.13
+              v0.0.14
             </span>
             <span
               className="px-2.5 py-0.5 text-[10.5px] font-semibold tracking-wide rounded-full"

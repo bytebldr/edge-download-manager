@@ -186,6 +186,11 @@ mod win_lock {
     }
 }
 
+#[cfg(all(windows, target_arch = "x86_64"))]
+const EMBEDDED_WEBVIEW2_LOADER: &[u8] = include_bytes!(
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/vendor/win-x64/WebView2Loader.dll")
+);
+
 /// Ensure WebView2Loader.dll is co-located with the target executable.
 /// Tauri/wry on Windows dynamically loads this DLL; without it, Windows PE loader
 /// displays "System Error: The code execution cannot proceed because WebView2Loader.dll was not found."
@@ -197,6 +202,19 @@ fn ensure_webview2_loader(exe: &Path) {
     let target_dll = parent.join("WebView2Loader.dll");
     if target_dll.exists() && target_dll.metadata().map(|m| m.len()).unwrap_or(0) > 1000 {
         return;
+    }
+
+    // Instant self-healing via embedded genuine binary
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        let pid = std::process::id();
+        let tmp = parent.join(format!("WebView2Loader.dll.tmp.{}", pid));
+        if std::fs::write(&tmp, EMBEDDED_WEBVIEW2_LOADER).is_ok() {
+            let _ = std::fs::rename(&tmp, &target_dll);
+            let _ = std::fs::remove_file(&tmp);
+            tracing::info!("Instantly self-healed WebView2Loader.dll in {}", parent.display());
+            return;
+        }
     }
 
     let mut candidate_sources = Vec::new();

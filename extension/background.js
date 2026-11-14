@@ -700,10 +700,13 @@ chrome.runtime.onConnect.addListener((port) => {
       connectionStatus,
       lifecycleState: latestLifecycleState,
       nmhHealth,
+      diagnosticsReport: latestDiagnosticsReport,
       epoch: currentEpoch,
       rev: currentRev,
       theme: currentTheme,
-      palette: currentPalette
+      palette: currentPalette,
+      currentVersion: chrome.runtime.getManifest().version,
+      browser: detectCurrentBrowser()
     });
     port.onMessage.addListener((msg) => {
       if (msg.type === "task_action" && msg.id && msg.action) {
@@ -1093,15 +1096,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const req_id = crypto.randomUUID();
     (async () => {
       let cookies = [];
-      try {
-        const rawCookies = await chrome.cookies.getAll({ url: msg.url });
-        cookies = rawCookies.map((c) => ({
-          name: c.name,
-          value: c.value,
-          domain: c.domain,
-          path: c.path
-        }));
-      } catch {
+      if (msg.url && (msg.url.startsWith("http://") || msg.url.startsWith("https://"))) {
+        try {
+          const rawCookies = await chrome.cookies.getAll({ url: msg.url });
+          cookies = rawCookies.map((c) => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path
+          }));
+        } catch {
+        }
       }
       const res = await sendWsCreateTask({
         type: "create_task",
@@ -1200,10 +1205,12 @@ chrome.runtime.onInstalled.addListener((details) => {
       "history"
     ]);
   }
-  chrome.contextMenus.create({
-    id: "edm_download_link",
-    title: "Download with EDM",
-    contexts: ["link", "video", "audio", "image"]
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "edm_download_link",
+      title: "Download with EDM",
+      contexts: ["link", "video", "audio", "image"]
+    });
   });
 });
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -1223,10 +1230,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
   const req_id = crypto.randomUUID();
   let cookies = [];
-  try {
-    const rawCookies = await chrome.cookies.getAll({ url: targetUrl });
-    cookies = rawCookies.map((c) => ({ name: c.name, value: c.value }));
-  } catch {
+  if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+    try {
+      const rawCookies = await chrome.cookies.getAll({ url: targetUrl });
+      cookies = rawCookies.map((c) => ({ name: c.name, value: c.value }));
+    } catch {
+    }
   }
   const ack = await sendWsCreateTask({
     type: "create_task",

@@ -248,7 +248,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
               color: "#A78BFA",
             }}
           >
-            v0.0.13
+            v0.0.14
           </div>
         </aside>
 
@@ -265,145 +265,169 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
                   {isUpdate
-                    ? "Update or repair your installation to v0.0.13"
+                    ? "Update your installation to v0.0.14"
                     : "Configure installation settings"}
                 </p>
-                {isUpdate && (
+              </div>
+
+              {isUpdate ? (
+                <div className="flex-1 flex flex-col justify-center py-6">
                   <div
-                    className="mt-2.5 px-3 py-1.5 rounded-lg text-[11px] text-[#A78BFA] flex items-center gap-2"
+                    className="p-4 rounded-xl flex items-center gap-3.5"
                     style={{
-                      background: "rgba(139,92,246,0.1)",
-                      border: "1px solid rgba(139,92,246,0.25)",
+                      background: "rgba(139,92,246,0.06)",
+                      border: "1px solid rgba(139,92,246,0.2)",
                     }}
                   >
-                    <span>✦</span>
-                    <span>Existing installation detected. All settings and history will be preserved.</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Destination directory */}
-              <div className="mb-5">
-                <label className="block text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
-                  Install Location
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={installPath}
-                    onChange={(e) => setInstallPath(e.target.value)}
-                    spellCheck={false}
-                    className="flex-1 h-9 px-3 text-[12.5px] text-[#D1D5DB] font-mono rounded-lg outline-none transition-colors"
-                    style={{
-                      background: "#0A0B0F",
-                      border: "1px solid rgba(148,163,184,0.12)",
-                      caretColor: "#8B5CF6",
-                    }}
-                    onFocus={(e) =>
-                      (e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)")
-                    }
-                    onBlur={(e) =>
-                      (e.currentTarget.style.borderColor =
-                        "rgba(148,163,184,0.12)")
-                    }
-                  />
-                  <button
-                    onClick={handleBrowse}
-                    className="h-9 px-3.5 text-[12px] font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(148,163,184,0.14)",
-                      color: "#9CA3AF",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.09)";
-                      e.currentTarget.style.color = "#D1D5DB";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                      e.currentTarget.style.color = "#9CA3AF";
-                    }}
-                  >
-                    Browse…
-                  </button>
-                </div>
-              </div>
-
-              {/* Checkboxes */}
-              <div className="space-y-3 mb-7">
-                {(
-                  [
-                    {
-                      id: "shortcut",
-                      label: "Create Desktop shortcut",
-                      value: createShortcut,
-                      set: setCreateShortcut,
-                    },
-                    {
-                      id: "boot",
-                      label: "Start EDM on Windows boot",
-                      value: startOnBoot,
-                      set: setStartOnBoot,
-                    },
-                    {
-                      id: "browser",
-                      label: "Enable browser integration",
-                      value: browserIntegration,
-                      set: setBrowserIntegration,
-                    },
-                  ] as const
-                ).map(({ id, label, value, set }) => (
-                  <label
-                    key={id}
-                    htmlFor={`chk-${id}`}
-                    className="flex items-center gap-2.5 cursor-pointer group select-none"
-                  >
-                    {/* Custom checkbox */}
                     <div
-                      className="relative shrink-0 transition-all duration-150"
+                      className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                       style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: 4,
-                        border: value
-                          ? "1.5px solid #8B5CF6"
-                          : "1.5px solid rgba(148,163,184,0.25)",
-                        background: value
-                          ? "#8B5CF6"
-                          : "transparent",
+                        background: "rgba(139,92,246,0.15)",
+                        color: "#A78BFA",
                       }}
                     >
-                      {value && (
-                        <svg
-                          className="absolute inset-0 m-auto"
-                          width="10"
-                          height="8"
-                          viewBox="0 0 10 8"
-                          fill="none"
-                        >
-                          <path
-                            d="M1 4L3.5 6.5L9 1"
-                            stroke="white"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
                     </div>
-                    <input
-                      id={`chk-${id}`}
-                      type="checkbox"
-                      checked={value}
-                      onChange={(e) => set(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <span className="text-[12.5px] text-[#9CA3AF] group-hover:text-[#D1D5DB] transition-colors">
-                      {label}
-                    </span>
-                  </label>
-                ))}
-              </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-semibold text-white tracking-tight">
+                        Ready to update to v0.0.14
+                      </div>
+                      <div className="text-[11.5px] text-[#9CA3AF] truncate mt-0.5 font-mono" title={installPath}>
+                        {installPath}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Destination directory */}
+                  <div className="mb-5">
+                    <label className="block text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+                      Install Location
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={installPath}
+                        onChange={(e) => setInstallPath(e.target.value)}
+                        spellCheck={false}
+                        className="flex-1 h-9 px-3 text-[12.5px] text-[#D1D5DB] font-mono rounded-lg outline-none transition-colors"
+                        style={{
+                          background: "#0A0B0F",
+                          border: "1px solid rgba(148,163,184,0.12)",
+                          caretColor: "#8B5CF6",
+                        }}
+                        onFocus={(e) =>
+                          (e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)")
+                        }
+                        onBlur={(e) =>
+                          (e.currentTarget.style.borderColor =
+                            "rgba(148,163,184,0.12)")
+                        }
+                      />
+                      <button
+                        onClick={handleBrowse}
+                        className="h-9 px-3.5 text-[12px] font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                        style={{
+                          background: "rgba(255,255,255,0.05)",
+                          border: "1px solid rgba(148,163,184,0.14)",
+                          color: "#9CA3AF",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,255,255,0.09)";
+                          e.currentTarget.style.color = "#D1D5DB";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                          e.currentTarget.style.color = "#9CA3AF";
+                        }}
+                      >
+                        Browse…
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checkboxes */}
+                  <div className="space-y-3 mb-7">
+                    {(
+                      [
+                        {
+                          id: "shortcut",
+                          label: "Create Desktop shortcut",
+                          value: createShortcut,
+                          set: setCreateShortcut,
+                        },
+                        {
+                          id: "boot",
+                          label: "Start EDM on Windows boot",
+                          value: startOnBoot,
+                          set: setStartOnBoot,
+                        },
+                        {
+                          id: "browser",
+                          label: "Enable browser integration",
+                          value: browserIntegration,
+                          set: setBrowserIntegration,
+                        },
+                      ] as const
+                    ).map(({ id, label, value, set }) => (
+                      <label
+                        key={id}
+                        htmlFor={`chk-${id}`}
+                        className="flex items-center gap-2.5 cursor-pointer group select-none"
+                      >
+                        {/* Custom checkbox */}
+                        <div
+                          className="relative shrink-0 transition-all duration-150"
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: 4,
+                            border: value
+                              ? "1.5px solid #8B5CF6"
+                              : "1.5px solid rgba(148,163,184,0.25)",
+                            background: value
+                              ? "#8B5CF6"
+                              : "transparent",
+                          }}
+                        >
+                          {value && (
+                            <svg
+                              className="absolute inset-0 m-auto"
+                              width="10"
+                              height="8"
+                              viewBox="0 0 10 8"
+                              fill="none"
+                            >
+                              <path
+                                d="M1 4L3.5 6.5L9 1"
+                                stroke="white"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                        <input
+                          id={`chk-${id}`}
+                          type="checkbox"
+                          checked={value}
+                          onChange={(e) => set(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <span className="text-[12.5px] text-[#9CA3AF] group-hover:text-[#D1D5DB] transition-colors">
+                          {label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
 
               {/* Error banner */}
               {errorText && (
@@ -572,7 +596,7 @@ export const InstallerWizard: React.FC<InstallerWizardProps> = ({ onDone }) => {
                   {isUpdate ? "Update Complete" : "Installation Complete"}
                 </h2>
                 <p className="text-[12px] text-[#6B7280]">
-                  {isUpdate ? "EDM has been successfully updated to v0.0.13 at " : "EDM has been installed to "}
+                  {isUpdate ? "EDM has been successfully updated to v0.0.14 at " : "EDM has been installed to "}
                   <span className="text-[#9CA3AF] font-mono text-[11px]">
                     {installPath}
                   </span>

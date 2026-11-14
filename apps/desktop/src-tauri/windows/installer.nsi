@@ -596,14 +596,17 @@ Function .onInit
 
     ; Ensure WebView2Loader.dll is co-located in $PLUGINSDIR next to ${MAINBINARYNAME}.exe
     IfFileExists "$PLUGINSDIR\WebView2Loader.dll" plugins_wv2_done 0
-    IfFileExists "$PLUGINSDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" 0 +3
-      CopyFiles /SILENT "$PLUGINSDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
-      Goto plugins_wv2_done
     IfFileExists "$PLUGINSDIR\resources\WebView2Loader.dll" 0 +3
       CopyFiles /SILENT "$PLUGINSDIR\resources\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
       Goto plugins_wv2_done
-    IfFileExists "$PLUGINSDIR\resources\target\release\WebView2Loader.dll" 0 +3
-      CopyFiles /SILENT "$PLUGINSDIR\resources\target\release\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
+    IfFileExists "$PLUGINSDIR\_up_\_up_\_up_\assets\vendor\win-x64\WebView2Loader.dll" 0 +3
+      CopyFiles /SILENT "$PLUGINSDIR\_up_\_up_\_up_\assets\vendor\win-x64\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
+      Goto plugins_wv2_done
+    IfFileExists "$PLUGINSDIR\resources\assets\vendor\win-x64\WebView2Loader.dll" 0 +3
+      CopyFiles /SILENT "$PLUGINSDIR\resources\assets\vendor\win-x64\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
+      Goto plugins_wv2_done
+    IfFileExists "$PLUGINSDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" 0 +3
+      CopyFiles /SILENT "$PLUGINSDIR\_up_\_up_\_up_\target\release\WebView2Loader.dll" "$PLUGINSDIR\WebView2Loader.dll"
       Goto plugins_wv2_done
 plugins_wv2_done:
 

@@ -116,6 +116,9 @@ if (fs.existsSync(path.join(tempDir, 'popup.js'))) {
 if (fs.existsSync(path.join(tempDir, 'options.js'))) {
   fs.copyFileSync(path.join(tempDir, 'options.js'), path.join(distFirefox, 'options.js'));
 }
+if (fs.existsSync(path.join(tempDir, 'yt-main.js'))) {
+  fs.copyFileSync(path.join(tempDir, 'yt-main.js'), path.join(distFirefox, 'yt-main.js'));
+}
 if (fs.existsSync(path.join(root, 'updates.json'))) {
   fs.copyFileSync(path.join(root, 'updates.json'), path.join(distFirefox, 'updates.json'));
 }
@@ -131,11 +134,12 @@ const filesToHash = [
   'popup.js',
   'options.html',
   'options.js',
+  'yt-main.js',
   'logo.png'
 ];
 
 const hashes = {
-  version: manifestData.version || '0.0.8',
+  version: manifestData.version || '0.0.14',
   generated_at: new Date().toISOString(),
   files: {}
 };

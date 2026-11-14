@@ -15,6 +15,17 @@ window.addEventListener("click", (e) => {
   if (e.shiftKey || e.altKey) {
     chrome.runtime.sendMessage({ action: "bypass_next" }).catch(() => {
     });
+    return;
+  }
+  const link = e.target?.closest?.("a");
+  if (link && link.href && link.href.toLowerCase().startsWith("magnet:")) {
+    e.preventDefault();
+    chrome.runtime.sendMessage({
+      action: "create_task",
+      url: link.href,
+      referrer: window.location.href
+    }).catch(() => {
+    });
   }
 }, true);
 const detectedMediaMap = /* @__PURE__ */ new Map();
@@ -116,23 +127,17 @@ function scanDOMForMedia() {
 }
 function cleanupFloatingBadges() {
   document.querySelectorAll(".edm-floating-media-badge, #edm-floating-overlay, [class*='floating-media-badge'], [class*='edm-floating']").forEach((el) => el.remove());
-  document.querySelectorAll("div, button, a, span").forEach((el) => {
-    if (el.id !== "edm-yt-download-pill" && !el.closest("#edm-yt-download-pill")) {
-      const text = el.textContent || "";
-      if (text.includes("Download with EDM")) {
-        const target = el.closest(".edm-floating-media-badge, [class*='floating'], div") || el;
-        if (target && target !== document.body && target !== document.documentElement && !target.contains(document.getElementById("edm-yt-download-pill") || document.body)) {
-          target.remove();
-        }
-      }
-    }
-  });
 }
 cleanupFloatingBadges();
+let mutationThrottleTimer = null;
 const mutationObserver = new MutationObserver(() => {
-  cleanupFloatingBadges();
-  scanDOMForMedia();
-  injectYoutubePillIfNeeded();
+  if (mutationThrottleTimer) return;
+  mutationThrottleTimer = setTimeout(() => {
+    mutationThrottleTimer = null;
+    cleanupFloatingBadges();
+    scanDOMForMedia();
+    injectYoutubePillIfNeeded();
+  }, 250);
 });
 mutationObserver.observe(document.documentElement, {
   childList: true,

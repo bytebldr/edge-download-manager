@@ -51,10 +51,10 @@ $uninstKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM'
 if (!(Test-Path $uninstKey)) { New-Item -Path $uninstKey -Force | Out-Null }
 Set-ItemProperty -Path $uninstKey -Name 'DisplayName' -Value 'EDM — Edge Download Manager'
 Set-ItemProperty -Path $uninstKey -Name 'DisplayIcon' -Value (Join-Path $targetDir 'EDM.exe')
-Set-ItemProperty -Path $uninstKey -Name 'DisplayVersion' -Value '0.0.13'
+Set-ItemProperty -Path $uninstKey -Name 'DisplayVersion' -Value '0.0.14'
 Set-ItemProperty -Path $uninstKey -Name 'Publisher' -Value 'bytebldr'
 Set-ItemProperty -Path $uninstKey -Name 'InstallDate' -Value (Get-Date -Format 'yyyyMMdd')
 Set-ItemProperty -Path $uninstKey -Name 'UninstallString' -Value ('"' + (Join-Path $targetDir 'EDM.exe') + '" --uninstall')
 Set-ItemProperty -Path $uninstKey -Name 'InstallLocation' -Value $targetDir
 
-Write-Host "Successfully provisioned EDM v0.0.13 to $targetDir"
+Write-Host "Successfully provisioned EDM v0.0.14 to $targetDir"
