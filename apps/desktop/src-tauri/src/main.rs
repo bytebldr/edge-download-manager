@@ -166,16 +166,19 @@ fn main() {
         global_limiter,
     };
 
-    // Fast-path: Start WebSocket Server on 127.0.0.1:14370 FIRST
-    let ws_mgr_srv = ws_manager.clone();
-    let t_ws = t_boot;
-    rt_handle.spawn(async move {
-        ws_mgr_srv.sync_from_store().await;
-        tracing::info!("[PERF] Port 14370 ready in {:?}", t_ws.elapsed());
-        ws_server::start_ws_server(ws_mgr_srv).await;
-    });
+    // Fast-path: Start WebSocket Server on 127.0.0.1:14370 FIRST (except in installer setup mode)
+    let is_setup_or_uninstall = args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall");
+    if !is_setup_or_uninstall {
+        let ws_mgr_srv = ws_manager.clone();
+        let t_ws = t_boot;
+        rt_handle.spawn(async move {
+            ws_mgr_srv.sync_from_store().await;
+            tracing::info!("[PERF] Port 14370 ready in {:?}", t_ws.elapsed());
+            ws_server::start_ws_server(ws_mgr_srv).await;
+        });
 
-    spawn_extension_bridge(app_state.clone(), rt_handle.clone());
+        spawn_extension_bridge(app_state.clone(), rt_handle.clone());
+    }
 
     // Register Native Messaging Host and provision extension files immediately on boot
     #[cfg(windows)]

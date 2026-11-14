@@ -457,6 +457,22 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
     }
 }
 
+fn terminate_stale_edm_instances() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "EDM.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "edm-desktop-app.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
 fn is_ws_server_ready() -> bool {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
@@ -475,21 +491,6 @@ fn is_ws_server_ready() -> bool {
     false
 }
 
-fn wait_for_ws_server(timeout_secs: u64) -> bool {
-    let start = Instant::now();
-    let limit = Duration::from_secs(timeout_secs);
-    let mut delay_ms = 50;
-    while start.elapsed() < limit {
-        if is_ws_server_ready() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(delay_ms));
-        if delay_ms < 300 {
-            delay_ms = (delay_ms * 3) / 2;
-        }
-    }
-    is_ws_server_ready()
-}
 
 fn get_db_path() -> PathBuf {
     if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
@@ -909,8 +910,27 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 launch_start.elapsed()
             );
 
-            // Cold start allowance up to 20 seconds
-            if wait_for_ws_server(20) {
+            // Cold start allowance up to 20 seconds with zombie self-healing recovery
+            let mut ready = false;
+            let wake_start = Instant::now();
+            let mut healed = false;
+            while wake_start.elapsed() < Duration::from_secs(20) {
+                if is_ws_server_ready() {
+                    ready = true;
+                    break;
+                }
+                // If port 14370 is not ready after 4s, an unresponsive zombie EDM.exe may be blocking single-instance
+                if !healed && wake_start.elapsed() >= Duration::from_secs(4) {
+                    healed = true;
+                    tracing::warn!("Port 14370 not ready after 4s; terminating stale EDM instances and re-launching...");
+                    terminate_stale_edm_instances();
+                    std::thread::sleep(Duration::from_millis(400));
+                    launch_detached(&exe, show_window);
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+
+            if ready {
                 let ready_ms = start.elapsed().as_millis() as u64;
                 tracing::info!("EDM WebSocket port 14370 ready in {} ms", ready_ms);
                 record_wake_result(true, None, Some(ready_ms), Some(&exe));

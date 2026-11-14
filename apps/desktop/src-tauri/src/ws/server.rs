@@ -7,21 +7,30 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub async fn start_ws_server(manager: Arc<WsManager>) {
     let addr = WS_BIND_ADDR;
-    let listener = match TcpListener::bind(addr).await {
-        Ok(l) => {
-            info!(
-                "EDM WebSocket & HTTP Token Server listening on ws://{}",
-                addr
-            );
-            l
-        }
-        Err(e) => {
-            error!("Failed to bind WebSocket server to {}: {}", addr, e);
-            return;
+    let mut retry_count = 0;
+    let listener = loop {
+        match TcpListener::bind(addr).await {
+            Ok(l) => {
+                info!(
+                    "EDM WebSocket & HTTP Token Server listening on ws://{}",
+                    addr
+                );
+                break l;
+            }
+            Err(e) => {
+                retry_count += 1;
+                if retry_count % 10 == 1 {
+                    warn!(
+                        "WebSocket server bind to {} failed (attempt {}): {}. Retrying in 250ms...",
+                        addr, retry_count, e
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
         }
     };
 

@@ -32,3 +32,19 @@ pub fn spawn_detached_edm(exe_path: &Path, background: bool) -> std::io::Result<
 
     cmd.spawn()
 }
+
+/// Terminates any unresponsive/stale background EDM instances blocking single-instance.
+pub fn terminate_stale_edm_instances() {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "EDM.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "edm-desktop-app.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
