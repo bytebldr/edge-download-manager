@@ -51,6 +51,7 @@ import {
   tauriGetAppVersion,
   tauriCheckForUpdates,
   tauriInstallUpdate,
+  tauriOpenInstallerFolder,
   tauriListenOtaProgress,
   tauriSelectDownloadDirectory,
   openFolderDialog,
@@ -1927,10 +1928,28 @@ export default function SettingsPage({
                     )}
 
                     {updateStatus === "error" && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-300 border border-red-500/30">
-                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                        Check Failed
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-300 border border-red-500/30">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                          Failed
+                        </span>
+                        <button
+                          onClick={handleInstallUpdate}
+                          className="btn-3d h-8 px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30"
+                          title="Retry update installation"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Retry</span>
+                        </button>
+                        <button
+                          onClick={() => tauriOpenInstallerFolder()}
+                          className="btn-3d h-8 px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30"
+                          title="Open installer directory in File Explorer"
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          <span>Open folder</span>
+                        </button>
+                      </div>
                     )}
 
                     <button

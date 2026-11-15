@@ -1,6 +1,6 @@
 {
   "name": "edm-extension",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "EDM (Edge Download Manager) Browser Extension",
   "private": true,
   "scripts": {

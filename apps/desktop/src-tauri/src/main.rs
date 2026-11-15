@@ -822,6 +822,7 @@ fn main() {
             updater::get_app_version,
             updater::check_for_updates,
             updater::install_update,
+            updater::open_installer_folder,
             get_lifecycle_status,
             wake_engine,
             get_browser_diagnostics,

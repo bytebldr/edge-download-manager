@@ -72,6 +72,7 @@ import {
   tauriSendSystemNotification,
   tauriCheckForUpdates,
   tauriInstallUpdate,
+  tauriOpenInstallerFolder,
   tauriListenOtaProgress,
   tauriGetSystemUserDirs,
   UpdateCheckResult,
@@ -2564,6 +2565,16 @@ export default function App() {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
+              {updateBannerState === "failed" && (
+                <button
+                  onClick={() => tauriOpenInstallerFolder()}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-blue-300 bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 cursor-pointer shadow-sm flex items-center gap-1"
+                  title="Open installer folder in File Explorer"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Open folder</span>
+                </button>
+              )}
               <button
                 onClick={handleBannerUpdate}
                 disabled={updateBannerState === "downloading" || updateBannerState === "installing"}

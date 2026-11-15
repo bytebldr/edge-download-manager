@@ -524,6 +524,13 @@ export async function tauriInstallUpdate(downloadUrl: string): Promise<void> {
   }
 }
 
+export async function tauriOpenInstallerFolder(): Promise<void> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_installer_folder");
+  }
+}
+
 export async function tauriListenOtaProgress(
   callback: (progress: OtaProgress) => void
 ): Promise<() => void> {

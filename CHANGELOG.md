@@ -2,6 +2,27 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.16] - 2026-11-15
+
+### ⚡ Critical Hotfix: Zero-Console Updater Engine, Detached Shell Execution & Sibling Cleanup
+
+#### 1. Zero Console Window Flashing (No `cmd.exe`)
+- Eliminated `cmd.exe` intermediary script and timeout batch execution entirely from the updater pipeline.
+- Implemented direct Windows Shell execution via `ShellExecuteW` (with `"open"` and automatic elevation fallback `"runas"`) as well as a detached fallback using `CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP`.
+- Invokes installer with NSIS passive mode flags `/P /R` ensuring visible progress feedback and clean post-install relaunch without a terminal popup.
+
+#### 2. Persistent Update Diagnostics Logging
+- Added persistent diagnostic logging to `%LOCALAPPDATA%\EDM\logs\update.log`.
+- Tracks installer package download validation, size verification, ShellExecuteW return handles, process termination results, and error traces.
+
+#### 3. Complete Pre-Install Process Termination
+- Integrated atomic sibling process cleanup terminating `edm-nmh.exe`, `edm-desktop-app.exe`, and other `EDM.exe` instances while protecting the current host PID.
+- Waits up to 5 seconds to ensure all file locks on `%LOCALAPPDATA%\EDM` binaries are completely released before installer execution.
+
+#### 4. Resilient Failure Recovery & UI Controls
+- If installer launch fails, EDM remains open rather than abruptly terminating.
+- Added "Open folder" and "Retry" action buttons in both the floating in-app update banner and Settings About view, backed by native `open_installer_folder` IPC.
+
 ## [v0.0.15] - 2026-11-15
 
 ### 🛠️ Dedicated Repair Mode, YouTube Completion Mark, BitTorrent Upload Telemetry, and Policy Guardrails

@@ -1,5 +1,30 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
+
+fn append_update_log(message: &str) {
+    let log_dir = match std::env::var("LOCALAPPDATA") {
+        Ok(dir) => PathBuf::from(dir).join("EDM").join("logs"),
+        Err(_) => match std::env::var("APPDATA") {
+            Ok(dir) => PathBuf::from(dir).join("EDM").join("logs"),
+            Err(_) => std::env::temp_dir().join("EDM").join("logs"),
+        },
+    };
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file = log_dir.join("update.log");
+
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let line = format!("[{}] {}\n", timestamp, message);
+
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+    {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UpdateCheckResult {
@@ -257,6 +282,13 @@ pub async fn install_update(
         installer_path.display()
     );
 
+    append_update_log(&format!(
+        "OTA package download verified. Bytes: {}, Current version: v{}, Path: {}",
+        downloaded,
+        current_ver,
+        installer_path.display()
+    ));
+
     let _ = app.emit(
         "ota-progress",
         OtaProgress {
@@ -271,48 +303,210 @@ pub async fn install_update(
     let _ = state.store.set_setting("pending_update_version", &installer_path.to_string_lossy());
     let _ = state.store.checkpoint();
 
-    // Launch installer detached with silent arguments and clean relaunch sequence
+    // Verify installer file on disk and verify minimum size
+    let metadata = std::fs::metadata(&installer_path).map_err(|e| {
+        let msg = format!("Failed to read installer metadata: {}", e);
+        append_update_log(&format!("ERROR: {}", msg));
+        msg
+    })?;
+    let file_size = metadata.len();
+    if file_size == 0 || file_size < 1_000_000 {
+        let msg = format!("Installer package on disk is incomplete or zero bytes ({} bytes)", file_size);
+        append_update_log(&format!("ERROR: {}", msg));
+        return Err(msg);
+    }
+    append_update_log(&format!("Installer verified on disk: {} (size: {} bytes)", installer_path.display(), file_size));
+
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x00000008;
+        // Phase 3: Terminate ALL other EDM processes (helper, tray, other instances)
+        append_update_log("Phase 3: Stopping other EDM processes (EDM.exe, edm-desktop-app.exe, edm-nmh.exe)...");
+        stop_all_other_edm_processes();
 
-        // Resolve canonical EDM.exe target for post-update relaunch
-        let target_exe = std::env::current_exe()
-            .ok()
-            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\Default\AppData\Local\EDM\EDM.exe"));
-
-        let runner_script = format!(
-            "timeout /t 2 /nobreak >nul & \"{}\" /S & timeout /t 1 /nobreak >nul & start \"\" \"{}\"",
-            installer_path.to_string_lossy(),
-            target_exe.to_string_lossy()
-        );
-
-        tracing::info!(
-            "Launching detached silent OTA updater runner: installer='{}', relaunch='{}'",
-            installer_path.display(),
-            target_exe.display()
-        );
-
-        let mut cmd = std::process::Command::new("cmd.exe");
-        cmd.args(["/c", &runner_script]);
-        cmd.creation_flags(DETACHED_PROCESS);
-        cmd.spawn()
-            .map_err(|e| format!("Failed to launch update installer runner: {}", e))?;
+        // Phase 2: Launch installer directly via Windows ShellExecuteW
+        append_update_log(&format!("Phase 2: Launching installer via ShellExecuteW with args '/P /R': {}", installer_path.display()));
+        if let Err(e) = launch_installer_windows(&installer_path) {
+            append_update_log(&format!("ERROR: ShellExecuteW failed: {}", e));
+            return Err(e);
+        }
+        append_update_log("ShellExecuteW succeeded. Installer process initiated.");
     }
 
     #[cfg(not(windows))]
     {
+        append_update_log(&format!("Launching non-windows installer: {}", installer_path.display()));
         std::process::Command::new(&installer_path)
             .spawn()
-            .map_err(|e| format!("Failed to launch update installer: {}", e))?;
+            .map_err(|e| {
+                let msg = format!("Failed to launch update installer: {}", e);
+                append_update_log(&format!("ERROR: {}", msg));
+                msg
+            })?;
     }
 
-    // Gracefully shut down EDM so the installer can replace locked binaries without conflict
-    tracing::info!("Triggering graceful shutdown of EDM for in-place OTA update...");
+    // Gracefully shut down this EDM instance so installer can replace locked binaries
+    append_update_log("Triggering graceful shutdown of current EDM instance...");
     crate::trigger_graceful_quit(app, state.inner().clone());
 
     Ok(())
+}
+
+#[cfg(windows)]
+fn stop_all_other_edm_processes() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let current_pid = std::process::id();
+    append_update_log(&format!("Current process PID is {}. Terminating sibling EDM processes...", current_pid));
+
+    let targets = ["edm-nmh.exe", "edm-desktop-app.exe", "EDM.exe"];
+    for target in targets {
+        // Run taskkill filtering out current PID to prevent committing suicide prematurely
+        let filter_pid = format!("PID ne {}", current_pid);
+        let filter_img = format!("IMAGENAME eq {}", target);
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/F", "/FI", &filter_pid, "/FI", &filter_img, "/T"]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output();
+        match output {
+            Ok(out) => {
+                let status_str = String::from_utf8_lossy(&out.stdout);
+                append_update_log(&format!("taskkill {} result (exit={:?}): {}", target, out.status.code(), status_str.trim()));
+            }
+            Err(e) => {
+                append_update_log(&format!("taskkill {} execution failed: {}", target, e));
+            }
+        }
+    }
+
+    // Wait up to 5 seconds for target processes to fully release file locks
+    let start_wait = std::time::Instant::now();
+    let max_wait = std::time::Duration::from_secs(5);
+    while start_wait.elapsed() < max_wait {
+        let mut check_cmd = std::process::Command::new("tasklist");
+        check_cmd.args(["/FI", "IMAGENAME eq edm-nmh.exe", "/NH"]);
+        check_cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(out) = check_cmd.output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            if !text.contains("edm-nmh.exe") {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    append_update_log(&format!("Wait for sibling processes completed in {:?}", start_wait.elapsed()));
+}
+
+#[cfg(windows)]
+fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let path_wide: Vec<u16> = installer_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let params_wide: Vec<u16> = OsStr::new("/P /R").encode_wide().chain(std::iter::once(0)).collect();
+
+    // Prefer standard "open" verb. If standard execution fails or elevation is requested, fallback to "runas".
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut std::ffi::c_void,
+            lpOperation: *const u16,
+            lpFile: *const u16,
+            lpParameters: *const u16,
+            lpDirectory: *const u16,
+            nShowCmd: i32,
+        ) -> isize;
+    }
+
+    const SW_SHOWNORMAL: i32 = 1;
+    let open_verb: Vec<u16> = OsStr::new("open").encode_wide().chain(std::iter::once(0)).collect();
+    let runas_verb: Vec<u16> = OsStr::new("runas").encode_wide().chain(std::iter::once(0)).collect();
+
+    append_update_log("Invoking ShellExecuteW with verb 'open'...");
+    let res = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            open_verb.as_ptr(),
+            path_wide.as_ptr(),
+            params_wide.as_ptr(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    append_update_log(&format!("ShellExecuteW 'open' returned handle value: {}", res));
+
+    // Values > 32 indicate success
+    if res > 32 {
+        return Ok(());
+    }
+
+    // If "open" fails with SE_ERR_ACCESSDENIED (5) or error <= 32, try "runas" for UAC prompt
+    append_update_log(&format!("ShellExecuteW 'open' returned code {}. Retrying with 'runas' verb for UAC...", res));
+    let runas_res = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            runas_verb.as_ptr(),
+            path_wide.as_ptr(),
+            params_wide.as_ptr(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    append_update_log(&format!("ShellExecuteW 'runas' returned handle value: {}", runas_res));
+    if runas_res > 32 {
+        return Ok(());
+    }
+
+    // As an additional robust fallback, try CreateProcessW with CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP
+    append_update_log("ShellExecuteW verbs failed. Attempting Command::new with CREATE_BREAKAWAY_FROM_JOB fallback...");
+    use std::os::windows::process::CommandExt;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+
+    let mut fallback_cmd = std::process::Command::new(installer_path);
+    fallback_cmd.args(["/P", "/R"]);
+    fallback_cmd.creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP);
+    match fallback_cmd.spawn() {
+        Ok(child) => {
+            append_update_log(&format!("Command::new detached spawn succeeded with PID: {}", child.id()));
+            Ok(())
+        }
+        Err(e) => {
+            let err_msg = format!("Failed all launch methods: ShellExecuteW failed (code {}), Process spawn error: {}", res, e);
+            append_update_log(&format!("ERROR: {}", err_msg));
+            Err(err_msg)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn open_installer_folder() -> Result<(), String> {
+    let temp_dir = std::env::temp_dir();
+    let installer_path = temp_dir.join("EDM_Update_Installer.exe");
+    append_update_log(&format!("Frontend requested open_installer_folder: target='{}'", installer_path.display()));
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut cmd = std::process::Command::new("explorer");
+        if installer_path.exists() {
+            let arg = format!("/select,\"{}\"", installer_path.display());
+            cmd.raw_arg(&arg);
+        } else {
+            cmd.arg(&temp_dir);
+        }
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let _ = cmd.spawn().map_err(|e| format!("Failed to open directory: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    {
+        open::that(&temp_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
