@@ -4,9 +4,7 @@
 
 !macro NSIS_HOOK_PREINSTALL
   ; Terminate any running EDM processes to prevent locked binaries during install/reinstall
-  nsExec::Exec 'taskkill /F /IM EDM.exe /T'
-  nsExec::Exec 'taskkill /F /IM edm-desktop-app.exe /T'
-  nsExec::Exec 'taskkill /F /IM edm-nmh.exe /T'
+  nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
   Sleep 300
 !macroend
 
@@ -133,7 +131,7 @@ done_webview2:
   WriteRegStr HKCU "Software\EDM" "AppPath" "$INSTDIR\EDM.exe"
 done_apppath:
   WriteRegStr HKCU "Software\EDM" "NmhPath" "$LOCALAPPDATA\EDM\edm-nmh.exe"
-  WriteRegStr HKCU "Software\EDM" "Version" "0.0.17"
+  WriteRegStr HKCU "Software\EDM" "Version" "0.0.18"
 
   WriteRegStr HKCU "Software\Classes\edm" "" "URL:EDM Protocol"
   WriteRegStr HKCU "Software\Classes\edm" "URL Protocol" ""
@@ -186,9 +184,7 @@ done_torrent_cmd:
 
 !macro NSIS_HOOK_PREUNINSTALL
   ; 1. Terminate running EDM processes to release locks on .exe, .dll, and .db files
-  nsExec::Exec 'taskkill /F /IM EDM.exe /T'
-  nsExec::Exec 'taskkill /F /IM edm-desktop-app.exe /T'
-  nsExec::Exec 'taskkill /F /IM edm-nmh.exe /T'
+  nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
   Sleep 500
 
   ; 2. Delete all browser Native Messaging Host registry keys

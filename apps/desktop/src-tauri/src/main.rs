@@ -798,6 +798,9 @@ fn main() {
         .expect("error while building EDM desktop application")
         .run(|_app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if IS_QUITTING.load(Ordering::SeqCst) {
+                    return;
+                }
                 let args: Vec<String> = std::env::args().collect();
                 if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall" || a == "--repair" || a == "-repair") {
                     return;

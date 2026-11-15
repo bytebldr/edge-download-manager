@@ -454,7 +454,11 @@ Var AppStartMenuFolder
 !insertmacro MUI_PAGE_FINISH
 
 Function RunMainBinary
-  nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  !if "${INSTALLMODE}" == "currentUser"
+    ExecShell "" "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  !else
+    nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  !endif
 FunctionEnd
 
 ; Uninstaller Pages
@@ -576,9 +580,7 @@ Function .onInit
   ${IfNot} ${Silent}
   ${AndIf} $PassiveMode <> 1
     ; Gracefully stop running EDM and NMH processes before extracting/updating
-    nsExec::Exec 'taskkill /F /IM EDM.exe /T'
-    nsExec::Exec 'taskkill /F /IM edm-desktop-app.exe /T'
-    nsExec::Exec 'taskkill /F /IM edm-nmh.exe /T'
+    nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
     Sleep 400
 
     InitPluginsDir
@@ -866,7 +868,11 @@ Function .onInstSuccess
     ${GetOptions} $CMDLINE "/R" $R0
     ${IfNot} ${Errors}
       ${GetOptions} $CMDLINE "/ARGS" $R0
-      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      !if "${INSTALLMODE}" == "currentUser"
+        ExecShell "" "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      !else
+        nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      !endif
     ${EndIf}
   ${EndIf}
 FunctionEnd

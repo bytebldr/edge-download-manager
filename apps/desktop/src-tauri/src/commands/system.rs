@@ -2,6 +2,12 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tauri::{command, State};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use crate::lifecycle::LifecycleStatus;
 use crate::os::*;
 use crate::state::AppState;
@@ -128,6 +134,7 @@ fn perform_native_installation_internal(
                 escaped_target
             );
             let status = std::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["-NoProfile", "-Command", &ps_elevate])
                 .status()
                 .map_err(|se| format!("Failed to request administrator permissions: {}", se))?;
@@ -151,6 +158,7 @@ fn perform_native_installation_internal(
         current_pid
     );
     let _ = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-Command", &kill_ps])
         .output();
     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -233,6 +241,7 @@ fn perform_native_installation_internal(
             escaped_src, escaped_target
         );
         let _ = std::process::Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-NoProfile", "-Command", &ps_copy_elevated])
             .status();
     }
@@ -263,6 +272,7 @@ fn perform_native_installation_internal(
             workdir = target_path.to_string_lossy().replace('\'', "''"),
         );
         let _ = std::process::Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-NoProfile", "-Command", &ps_script])
             .output();
     }
@@ -279,6 +289,7 @@ fn perform_native_installation_internal(
                 workdir = target_path.to_string_lossy().replace('\'', "''"),
             );
             let _ = std::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["-NoProfile", "-Command", &ps_script])
                 .output();
         }
@@ -322,6 +333,7 @@ fn perform_native_installation_internal(
                 let temp_m = std::env::temp_dir().join("com.edm.nmh.json");
                 if std::fs::write(&temp_m, &content).is_ok() {
                     let _ = std::process::Command::new("powershell")
+                        .creation_flags(CREATE_NO_WINDOW)
                         .args(["-NoProfile", "-Command", &format!(
                             "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command Copy-Item -Path ''{}'' -Destination ''{}'' -Force'",
                             temp_m.to_string_lossy().replace('\'', "''"),
@@ -336,6 +348,7 @@ fn perform_native_installation_internal(
                 let temp_m = std::env::temp_dir().join("com.edm.nmh.firefox.json");
                 if std::fs::write(&temp_m, &content).is_ok() {
                     let _ = std::process::Command::new("powershell")
+                        .creation_flags(CREATE_NO_WINDOW)
                         .args(["-NoProfile", "-Command", &format!(
                             "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -Command Copy-Item -Path ''{}'' -Destination ''{}'' -Force'",
                             temp_m.to_string_lossy().replace('\'', "''"),
@@ -522,6 +535,7 @@ fn perform_native_uninstallation_internal(purge_user_data: bool) -> Result<(), S
         current_pid
     );
     let _ = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-Command", &kill_ps])
         .output();
 
@@ -587,6 +601,7 @@ fn perform_native_uninstallation_internal(purge_user_data: bool) -> Result<(), S
     );
 
     let _ = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cleanup_script])
         .spawn();
 
@@ -705,6 +720,7 @@ pub async fn perform_native_repair(
                     workdir = install_dir.to_string_lossy().replace('\'', "''"),
                 );
                 let _ = std::process::Command::new("powershell")
+                    .creation_flags(CREATE_NO_WINDOW)
                     .args(["-NoProfile", "-Command", &ps_script])
                     .output();
                 details.push("Restored Start Menu shortcut (EDM.lnk).".to_string());
@@ -720,6 +736,7 @@ pub async fn perform_native_repair(
                     workdir = install_dir.to_string_lossy().replace('\'', "''"),
                 );
                 let _ = std::process::Command::new("powershell")
+                    .creation_flags(CREATE_NO_WINDOW)
                     .args(["-NoProfile", "-Command", &ps_script])
                     .output();
                 details.push("Restored Desktop shortcut (EDM.lnk).".to_string());

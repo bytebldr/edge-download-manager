@@ -2,6 +2,27 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.18] - 2026-11-15
+
+### ⚡ Critical Hotfix: In-Place Auto-Update Deadlock Fix, Zero-Console Process Lifecycle & Non-Elevated Relaunch
+
+#### 1. In-Place Auto-Update Deadlock Fix
+- **Root Cause**: `main.rs` unconditionally intercepted Tauri's `RunEvent::ExitRequested` event and called `api.prevent_exit()` to implement close-to-tray. When `updater.rs` initiated an update and invoked `trigger_graceful_quit()`, Tauri's exit was suppressed! The process lingered holding PE file locks on `EDM.exe` for 5 seconds until an uncoordinated fallback thread killed it. NSIS in passive mode (`/P`) started within 150ms and attempted to overwrite `EDM.exe`, which failed with `ERROR_SHARING_VIOLATION`.
+- **Atomic Quit Protocol**: Introduced `pub static IS_QUITTING: AtomicBool`. Set to `true` during `trigger_graceful_quit()`. `main.rs` checks `IS_QUITTING` in `RunEvent::ExitRequested` and immediately permits clean shutdown. Reduced fallback delay from 5s to 1s.
+- **Canonical Binary Target**: Defined `[[bin]] name = "EDM" path = "src/main.rs"` in desktop `Cargo.toml`. Tauri and Cargo now canonically produce `EDM.exe` as the primary executable.
+
+#### 2. Complete Elimination of Console Flickering (Zero-Console Across App)
+- **Root Cause**: During install, update, reinstall, and uninstall, console windows flickered 2–3 times due to:
+  1. `installer.nsi` and `hooks.nsh` invoking `taskkill.exe` via `nsExec::Exec` 3 consecutive times. On Windows 10/11 with modern Windows Terminal, CUI binaries flash open/close.
+  2. `system.rs` invoking `Command::new("powershell")` 11 times (process termination, shortcut creation, cleanup) without Win32 `CREATE_NO_WINDOW` (`0x08000000`).
+- **Zero-Console Invariant**:
+  - Attached `.creation_flags(CREATE_NO_WINDOW)` to all 11 `std::process::Command::new("powershell")` invocations in `system.rs`.
+  - Consolidated multiple sequential `taskkill` calls in `installer.nsi` and `hooks.nsh` into single compound invocations: `taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T`.
+
+#### 3. Standard Non-Elevated Relaunch via `ExecShell`
+- **Root Cause**: In `installer.nsi`, `.onInstSuccess` and `RunMainBinary` invoked `nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe"`. On standard `currentUser` non-elevated installations, `RunAsUser` failed with `ERROR_PRIVILEGE_NOT_HELD` (Win32 1314) because standard tokens cannot duplicate shell tokens.
+- **Conditional Relaunch**: Implemented conditional compile check: for `currentUser` installs, use `ExecShell "" "$INSTDIR\${MAINBINARYNAME}.exe"` to relaunch directly without elevation failure.
+
 ## [v0.0.17] - 2026-11-15
 
 ### ⚡ Hotfix: Centralized Queue Manager, Compact Toast UI, and BitTorrent Seeding & Telemetry Engine

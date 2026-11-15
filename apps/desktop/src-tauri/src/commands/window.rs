@@ -4,6 +4,8 @@ use tauri::{command, Manager, State};
 
 use crate::state::AppState;
 
+pub static IS_QUITTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[command]
 pub fn app_minimize(window: tauri::WebviewWindow) {
     let _ = window.minimize();
@@ -61,8 +63,9 @@ pub fn app_start_dragging(window: tauri::WebviewWindow) {
 }
 
 pub fn trigger_graceful_quit(app_handle: tauri::AppHandle, state: AppState) {
+    IS_QUITTING.store(true, Ordering::SeqCst);
     std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(1));
         std::process::exit(0);
     });
 
