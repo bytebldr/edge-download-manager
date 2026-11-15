@@ -51,7 +51,7 @@ export const SpeedChartInteractive: React.FC<SpeedChartInteractiveProps> = ({
         : dlHistory.slice(-totalPoints);
 
     const paddedUl: number[] =
-      ulHistory.length >= dlHistory.length && ulHistory.some((v) => v > 0)
+      ulHistory && ulHistory.length > 0
         ? (ulHistory.length < totalPoints
             ? [...Array(totalPoints - ulHistory.length).fill(0), ...ulHistory]
             : ulHistory.slice(-totalPoints))
@@ -73,7 +73,7 @@ export const SpeedChartInteractive: React.FC<SpeedChartInteractiveProps> = ({
     ? (chartData.length > 0 ? chartData[chartData.length - 1].download : 0)
     : 0;
   const currentUl = isDownloading
-    ? (chartData.length > 0 ? chartData[chartData.length - 1].upload : 0)
+    ? (uploadHistory && uploadHistory.length > 0 ? uploadHistory[uploadHistory.length - 1] : (chartData.length > 0 ? chartData[chartData.length - 1].upload : 0))
     : 0;
 
   const peakDl = Math.max(peakSpeedBps, ...chartData.map((d) => d.download));
@@ -267,9 +267,9 @@ export const SpeedChartInteractive: React.FC<SpeedChartInteractiveProps> = ({
             <Clock className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-[var(--text-muted)]">Time left:</span>
             <span className="font-mono font-semibold text-sky-400 tabular-nums min-w-[70px] inline-block text-right">
-              {elapsedSeconds >= 3 && eta && eta !== "Calculating..." && eta !== "Connecting..."
+              {eta && eta !== "Calculating..." && eta !== "Connecting..."
                 ? eta
-                : "—"}
+                : (isDownloading ? "Calculating..." : "—")}
             </span>
           </div>
         </div>

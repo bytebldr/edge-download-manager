@@ -102,7 +102,9 @@ export interface DownloadItem {
   dateAdded: string;
   workers?: WorkerInfo[];
   speedHistory?: number[];
+  uploadHistory?: number[];
   peakSpeedBps?: number;
+  elapsedSeconds?: number;
   error_msg?: string | null;
 }
 
@@ -1037,6 +1039,13 @@ export default function App() {
             const actualBps = isFinished ? 0 : smoothedSpeedBps;
             const history = [...(task.speedHistory || []).slice(-59), actualBps];
             const peak = Math.max(task.peakSpeedBps || 0, actualBps);
+            const uploadBps = Math.floor((telem.upload_throughput_bps || 0) / 8);
+            const ulHistory = [...(task.uploadHistory || []).slice(-59), uploadBps];
+
+            // Trigger alert notification immediately upon reaching completion
+            if (isFinished && !notifiedCompletedIdsRef.current.has(task.id)) {
+              triggerCompletionNotification(task.name, task.id);
+            }
 
             return {
               id: task.id,
@@ -1049,7 +1058,9 @@ export default function App() {
               state: isFinished ? ("completed" as const) : ("downloading" as const),
               workers: newWorkers,
               speedHistory: history,
+              uploadHistory: ulHistory,
               peakSpeedBps: peak,
+              elapsedSeconds: Math.floor(smooth.elapsedSeconds),
             };
           } else {
             smooth.elapsedSeconds += 0.25;

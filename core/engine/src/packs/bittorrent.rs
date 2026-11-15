@@ -208,6 +208,7 @@ impl BitTorrentPack {
                             progress_pct: 0.0,
                             instant_throughput_bps: 0,
                             rolling_throughput_bps: 0,
+                            upload_throughput_bps: 0,
                             active_connections: 1,
                             target_connections: task.config.max_connections,
                             live_workers: 1,
@@ -286,13 +287,14 @@ impl BitTorrentPack {
                 0.0
             };
 
-            let (live_conns, dl_speed) = if let Some(ref live) = stats.live {
+            let (live_conns, dl_speed, ul_speed) = if let Some(ref live) = stats.live {
                 (
                     live.snapshot.peer_stats.live,
                     live.download_speed.as_bytes(),
+                    live.upload_speed.as_bytes(),
                 )
             } else {
-                (1, 0)
+                (1, 0, 0)
             };
 
             if let Some(name) = handle.name() {
@@ -446,6 +448,7 @@ impl BitTorrentPack {
                     progress_pct,
                     instant_throughput_bps: instant_bps,
                     rolling_throughput_bps: rolling_bps,
+                    upload_throughput_bps: ul_speed * 8,
                     active_connections: live_conns.max(1),
                     target_connections: task.config.max_connections,
                     live_workers: num_workers,

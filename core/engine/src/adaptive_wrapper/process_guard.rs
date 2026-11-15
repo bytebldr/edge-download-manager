@@ -89,6 +89,7 @@ impl FfmpegSupervisor {
                             progress_pct: 99.0,                      // Post-flight synthesis phase
                             instant_throughput_bps: 10_000_000,
                             rolling_throughput_bps: 10_000_000,
+                            upload_throughput_bps: 0,
                             active_connections: 1,
                             target_connections: 1,
                             live_workers: 1,

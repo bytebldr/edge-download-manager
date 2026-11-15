@@ -209,10 +209,11 @@
       }
     }
     updateAllCounters() {
+      const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed";
       const activeDownloads = this.downloads.filter(
-        (d) => d.state === "downloading" || d.state === "queued" || d.state === "connecting"
+        (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
       );
-      const completedCount = this.downloads.filter((d) => d.state === "completed").length;
+      const completedCount = this.downloads.filter((d) => isDone(d)).length;
       const failedCount = this.downloads.filter((d) => d.state === "failed" || d.state === "cancelled").length;
       const aggSpeed = activeDownloads.reduce((sum, d) => sum + (d.speed_bytes_per_sec || 0), 0);
       const badge = document.getElementById("tasksBadge");
@@ -588,7 +589,8 @@
     renderTasksListHtml() {
       const filtered = this.downloads.filter((d) => {
         const matchesSearch = d.filename.toLowerCase().includes(this.searchQuery.toLowerCase()) || d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
-        const matchesFilter = this.taskFilter === "all" || this.taskFilter === "active" && (d.state === "downloading" || d.state === "queued" || d.state === "connecting") || this.taskFilter === "completed" && d.state === "completed" || this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled");
+        const isDone = d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed";
+        const matchesFilter = this.taskFilter === "all" || this.taskFilter === "active" && (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone || this.taskFilter === "completed" && isDone || this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled");
         return matchesSearch && matchesFilter;
       });
       if (filtered.length === 0) {
@@ -620,9 +622,9 @@
         const total = item.size_total || 0;
         const done = item.size_done || 0;
         const pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
-        const isDownloading = item.state === "downloading";
+        const isCompleted = item.state === "completed" || total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed";
+        const isDownloading = item.state === "downloading" && !isCompleted;
         const isPaused = item.state === "paused";
-        const isCompleted = item.state === "completed";
         const isFailed = item.state === "failed" || item.state === "cancelled";
         let catClass = "tile-programs";
         let catSvg = CATEGORY_SVGS.programs;

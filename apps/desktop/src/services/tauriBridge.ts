@@ -26,6 +26,7 @@ export interface BackendTelemetry {
   progress_pct: number;
   instant_throughput_bps: number;
   rolling_throughput_bps: number;
+  upload_throughput_bps?: number;
   active_connections: number;
   target_connections?: number;
   live_workers?: number;
@@ -1065,6 +1066,51 @@ export async function tauriPerformNativeUninstallation(opts: {
     return;
   }
   await new Promise((r) => setTimeout(r, 800));
+}
+
+export interface NativeRepairReport {
+  success: boolean;
+  repaired_browser: boolean;
+  repaired_shortcuts: boolean;
+  verified_binaries: boolean;
+  details: string[];
+}
+
+export async function tauriPerformNativeRepair(opts: {
+  repairBrowser: boolean;
+  repairShortcuts: boolean;
+  verifyBinaries: boolean;
+}): Promise<NativeRepairReport> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<NativeRepairReport>("perform_native_repair", {
+      repairBrowser: opts.repairBrowser,
+      repairShortcuts: opts.repairShortcuts,
+      verifyBinaries: opts.verifyBinaries,
+    });
+  }
+  await new Promise((r) => setTimeout(r, 1200));
+  return {
+    success: true,
+    repaired_browser: opts.repairBrowser,
+    repaired_shortcuts: opts.repairShortcuts,
+    verified_binaries: opts.verifyBinaries,
+    details: [
+      "Simulated repair: Browser manifests refreshed.",
+      "Simulated repair: Shortcuts restored.",
+      "Simulated repair: Binaries verified.",
+    ],
+  };
+}
+
+export async function tauriLaunchMainApp(): Promise<void> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("launch_main_app");
+    return;
+  }
+  window.location.hash = "";
+  window.location.reload();
 }
 
 

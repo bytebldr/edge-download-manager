@@ -164,11 +164,115 @@ pub fn execute_download(
         );
     }
 
-    let resolved_path = edm_core::sanitizer::Sanitizer::resolve_duplicate(&save_path, &clean_name);
-    let final_clean_name = resolved_path
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or(clean_name);
+    // Read persistent user settings (conflict policy, folder mode, concurrency limits)
+    let settings_val = state
+        .store
+        .get_setting("app_settings")
+        .ok()
+        .flatten()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok());
+
+    let conflict_policy = settings_val
+        .as_ref()
+        .and_then(|v| v.get("storage"))
+        .and_then(|s| s.get("filenameConflictPolicy"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("ask");
+
+    let target_file_path = save_path.join(&clean_name);
+    let final_clean_name = if target_file_path.exists() {
+        match conflict_policy {
+            "overwrite" => clean_name,
+            "skip" => {
+                return Err(
+                    "Download skipped: target file already exists in destination (conflict policy: skip)"
+                        .into(),
+                );
+            }
+            "rename" => {
+                let resolved_path =
+                    edm_core::sanitizer::Sanitizer::resolve_duplicate(&save_path, &clean_name);
+                resolved_path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or(clean_name)
+            }
+            _ => {
+                // "ask" mode
+                #[cfg(windows)]
+                {
+                    use std::ffi::OsStr;
+                    use std::os::windows::ffi::OsStrExt;
+                    #[link(name = "user32")]
+                    extern "system" {
+                        fn MessageBoxW(
+                            hWnd: *mut std::ffi::c_void,
+                            lpText: *const u16,
+                            lpCaption: *const u16,
+                            uType: u32,
+                        ) -> i32;
+                    }
+                    const MB_YESNOCANCEL: u32 = 0x00000003;
+                    const MB_ICONQUESTION: u32 = 0x00000020;
+                    const IDYES: i32 = 6;
+                    const IDNO: i32 = 7;
+
+                    let prompt_text = format!(
+                        "File Conflict Detected:\n\nA file named '{}' already exists in the destination folder:\n{}\n\n• Click [Yes] to OVERWRITE the existing file.\n• Click [No] to AUTO-RENAME to avoid collision.\n• Click [Cancel] to abort this download.",
+                        clean_name,
+                        save_path.display()
+                    );
+                    let caption = "EDM - File Collision Conflict";
+
+                    let w_text: Vec<u16> = OsStr::new(&prompt_text)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let w_cap: Vec<u16> = OsStr::new(caption)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    let ret = unsafe {
+                        MessageBoxW(
+                            std::ptr::null_mut(),
+                            w_text.as_ptr(),
+                            w_cap.as_ptr(),
+                            MB_YESNOCANCEL | MB_ICONQUESTION,
+                        )
+                    };
+
+                    match ret {
+                        IDYES => clean_name,
+                        IDNO => {
+                            let resolved_path = edm_core::sanitizer::Sanitizer::resolve_duplicate(
+                                &save_path,
+                                &clean_name,
+                            );
+                            resolved_path
+                                .file_name()
+                                .map(|s| s.to_string_lossy().to_string())
+                                .unwrap_or(clean_name)
+                        }
+                        _ => {
+                            return Err("Download cancelled by user (file collision)".into());
+                        }
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let resolved_path =
+                        edm_core::sanitizer::Sanitizer::resolve_duplicate(&save_path, &clean_name);
+                    resolved_path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or(clean_name)
+                }
+            }
+        }
+    } else {
+        clean_name
+    };
 
     if let Some(warn_msg) = edm_core::security::check_double_extension(&final_clean_name) {
         tracing::warn!("[SECURITY] {}", warn_msg);
@@ -232,16 +336,6 @@ pub fn execute_download(
         }
     }
 
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let telemetry_store = Arc::new(Mutex::new(None));
-
-    let handle = ActiveTaskHandle {
-        cancelled: cancelled.clone(),
-        telemetry: telemetry_store.clone(),
-    };
-
-    state.tasks.lock().unwrap().insert(id_str.clone(), handle);
-
     let ext = final_clean_name
         .split('.')
         .next_back()
@@ -263,6 +357,74 @@ pub fn execute_download(
     };
 
     let effective_size = size_total.or(pack_target.estimated_size);
+
+    let max_active = settings_val
+        .as_ref()
+        .and_then(|v| v.get("downloads"))
+        .and_then(|d| d.get("maxActiveDownloads"))
+        .and_then(|m| m.as_u64())
+        .unwrap_or(3) as usize;
+
+    let active_count = {
+        let tasks = state.tasks.lock().unwrap();
+        tasks
+            .values()
+            .filter(|h| !h.cancelled.load(Ordering::Relaxed))
+            .count()
+    };
+
+    if active_count >= max_active {
+        let record = DownloadRecord {
+            id,
+            url: url.clone(),
+            final_url: None,
+            filename: final_clean_name.clone(),
+            save_dir: save_path.to_string_lossy().to_string(),
+            category: category.into(),
+            state: DownloadState::Queued,
+            size_total: effective_size,
+            size_done: 0,
+            resumable: true,
+            etag: None,
+            last_modified: None,
+            content_type: None,
+            referer: referer.clone(),
+            user_agent: user_agent.clone(),
+            connections: config.max_connections,
+            created_at: Utc::now(),
+            error_msg: None,
+        };
+        let _ = state.store.insert_download(&record);
+
+        let ws_mgr = state.ws_manager.clone();
+        let ws_id = id_str.clone();
+        let ws_filename = final_clean_name.clone();
+        let ws_savedir = save_path.clone();
+        let ws_total = effective_size;
+        state.rt_handle.spawn(async move {
+            ws_mgr
+                .register_task(
+                    ws_id,
+                    ws_filename,
+                    ws_savedir,
+                    ws_total,
+                    "queued".into(),
+                )
+                .await;
+            ws_mgr.broadcast_snapshot().await;
+        });
+        return Ok(id);
+    }
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let telemetry_store = Arc::new(Mutex::new(None));
+
+    let handle = ActiveTaskHandle {
+        cancelled: cancelled.clone(),
+        telemetry: telemetry_store.clone(),
+    };
+
+    state.tasks.lock().unwrap().insert(id_str.clone(), handle);
 
     if let Some(sz) = effective_size {
         if let Err(e) = edm_core::security::check_disk_space(&save_path, sz) {
@@ -341,6 +503,7 @@ pub fn execute_download(
     let referer_fin = referer.clone();
     let power_ctrl = state.power_countdown.clone();
     let app_handle_opt = state.app_handle.lock().unwrap().clone();
+    let state_drain = state.clone();
 
     state.rt_handle.spawn(async move {
         let ws_mgr_tick = ws_mgr_cb.clone();
@@ -387,6 +550,8 @@ pub fn execute_download(
                 let id_c = ws_id_tick.clone();
                 let speed_bytes =
                     (telem.rolling_throughput_bps / 8).max(telem.instant_throughput_bps / 8);
+                let is_phase_done = telem.phase.as_deref() == Some("Completed") || telem.progress_pct >= 100.0;
+                let status_str = if is_phase_done { "completed" } else { "downloading" };
                 tokio::spawn(async move {
                     ws_mgr
                         .update_task_progress(
@@ -394,7 +559,7 @@ pub fn execute_download(
                             telem.downloaded_bytes,
                             telem.total_bytes,
                             speed_bytes,
-                            "downloading",
+                            status_str,
                         )
                         .await;
                 });
@@ -466,6 +631,12 @@ pub fn execute_download(
                 let full_path = save_path_fin.join(&final_clean_name_fin);
                 let _ = edm_core::security::apply_mark_of_the_web(&full_path, Some(&url_fin));
                 let _ = store_clone.purge_encrypted_cookies(id);
+                // System notification alert on successful completion
+                let _ = crate::os::notifications::send_system_notification_internal(
+                    "EDM Download Complete",
+                    &format!("{} has finished downloading.", final_clean_name_fin),
+                    Some(&full_path.to_string_lossy()),
+                );
                 if let Ok(records) = store_clone.list_all_downloads() {
                     if let Some(r) = records.into_iter().find(|d| d.id == id) {
                         let _ = store_clone.add_to_history(&r, Utc::now());
@@ -530,11 +701,34 @@ pub fn execute_download(
                         )
                         .await;
                 }
+                ws_mgr_fin.broadcast_snapshot().await;
             });
         }
 
         // Evict active task handle and telemetry buffers from live memory
         tasks_map.lock().unwrap().remove(&ws_id_cb);
+
+        // Auto-drain next queued task from the persistent database
+        let next_queued = store_clone.list_all_downloads().ok().and_then(|records| {
+            records.into_iter().find(|d| d.state == DownloadState::Queued)
+        });
+        if let Some(queued) = next_queued {
+            let state_clone = state_drain.clone();
+            tokio::spawn(async move {
+                let _ = execute_download(
+                    &state_clone,
+                    queued.id,
+                    queued.url,
+                    Some(queued.filename),
+                    Some(std::path::PathBuf::from(queued.save_dir)),
+                    Some(queued.connections),
+                    queued.size_total,
+                    None,
+                    queued.referer,
+                    queued.user_agent,
+                );
+            });
+        }
     });
 
     Ok(id)

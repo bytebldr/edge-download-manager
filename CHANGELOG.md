@@ -2,6 +2,49 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.15] - 2026-11-15
+
+### 🛠️ Dedicated Repair Mode, YouTube Completion Mark, BitTorrent Upload Telemetry, and Policy Guardrails
+
+#### 1. Dedicated Frameless Reinstall & Repair Mode (`#repair` / `--repair`)
+- **Independent Diagnostic Chassis**: Created dedicated `RepairWizard.tsx` rendered in a fixed 680×440 frameless dark glassmorphic window matching EDM's design system, completely detached from the standard installer and OTA update flows.
+- **Targeted Subsystem Repair**: Provides checkbox-driven repair actions:
+  - Re-registers browser integration manifests and registry keys (`com.edm.nmh`) for Microsoft Edge, Google Chrome, Brave, and Mozilla Firefox.
+  - Restores missing Windows shell Desktop and Start Menu shortcuts (`EDM.lnk`).
+  - Verifies and synchronizes core application binaries (`EDM.exe`, `edm-desktop-app.exe`, `edm-nmh.exe`).
+- **Non-Destructive Guarantee**: Explicit badge confirming zero data loss ("Preserves all downloads, queues, and user settings").
+- **Live Progress & Completion**: Diagnostic progress bar and success summary with a one-click "Launch EDM" button.
+
+#### 2. YouTube Completion Mark in Extension Popup
+- **Atomic State Synchronization**: Resolved race condition where late throttled progress packets in Tokio background tasks could overwrite `"completed"` state with `"downloading"`.
+- **Defensive State Invariant**: Guarded `update_task_progress` in `ws/manager.rs` to prevent completed or failed tasks from reverting back to downloading.
+- **Immediate Finished State in Popup**: Updated `extension/src/popup.ts` to detect 100% completion (size done >= size total at 0 B/s), immediately displaying the `✓ Finished` mark in the "Done" tab with Open File/Folder actions and removing pause/cancel controls.
+
+#### 3. BitTorrent Live Upload Telemetry & Elapsed / Time Left Fix
+- **Live Upload Throughput**: Added `upload_throughput_bps` to `AdaptiveTelemetry` and populated live upload rate from `librqbit` (`stats.live.upload_speed`) across telemetry ticks.
+- **Speed Chart Dual-Series Display**: Bound upload history in `SpeedChartInteractive.tsx` and `DetailsInspectorDrawer.tsx` so the status box displays live upload throughput alongside peak rates.
+- **Accurate Elapsed Time & ETA**: Computed real elapsed time from task start in `App.tsx` and removed restrictive checks so "Elapsed" and "Time left" render dynamically.
+
+#### 4. File Collision & Conflict Policy Enforcement
+- **Settings-Driven Handling**: Replaced unconditional duplicate renaming with strict adherence to `settings.storage.filenameConflictPolicy`:
+  - `overwrite`: Replaces existing target file directly.
+  - `rename`: Automatically resolves unique name with numerical counter (`name (1).ext`).
+  - `skip`: Gracefully aborts duplicate download with explicit status message.
+  - `ask`: Displays a native Windows conflict resolution dialog (`MessageBoxW`) allowing the user to choose Overwrite, Auto-Rename, or Cancel.
+
+#### 5. Multi-Stream Acceleration & Concurrency Limit Queueing
+- **Dynamic Concurrency Enforcement**: Enforced `settings.downloads.maxActiveDownloads`. When active downloads reach the configured limit, subsequent downloads are cleanly inserted as `Queued` in SQLite and WebSocket manager.
+- **Automatic Queue Drain**: Upon task completion or cancellation, or when `maxActiveDownloads` is increased in Settings, the next queued task is automatically started.
+- **Segmentation Strategy Rules**: Enforced `segmentedDownloads` modes (`disabled` locks connections to 1, `aggressive` expands connections up to 16+).
+
+#### 6. System Toast Alert & Audio Chimes
+- **Direct Notification Dispatch**: Fixed completion trigger condition in `App.tsx` so notification sound and Windows toast alerts fire immediately when a task finishes.
+- **Native Backend Fallback**: Added direct `send_system_notification_internal` invocation in `download_manager.rs` on task completion as a fail-safe.
+
+#### 7. Extension Rebranding & OTA Label Cleanup
+- **Extension Name Clean**: Renamed browser extension from `"EDM — Edge Download Manager"` to strictly `"EDM"` across all Chromium and Firefox manifests.
+- **Pro Badge & OTA Removal**: Removed `"PRO "` prefix from version badge in Settings About section (`v0.0.15`) and stripped `"OTA"` references across UI labels.
+
 ## [v0.0.14] - 2026-11-15
 
 ### 🚀 Isolated Handoff Architecture, Immortal Socket Resilience, Version Parity & Update UX

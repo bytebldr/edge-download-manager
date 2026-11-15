@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tauri::{command, State};
 
@@ -590,4 +591,165 @@ fn perform_native_uninstallation_internal(purge_user_data: bool) -> Result<(), S
         .spawn();
 
     Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RepairReport {
+    pub success: bool,
+    pub repaired_browser: bool,
+    pub repaired_shortcuts: bool,
+    pub verified_binaries: bool,
+    pub details: Vec<String>,
+}
+
+#[command]
+pub async fn perform_native_repair(
+    repair_browser: bool,
+    repair_shortcuts: bool,
+    verify_binaries: bool,
+) -> Result<RepairReport, String> {
+    let mut details = Vec::new();
+    let browser_ok = true;
+    let shortcuts_ok = true;
+    let mut binaries_ok = true;
+
+    // Resolve installation directory
+    let install_dir = PathBuf::from(get_default_install_dir());
+    let _ = std::fs::create_dir_all(&install_dir);
+
+    // 1. Verify and restore core binaries
+    if verify_binaries {
+        let edm_exe = install_dir.join("EDM.exe");
+        let desktop_exe = install_dir.join("edm-desktop-app.exe");
+        let nmh_exe = install_dir.join("edm-nmh.exe");
+
+        // Bidirectional co-location & synchronization
+        if desktop_exe.exists() && !edm_exe.exists() {
+            let _ = std::fs::copy(&desktop_exe, &edm_exe);
+            details.push("Restored EDM.exe from desktop binary payload.".to_string());
+        } else if edm_exe.exists() && !desktop_exe.exists() {
+            let _ = std::fs::copy(&edm_exe, &desktop_exe);
+            details.push("Restored edm-desktop-app.exe from EDM binary payload.".to_string());
+        } else if edm_exe.exists() && desktop_exe.exists() {
+            details.push("Verified core EDM application binaries.".to_string());
+        } else if let Ok(current_exe) = std::env::current_exe() {
+            let _ = std::fs::copy(&current_exe, &edm_exe);
+            let _ = std::fs::copy(&current_exe, &desktop_exe);
+            details.push("Synchronized running binary to EDM.exe and edm-desktop-app.exe.".to_string());
+        } else {
+            binaries_ok = false;
+            details.push("Warning: Main EDM executable could not be verified.".to_string());
+        }
+
+        if nmh_exe.exists() {
+            details.push("Verified Native Messaging Host binary (edm-nmh.exe).".to_string());
+        } else if let Ok(cur) = std::env::current_exe() {
+            if let Some(parent) = cur.parent() {
+                let cur_nmh = parent.join("edm-nmh.exe");
+                if cur_nmh.exists() {
+                    let _ = std::fs::copy(&cur_nmh, &nmh_exe);
+                    details.push("Restored edm-nmh.exe to installation directory.".to_string());
+                }
+            }
+        }
+    }
+
+    // 2. Browser integration repair
+    if repair_browser {
+        #[cfg(windows)]
+        {
+            crate::os::registry::register_native_messaging_host();
+            let nmh_exe = install_dir.join("edm-nmh.exe");
+            let nmh_str = nmh_exe.to_string_lossy().to_string();
+
+            let chromium_manifest = serde_json::json!({
+                "name": "com.edm.nmh",
+                "description": "EDM Native Messaging Host for Chrome, Edge and Brave",
+                "path": nmh_str,
+                "type": "stdio",
+                "allowed_origins": edm_ipc::extensions::allowed_chromium_origins()
+            });
+            let firefox_manifest = serde_json::json!({
+                "name": "com.edm.nmh",
+                "description": "EDM Native Messaging Host for Mozilla Firefox",
+                "path": nmh_str,
+                "type": "stdio",
+                "allowed_extensions": edm_ipc::extensions::allowed_firefox_ids()
+            });
+
+            let chr_path = install_dir.join("com.edm.nmh.json");
+            let ff_path = install_dir.join("com.edm.nmh.firefox.json");
+
+            let _ = std::fs::write(&chr_path, serde_json::to_string_pretty(&chromium_manifest).unwrap_or_default());
+            let _ = std::fs::write(&ff_path, serde_json::to_string_pretty(&firefox_manifest).unwrap_or_default());
+            details.push("Re-registered browser integration manifests & registry keys for Edge, Chrome, Brave, and Firefox.".to_string());
+        }
+    }
+
+    // 3. Shortcuts repair
+    if repair_shortcuts {
+        #[cfg(windows)]
+        {
+            let edm_exe = install_dir.join("EDM.exe");
+            let edm_exe_str = edm_exe.to_string_lossy().to_string();
+
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                let start_menu_dir = PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs");
+                let _ = std::fs::create_dir_all(&start_menu_dir);
+                let start_menu_lnk = start_menu_dir.join("EDM.lnk");
+                let lnk_path = start_menu_lnk.to_string_lossy().to_string();
+                let ps_script = format!(
+                    r#"$WS = New-Object -ComObject WScript.Shell; $SC = $WS.CreateShortcut('{lnk}'); $SC.TargetPath = '{exe}'; $SC.WorkingDirectory = '{workdir}'; $SC.IconLocation = '{exe},0'; $SC.Save()"#,
+                    lnk = lnk_path.replace('\'', "''"),
+                    exe = edm_exe_str.replace('\'', "''"),
+                    workdir = install_dir.to_string_lossy().replace('\'', "''"),
+                );
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &ps_script])
+                    .output();
+                details.push("Restored Start Menu shortcut (EDM.lnk).".to_string());
+            }
+
+            if let Ok(userprofile) = std::env::var("USERPROFILE") {
+                let desktop = PathBuf::from(userprofile).join("Desktop").join("EDM.lnk");
+                let lnk_path = desktop.to_string_lossy().to_string();
+                let ps_script = format!(
+                    r#"$WS = New-Object -ComObject WScript.Shell; $SC = $WS.CreateShortcut('{lnk}'); $SC.TargetPath = '{exe}'; $SC.WorkingDirectory = '{workdir}'; $SC.IconLocation = '{exe},0'; $SC.Save()"#,
+                    lnk = lnk_path.replace('\'', "''"),
+                    exe = edm_exe_str.replace('\'', "''"),
+                    workdir = install_dir.to_string_lossy().replace('\'', "''"),
+                );
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &ps_script])
+                    .output();
+                details.push("Restored Desktop shortcut (EDM.lnk).".to_string());
+            }
+        }
+    }
+
+    Ok(RepairReport {
+        success: browser_ok && shortcuts_ok && binaries_ok,
+        repaired_browser: repair_browser && browser_ok,
+        repaired_shortcuts: repair_shortcuts && shortcuts_ok,
+        verified_binaries: verify_binaries && binaries_ok,
+        details,
+    })
+}
+
+#[command]
+pub fn launch_main_app() -> Result<(), String> {
+    let install_dir = PathBuf::from(get_default_install_dir());
+    let edm_exe = install_dir.join("EDM.exe");
+    let target = if edm_exe.exists() {
+        edm_exe
+    } else {
+        std::env::current_exe().map_err(|e| e.to_string())?
+    };
+
+    let _ = std::process::Command::new(target)
+        .args(["--show-window"])
+        .spawn()
+        .map_err(|e| format!("Failed to spawn EDM: {}", e))?;
+
+    std::process::exit(0);
 }

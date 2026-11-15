@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { InstallerWizard } from "./components/InstallerWizard";
 import { UninstallerWizard } from "./components/UninstallerWizard";
+import { RepairWizard } from "./components/RepairWizard";
 import "./styles/theme.css";
 
 interface ErrorBoundaryProps {
@@ -99,17 +100,35 @@ function Root() {
     return params.get("mode") === "uninstall" || window.location.hash === "#uninstall" || params.get("uninstall") === "1";
   });
 
+  const [repairMode, setRepairMode] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("mode") === "repair" || window.location.hash === "#repair" || params.get("repair") === "1";
+  });
+
   React.useEffect(() => {
     const handleHashChange = () => {
       if (window.location.hash === "#setup") {
         setInstallerMode(true);
       } else if (window.location.hash === "#uninstall") {
         setUninstallerMode(true);
+      } else if (window.location.hash === "#repair") {
+        setRepairMode(true);
       }
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  if (repairMode) {
+    return (
+      <RepairWizard
+        onDone={() => {
+          import("./services/tauriBridge").then((m) => m.tauriWindowClose());
+        }}
+      />
+    );
+  }
 
   if (uninstallerMode) {
     return (

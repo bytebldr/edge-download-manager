@@ -167,7 +167,7 @@ fn main() {
     };
 
     // Fast-path: Start WebSocket Server on 127.0.0.1:14370 FIRST (except in installer setup mode)
-    let is_setup_or_uninstall = args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall");
+    let is_setup_or_uninstall = args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall" || a == "--repair");
     if !is_setup_or_uninstall {
         let ws_mgr_srv = ws_manager.clone();
         let t_ws = t_boot;
@@ -572,6 +572,7 @@ fn main() {
             let show_window = args.iter().any(|arg| arg == "--show-window");
             let is_setup_mode = args.iter().any(|arg| arg == "--setup");
             let is_uninstall_mode = args.iter().any(|arg| arg == "--uninstall" || arg == "-uninstall");
+            let is_repair_mode = args.iter().any(|arg| arg == "--repair" || arg == "-repair");
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) =
@@ -602,6 +603,17 @@ fn main() {
                     let _ = window.show();
                     let _ = window.eval("window.location.hash = '#uninstall'");
                     tracing::info!("EDM launched in custom uninstaller wizard mode (--uninstall)");
+                } else if is_repair_mode {
+                    // Custom Reinstall & Repair wizard mode: fixed 680×440 non-resizable, centred, navigate to #repair
+                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 680.0,
+                        height: 440.0,
+                    }));
+                    let _ = window.set_resizable(false);
+                    let _ = window.center();
+                    let _ = window.show();
+                    let _ = window.eval("window.location.hash = '#repair'");
+                    tracing::info!("EDM launched in custom repair mode (--repair)");
                 } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
                         "EDM started in background mode; keeping window hidden"
@@ -629,8 +641,8 @@ fn main() {
 
             handle_cli_arguments(&app.handle().clone(), &args);
 
-            // Tray Icon Setup (only in normal app mode, NOT in setup or uninstaller mode)
-            if !is_setup_mode && !is_uninstall_mode {
+            // Tray Icon Setup (only in normal app mode, NOT in setup, repair, or uninstaller mode)
+            if !is_setup_mode && !is_uninstall_mode && !is_repair_mode {
                 let open_i = MenuItem::with_id(app, "open", "Open EDM", true, None::<&str>)?;
                 let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause all", true, None::<&str>)?;
                 let resume_all_i =
@@ -845,14 +857,16 @@ fn main() {
             get_default_install_dir,
             perform_native_installation,
             check_existing_installation,
-            perform_native_uninstallation
+            perform_native_uninstallation,
+            perform_native_repair,
+            launch_main_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building EDM desktop application")
         .run(|_app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let args: Vec<String> = std::env::args().collect();
-                if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall") {
+                if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall" || a == "--repair" || a == "-repair") {
                     return;
                 }
                 api.prevent_exit();

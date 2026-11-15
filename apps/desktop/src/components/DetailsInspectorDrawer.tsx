@@ -32,7 +32,9 @@ export interface InspectorDownloadItem {
   dateAdded: string;
   workers?: WorkerInfo[];
   speedHistory?: number[];
+  uploadHistory?: number[];
   peakSpeedBps?: number;
+  elapsedSeconds?: number;
 }
 
 interface DetailsInspectorDrawerProps {
@@ -255,11 +257,12 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
               {/* Real-time Dual-Stream Interactive Area Chart */}
               <SpeedChartInteractive
                 speedHistory={download.speedHistory}
+                uploadHistory={download.uploadHistory}
                 currentSpeed={download.speed}
                 peakSpeedBps={download.peakSpeedBps}
                 isDownloading={download.state === "downloading"}
                 eta={download.eta}
-                elapsedSeconds={0}
+                elapsedSeconds={download.elapsedSeconds || 0}
               />
 
               {/* Multi-Connection Worker Thread Telemetry Table */}

@@ -201,6 +201,8 @@ impl WsManager {
                 error_msg: None,
             },
         );
+        drop(map);
+        self.bump_rev();
     }
 
     /// Constant-time token verification to defend against timing attacks
@@ -221,12 +223,18 @@ impl WsManager {
     ) {
         let mut map = self.tasks.write().await;
         if let Some(item) = map.get_mut(id) {
+            // Invariant: Once marked completed or failed, do not allow a late-arriving throttled progress packet to revert to "downloading"
+            if (item.status == "completed" || item.status == "failed") && status == "downloading" {
+                return;
+            }
             item.downloaded = downloaded;
             if total.is_some() {
                 item.total = total;
             }
             item.speed = speed;
             item.status = status.to_string();
+            drop(map);
+            self.bump_rev();
         }
     }
 
@@ -234,6 +242,8 @@ impl WsManager {
     pub async fn remove_task(&self, id: &str) {
         let mut map = self.tasks.write().await;
         map.remove(id);
+        drop(map);
+        self.bump_rev();
     }
 
     pub async fn update_task_error(&self, id: &str, error_msg: Option<String>) {
@@ -242,6 +252,8 @@ impl WsManager {
             item.error_msg = error_msg;
             item.status = "failed".to_string();
             item.speed = 0;
+            drop(map);
+            self.bump_rev();
         }
     }
 

@@ -40,6 +40,7 @@ import {
   Copy,
   Check,
   Key,
+  Wrench,
 } from "lucide-react";
 import {
   tauriWindowMinimize,
@@ -1868,7 +1869,7 @@ export default function SettingsPage({
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-[var(--text-primary)]">Edge Download Manager</span>
                       <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-[var(--accent-badge-bg)] text-[var(--accent-badge-text)] border border-[var(--accent-badge-border)]">
-                        PRO v{appVersion}
+                        v{appVersion}
                       </span>
                     </div>
                     <p className="text-[11px] text-[var(--text-muted)] mt-0.5 font-mono">
@@ -1887,7 +1888,7 @@ export default function SettingsPage({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                      Software Updates & OTA Pipeline
+                      Software Updates & Pipeline
                     </label>
                     <span className="text-[11px] text-[var(--text-muted)]">
                       {updateStatus === "checking"
@@ -1921,7 +1922,7 @@ export default function SettingsPage({
                         title="Download and install update automatically"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Update Now (OTA)</span>
+                        <span>Update Now</span>
                       </button>
                     )}
 
@@ -1954,7 +1955,7 @@ export default function SettingsPage({
                   </div>
                 </div>
 
-                {/* OTA Download Progress Bar */}
+                {/* Download Progress Bar */}
                 {(updateStatus === "downloading" || updateStatus === "ready") && (
                   <div className="p-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-2">
                     <div className="flex items-center justify-between text-xs">
@@ -2015,17 +2016,20 @@ export default function SettingsPage({
                   </div>
                 )}
 
-                {/* Optional Reinstall Current Version link for testing OTA */}
-                {updateStatus === "up-to-date" && updateInfo?.download_url && (
-                  <div className="text-right">
-                    <button
-                      onClick={handleInstallUpdate}
-                      className="text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)] underline cursor-pointer"
-                    >
-                      Reinstall / Repair v{appVersion} via OTA
-                    </button>
-                  </div>
-                )}
+                {/* Dedicated Reinstall & Repair Mode trigger */}
+                <div className="text-right">
+                  <button
+                    onClick={() => {
+                      window.location.hash = "#repair";
+                      window.location.reload();
+                    }}
+                    className="text-[11px] text-[var(--text-muted)] hover:text-cyan-400 underline cursor-pointer inline-flex items-center gap-1"
+                    title="Launch dedicated system repair utility"
+                  >
+                    <Wrench className="w-3 h-3 text-cyan-400" />
+                    <span>Reinstall / Repair v{appVersion}</span>
+                  </button>
+                </div>
 
                 <div className="pt-2 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <label className="flex items-center gap-3 cursor-pointer group">

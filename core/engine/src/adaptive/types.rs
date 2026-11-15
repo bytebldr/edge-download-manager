@@ -87,6 +87,8 @@ pub struct AdaptiveTelemetry {
     pub progress_pct: f64,
     pub instant_throughput_bps: u64,
     pub rolling_throughput_bps: u64,
+    #[serde(default)]
+    pub upload_throughput_bps: u64,
     pub active_connections: u32,
     #[serde(default)]
     pub target_connections: u32,
