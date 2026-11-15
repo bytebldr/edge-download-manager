@@ -114,32 +114,40 @@ impl AdaptiveEngine {
         let writer = FileWriter::new(&task.save_dir, &filename, total_size)
             .map_err(|e| format!("Writer init failed: {}", e))?;
 
-        // 2. Persist download in SQLite store
-        let record = DownloadRecord {
-            id: task.id,
-            url: task.url.clone(),
-            final_url: Some(probe.final_url.clone()),
-            filename: filename.clone(),
-            save_dir: task.save_dir.to_string_lossy().to_string(),
-            category: "General".into(),
-            state: DownloadState::Downloading,
-            size_total: total_size,
-            size_done: 0,
-            resumable: is_resumable,
-            etag: probe.etag.clone(),
-            last_modified: probe.last_modified.clone(),
-            content_type: probe.content_type.clone(),
-            referer: task.referer.clone(),
-            user_agent: task.user_agent.clone(),
-            connections: if is_resumable {
-                task.config.initial_connections
-            } else {
-                1
-            },
-            created_at: Utc::now(),
-            error_msg: None,
-        };
-        let _ = self.store.insert_download(&record);
+        // 2. Persist download in SQLite store (preserve progress on resume)
+        let existing_record = self.store.list_all_downloads().ok().and_then(|records| {
+            records.into_iter().find(|d| d.id == task.id)
+        });
+
+        if existing_record.is_none() {
+            let record = DownloadRecord {
+                id: task.id,
+                url: task.url.clone(),
+                final_url: Some(probe.final_url.clone()),
+                filename: filename.clone(),
+                save_dir: task.save_dir.to_string_lossy().to_string(),
+                category: "General".into(),
+                state: DownloadState::Downloading,
+                size_total: total_size,
+                size_done: 0,
+                resumable: is_resumable,
+                etag: probe.etag.clone(),
+                last_modified: probe.last_modified.clone(),
+                content_type: probe.content_type.clone(),
+                referer: task.referer.clone(),
+                user_agent: task.user_agent.clone(),
+                connections: if is_resumable {
+                    task.config.initial_connections
+                } else {
+                    1
+                },
+                created_at: Utc::now(),
+                error_msg: None,
+            };
+            let _ = self.store.insert_download(&record);
+        } else {
+            let _ = self.store.update_download_state(task.id, DownloadState::Downloading, None);
+        }
 
         // 3. Initialize Adaptive Controller & Work Scheduler
         let mut controller = AdaptiveController::new(task.config.clone(), is_resumable);
@@ -258,6 +266,20 @@ impl AdaptiveEngine {
         loop {
             if task.cancelled.load(Ordering::Relaxed) {
                 info!("Download task {} received cancellation signal", task.id);
+                let seg_records: Vec<SegmentRecord> = scheduler
+                    .workers
+                    .iter()
+                    .map(|w| SegmentRecord {
+                        download_id: task.id,
+                        idx: w.idx,
+                        start: w.start,
+                        end: w.end.load(Ordering::Relaxed),
+                        pos: w.pos.load(Ordering::Relaxed),
+                        state: "paused".to_string(),
+                        retries: w.retry_count.load(Ordering::Relaxed),
+                    })
+                    .collect();
+                let _ = self.store.save_segment_positions(&seg_records);
                 scheduler.cancel_all();
                 let _ = writer.flush();
                 writer.close();

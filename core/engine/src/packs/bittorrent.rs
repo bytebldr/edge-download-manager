@@ -64,19 +64,26 @@ impl BitTorrentPack {
     ) -> Result<std::path::PathBuf, String> {
         use crate::adaptive::{AccelerationMode, AdaptiveTelemetry, WorkerStatus, WorkerTelemetry};
         use chrono::Utc;
-        use librqbit::{AddTorrent, AddTorrentOptions, Session, SessionOptions};
+        use librqbit::{AddTorrent, AddTorrentOptions, ListenerOptions, Session, SessionOptions};
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
         const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
 
         let peer_limit = task.config.max_connections.clamp(4, 128) as usize;
+        let mut listener_opts = ListenerOptions::default();
+        listener_opts.enable_upnp_port_forwarding = true;
+        listener_opts.listen_addr = "0.0.0.0:0"
+            .parse()
+            .unwrap_or_else(|_| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
+
         let session_opts = SessionOptions {
             peer_limit: Some(peer_limit),
             client_name_and_version: Some(format!(
                 "EDM/{} (Edge Download Manager)",
                 env!("CARGO_PKG_VERSION")
             )),
+            listen: Some(listener_opts),
             ..Default::default()
         };
 
@@ -236,6 +243,9 @@ impl BitTorrentPack {
         let mut rolling_bps = 0u64;
         let mut prev_instant_bps = 0u64;
         let mut last_tick_time = std::time::Instant::now();
+        let mut was_initializing = true;
+        let mut smoothed_eta_sec: Option<u64> = None;
+        let mut eta_sample_count: u32 = 0;
 
         loop {
             ticker.tick().await;
@@ -257,9 +267,25 @@ impl BitTorrentPack {
             let elapsed_sec = now.duration_since(last_tick_time).as_secs_f64().max(0.1);
             last_tick_time = now;
 
-            // 1. Adaptive Engine Token Bucket Speed Limiter Enforcement
-            let delta = stats.progress_bytes.saturating_sub(prev_downloaded);
-            prev_downloaded = stats.progress_bytes;
+            // Handle transition out of piece verification
+            if is_initializing {
+                prev_downloaded = stats.progress_bytes;
+                was_initializing = true;
+            } else if was_initializing {
+                was_initializing = false;
+                prev_downloaded = stats.progress_bytes;
+                last_tick_time = std::time::Instant::now();
+            }
+
+            // 1. Adaptive Engine Token Bucket Speed Limiter Enforcement (Network bytes only)
+            let delta = if is_initializing {
+                0
+            } else {
+                let d = stats.progress_bytes.saturating_sub(prev_downloaded);
+                prev_downloaded = stats.progress_bytes;
+                d
+            };
+
             if delta > 0 {
                 if let Some(ref lim) = task.limiter {
                     lim.acquire(delta).await;
@@ -294,7 +320,7 @@ impl BitTorrentPack {
                     live.upload_speed.as_bytes(),
                 )
             } else {
-                (1, 0, 0)
+                (0, 0, 0)
             };
 
             if let Some(name) = handle.name() {
@@ -302,16 +328,22 @@ impl BitTorrentPack {
                 target_file_path = task.save_dir.join(safe_name);
             }
 
-            // 2. High-Accuracy Throughput Evaluation: Combine delta sampling with session reports
-            let measured_bps = ((delta as f64 / elapsed_sec) * 8.0) as u64;
-            let reported_bps = dl_speed * 8;
-            let instant_bps = if measured_bps > 0 {
-                measured_bps.max(reported_bps)
+            // 2. High-Accuracy Throughput Evaluation: Ignore piece hashing disk reads
+            let instant_bps = if is_initializing {
+                0
             } else {
-                reported_bps
+                let measured_bps = ((delta as f64 / elapsed_sec) * 8.0) as u64;
+                let reported_bps = dl_speed * 8;
+                if measured_bps > 0 {
+                    measured_bps.max(reported_bps)
+                } else {
+                    reported_bps
+                }
             };
 
-            rolling_bps = if rolling_bps == 0 {
+            rolling_bps = if is_initializing {
+                0
+            } else if rolling_bps == 0 {
                 instant_bps
             } else {
                 (0.3 * instant_bps as f64 + 0.7 * rolling_bps as f64) as u64
@@ -327,7 +359,7 @@ impl BitTorrentPack {
             prev_instant_bps = instant_bps;
 
             let decision_reason = if is_initializing {
-                "Verifying existing pieces on disk...".to_string()
+                "Verifying existing data on disk...".to_string()
             } else {
                 match mode {
                     AccelerationMode::Optimizing => {
@@ -429,7 +461,7 @@ impl BitTorrentPack {
                 });
             }
 
-            let eff_speed = (instant_bps / 8).max(dl_speed);
+            let eff_speed = if is_initializing { 0 } else { (instant_bps / 8).max(dl_speed) };
             let current_phase = if is_initializing {
                 Some("Verifying".to_string())
             } else if stats.total_bytes == 0 {
@@ -438,6 +470,27 @@ impl BitTorrentPack {
                 Some("Completed".to_string())
             } else {
                 Some("Downloading".to_string())
+            };
+
+            let eta_seconds = if !is_initializing && eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
+                let raw_eta = (stats.total_bytes - stats.progress_bytes) / eff_speed;
+                eta_sample_count += 1;
+                if eta_sample_count < 3 {
+                    None
+                } else {
+                    let smoothed = match smoothed_eta_sec {
+                        None => raw_eta,
+                        Some(prev) => (0.1 * raw_eta as f64 + 0.9 * prev as f64) as u64,
+                    };
+                    smoothed_eta_sec = Some(smoothed);
+                    smoothed_eta_sec
+                }
+            } else {
+                if !is_initializing {
+                    eta_sample_count = 0;
+                    smoothed_eta_sec = None;
+                }
+                None
             };
 
             if let Some(ref cb) = telemetry_cb {
@@ -449,16 +502,12 @@ impl BitTorrentPack {
                     instant_throughput_bps: instant_bps,
                     rolling_throughput_bps: rolling_bps,
                     upload_throughput_bps: ul_speed * 8,
-                    active_connections: live_conns.max(1),
+                    active_connections: if is_initializing { 0 } else { live_conns },
                     target_connections: task.config.max_connections,
                     live_workers: num_workers,
                     max_allowed_connections: task.config.max_connections.max(32),
                     mode,
-                    eta_seconds: if eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
-                        Some((stats.total_bytes - stats.progress_bytes) / eff_speed)
-                    } else {
-                        None
-                    },
+                    eta_seconds,
                     decision_reason,
                     phase: current_phase,
                     workers,

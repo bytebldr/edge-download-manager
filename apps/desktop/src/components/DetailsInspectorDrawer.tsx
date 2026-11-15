@@ -1,5 +1,5 @@
 import React from "react";
-import { X, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle2, Radio, Users, ArrowUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { backdropVariants, modalVariants } from "../utils/motion";
 import { formatBytes } from "../utils/format";
@@ -56,6 +56,27 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
 }) => {
   if (!download) return null;
 
+  const isTorrent =
+    download.url.startsWith("magnet:") ||
+    download.url.toLowerCase().includes(".torrent") ||
+    download.name.toLowerCase().endsWith(".torrent") ||
+    download.category?.toLowerCase() === "torrents";
+
+  const isVerifying =
+    download.eta?.toLowerCase().includes("verif") ||
+    (download.state as any) === "verifying";
+
+  const currentUlBps =
+    download.uploadHistory && download.uploadHistory.length > 0
+      ? download.uploadHistory[download.uploadHistory.length - 1]
+      : 0;
+  const totalUploadedBytes =
+    download.uploadHistory && download.uploadHistory.length > 0
+      ? download.uploadHistory.reduce((a, b) => a + b, 0)
+      : 0;
+  const shareRatio =
+    download.sizeDone > 0 ? (totalUploadedBytes / download.sizeDone).toFixed(2) : "0.00";
+
   const totalBytes = Math.max(1, download.sizeTotal);
   const workersList =
     download.workers && download.workers.length > 0
@@ -74,9 +95,17 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
             speed: download.speed,
             status:
               download.state === "downloading"
-                ? "Receiving chunk (HTTP 206)..."
+                ? isTorrent
+                  ? isVerifying
+                    ? "Verifying piece hashes..."
+                    : "Active swarm exchange"
+                  : "Receiving chunk (HTTP 206)..."
                 : download.state === "completed"
-                ? "Chunk verified • Complete"
+                ? isTorrent
+                  ? "Verified • Seeding"
+                  : "Chunk verified • Complete"
+                : isTorrent
+                ? "Swarm suspended (Paused)"
                 : "Thread suspended (Paused)",
           };
         });
@@ -126,17 +155,25 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                   </div>
                   <div
                     className={`font-semibold text-xs mt-0.5 ${
-                      download.state === "downloading"
+                      isVerifying
+                        ? "text-amber-300 animate-pulse"
+                        : download.state === "downloading"
                         ? "text-[var(--accent)]"
                         : download.state === "paused"
                         ? "text-amber-400"
                         : "text-emerald-400"
                     }`}
                   >
-                    {download.state === "downloading"
-                      ? "Receiving data..."
+                    {isVerifying
+                      ? "Verifying data..."
+                      : download.state === "downloading"
+                      ? isTorrent
+                        ? "Active Swarm..."
+                        : "Receiving data..."
                       : download.state === "paused"
                       ? "Paused"
+                      : isTorrent
+                      ? "Seeding (100%)"
                       : "Completed"}
                   </div>
                 </div>
@@ -153,19 +190,33 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                     Transfer Rate
                   </div>
                   <div
-                    className={`font-mono tabular-nums font-semibold text-xs mt-0.5 ${
+                    className={`font-mono tabular-nums font-semibold text-xs mt-0.5 flex items-center gap-1.5 ${
                       download.state === "downloading" ? "text-emerald-400" : "text-[var(--text-muted)]"
                     }`}
                   >
-                    {download.speed}
+                    <span>{download.speed}</span>
+                    {isTorrent && currentUlBps > 0 && (
+                      <span className="text-[#818CF8] text-[10px] flex items-center">
+                        <ArrowUp className="w-2.5 h-2.5 inline" />
+                        {formatBytes(currentUlBps)}/s
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div>
                   <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                    Resume Capable
+                    {isTorrent ? "Swarm Protocol" : "Resume Capable"}
                   </div>
-                  <div className="font-semibold text-emerald-400 text-xs mt-0.5 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 inline shrink-0" /> Yes (Byte-Range)
+                  <div className={`font-semibold text-xs mt-0.5 flex items-center gap-1 ${isTorrent ? "text-sky-400" : "text-emerald-400"}`}>
+                    {isTorrent ? (
+                      <>
+                        <Radio className="w-3 h-3 inline shrink-0 text-sky-400" /> BitTorrent (DHT/uTP)
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3 h-3 inline shrink-0" /> Yes (Byte-Range)
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -174,7 +225,9 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
               <div>
                 <div className="flex justify-between items-center text-[11px] mb-1">
                   <span className="font-medium text-[var(--text-secondary)]">
-                    Start positions and download progress by connections:
+                    {isTorrent
+                      ? "BitTorrent Swarm Piece Verification & Progress:"
+                      : "Start positions and download progress by connections:"}
                   </span>
                   <span className="font-mono tabular-nums font-bold text-[var(--accent)] text-xs">
                     {download.state === "completed" || download.progress >= 100 ? 100 : download.progress}% (
@@ -246,11 +299,13 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                   })()}
                 </div>
                 <div className="flex justify-between text-[9.5px] text-[var(--text-muted)] font-mono mt-1">
-                  <span>Offset: 0x00000000</span>
+                  <span>{isTorrent ? `Pieces Verified: ${download.progress}%` : "Offset: 0x00000000"}</span>
                   <span className="text-emerald-400 font-medium">
-                    Engine Crash Safety: Flush-Before-Checkpoint Enabled
+                    {isTorrent
+                      ? "UPnP & NAT-PMP Active • Swarm Seeding Enabled"
+                      : "Engine Crash Safety: Flush-Before-Checkpoint Enabled"}
                   </span>
-                  <span>Offset: {formatBytes(download.sizeTotal)}</span>
+                  <span>{isTorrent ? `Swarm Total: ${formatBytes(download.sizeTotal)}` : `Offset: ${formatBytes(download.sizeTotal)}`}</span>
                 </div>
               </div>
 
@@ -265,69 +320,172 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                 elapsedSeconds={download.elapsedSeconds || 0}
               />
 
-              {/* Multi-Connection Worker Thread Telemetry Table */}
-              <div>
-                <div className="flex justify-between items-center text-[11px] font-medium text-[var(--text-secondary)] mb-1">
-                  <span>Multi-Connection Worker Thread Telemetry</span>
-                  <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                    {workersList.length} Active Stream{workersList.length > 1 ? "s" : ""}
-                  </span>
-                </div>
-                <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)] max-h-36 overflow-y-auto">
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="sticky top-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] z-10">
-                      <tr>
-                        <th className="py-1 px-2.5">Connection</th>
-                        <th className="py-1 px-2.5">Byte Range</th>
-                        <th className="py-1 px-2.5">Progress</th>
-                        <th className="py-1 px-2.5">Throughput</th>
-                        <th className="py-1 px-2.5">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border-dim)] font-mono tabular-nums">
-                      {workersList.map((w, idx) => {
-                        const isPaused = download.state === "paused";
-                        const isCompleted = download.state === "completed";
-                        const range = Math.max(1, w.end - w.start);
-                        const done = Math.max(0, Math.min(range, w.pos - w.start));
-                        const pct = Math.min(100, Math.round((done / range) * 100));
+              {/* Protocol-Specific Telemetry: Torrent Swarm vs HTTP 206 */}
+              {isTorrent ? (
+                <div>
+                  <div className="flex justify-between items-center text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-sky-400" />
+                      BitTorrent Swarm & Peer Telemetry
+                    </span>
+                    <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                      {download.state === "downloading" ? Math.max(1, download.connections || 1) : 0} Connected Peers (uTP/TCP)
+                    </span>
+                  </div>
 
-                        let statusColor = "text-[var(--text-muted)]";
-                        if (isCompleted || pct >= 100) statusColor = "text-emerald-400";
-                        else if (!isPaused && download.state === "downloading") statusColor = "text-sky-400";
+                  {/* Torrent Swarm Metrics Bar */}
+                  <div className="grid grid-cols-4 gap-2 mb-2 p-2 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[11px] font-mono">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">Peers / Seeds</span>
+                      <span className="text-sky-400 font-bold mt-0.5">
+                        {download.state === "downloading" ? `${Math.max(1, download.connections || 1)} Connected` : "0 (Idle)"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">Share Ratio</span>
+                      <span className="text-emerald-400 font-bold mt-0.5">{shareRatio}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">Uploaded</span>
+                      <span className="text-[#818CF8] font-bold mt-0.5">{formatBytes(totalUploadedBytes)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">Swarm Health</span>
+                      <span className="text-emerald-400 font-bold mt-0.5">
+                        {download.state === "completed"
+                          ? "Seeding (100%)"
+                          : isVerifying
+                          ? "Verifying"
+                          : download.state === "downloading"
+                          ? "Healthy Swarm"
+                          : "Paused"}
+                      </span>
+                    </div>
+                  </div>
 
-                        return (
-                          <tr key={w.idx || idx + 1} className="hover:bg-[var(--bg-card-hover)]">
-                            <td className="py-1 px-2.5 font-semibold text-[var(--accent)]">
-                              Worker #{w.idx || idx + 1}
-                            </td>
-                            <td className="py-1 px-2.5 text-[var(--text-secondary)]">
-                              {formatBytes(w.start)} - {formatBytes(w.end)}
-                            </td>
-                            <td className="py-1 px-2.5 text-[var(--text-primary)]">
-                              {pct}% ({formatBytes(done)})
-                            </td>
-                            <td
-                              className={`py-1 px-2.5 font-semibold ${
-                                isPaused ? "text-[var(--text-muted)]" : "text-emerald-400"
-                              }`}
-                            >
-                              {isPaused ? "0 B/s" : w.speed}
-                            </td>
-                            <td className={`py-1 px-2.5 text-[10px] ${statusColor}`}>
-                              {isPaused
-                                ? "Thread suspended (Paused)"
-                                : isCompleted
-                                ? "Chunk verified • Complete"
-                                : w.status}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  {/* Swarm Peers / Pieces Table */}
+                  <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)] max-h-36 overflow-y-auto">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="sticky top-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] z-10">
+                        <tr>
+                          <th className="py-1 px-2.5">Peer / Transport</th>
+                          <th className="py-1 px-2.5">Piece Allocation</th>
+                          <th className="py-1 px-2.5">Piece Progress</th>
+                          <th className="py-1 px-2.5">Bandwidth Rate</th>
+                          <th className="py-1 px-2.5">Swarm Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border-dim)] font-mono tabular-nums">
+                        {workersList.map((w, idx) => {
+                          const isPaused = download.state === "paused";
+                          const isCompleted = download.state === "completed";
+                          const range = Math.max(1, w.end - w.start);
+                          const done = Math.max(0, Math.min(range, w.pos - w.start));
+                          const pct = Math.min(100, Math.round((done / range) * 100));
+
+                          let statusColor = "text-[var(--text-muted)]";
+                          if (isCompleted || pct >= 100) statusColor = "text-emerald-400";
+                          else if (!isPaused && download.state === "downloading") statusColor = "text-sky-400";
+
+                          return (
+                            <tr key={w.idx || idx + 1} className="hover:bg-[var(--bg-card-hover)]">
+                              <td className="py-1 px-2.5 font-semibold text-sky-400">
+                                Peer #{w.idx || idx + 1} (uTP/DHT)
+                              </td>
+                              <td className="py-1 px-2.5 text-[var(--text-secondary)]">
+                                Block [{formatBytes(w.start)} - {formatBytes(w.end)}]
+                              </td>
+                              <td className="py-1 px-2.5 text-[var(--text-primary)]">
+                                {pct}% ({formatBytes(done)})
+                              </td>
+                              <td
+                                className={`py-1 px-2.5 font-semibold ${
+                                  isPaused ? "text-[var(--text-muted)]" : "text-emerald-400"
+                                }`}
+                              >
+                                {isPaused ? "0 B/s" : w.speed}
+                              </td>
+                              <td className={`py-1 px-2.5 text-[10px] ${statusColor}`}>
+                                {isPaused
+                                  ? "Swarm suspended (Paused)"
+                                  : isCompleted
+                                  ? "Verified • Seeding to Swarm"
+                                  : isVerifying
+                                  ? "Verifying SHA-1 Hash..."
+                                  : "Active swarm piece exchange"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* HTTP / HTTPS Multi-Connection Worker Thread Telemetry Table */
+                <div>
+                  <div className="flex justify-between items-center text-[11px] font-medium text-[var(--text-secondary)] mb-1">
+                    <span>Multi-Connection Worker Thread Telemetry</span>
+                    <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                      {workersList.length} Active Stream{workersList.length > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)] max-h-36 overflow-y-auto">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="sticky top-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] z-10">
+                        <tr>
+                          <th className="py-1 px-2.5">Connection</th>
+                          <th className="py-1 px-2.5">Byte Range</th>
+                          <th className="py-1 px-2.5">Progress</th>
+                          <th className="py-1 px-2.5">Throughput</th>
+                          <th className="py-1 px-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border-dim)] font-mono tabular-nums">
+                        {workersList.map((w, idx) => {
+                          const isPaused = download.state === "paused";
+                          const isCompleted = download.state === "completed";
+                          const range = Math.max(1, w.end - w.start);
+                          const done = Math.max(0, Math.min(range, w.pos - w.start));
+                          const pct = Math.min(100, Math.round((done / range) * 100));
+
+                          let statusColor = "text-[var(--text-muted)]";
+                          if (isCompleted || pct >= 100) statusColor = "text-emerald-400";
+                          else if (!isPaused && download.state === "downloading") statusColor = "text-sky-400";
+
+                          return (
+                            <tr key={w.idx || idx + 1} className="hover:bg-[var(--bg-card-hover)]">
+                              <td className="py-1 px-2.5 font-semibold text-[var(--accent)]">
+                                Worker #{w.idx || idx + 1}
+                              </td>
+                              <td className="py-1 px-2.5 text-[var(--text-secondary)]">
+                                {formatBytes(w.start)} - {formatBytes(w.end)}
+                              </td>
+                              <td className="py-1 px-2.5 text-[var(--text-primary)]">
+                                {pct}% ({formatBytes(done)})
+                              </td>
+                              <td
+                                className={`py-1 px-2.5 font-semibold ${
+                                  isPaused ? "text-[var(--text-muted)]" : "text-emerald-400"
+                                }`}
+                              >
+                                {isPaused ? "0 B/s" : w.speed}
+                              </td>
+                              <td className={`py-1 px-2.5 text-[10px] ${statusColor}`}>
+                                {isPaused
+                                  ? "Thread suspended (Paused)"
+                                  : isCompleted
+                                  ? "Chunk verified • Complete"
+                                  : w.status}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Actions */}

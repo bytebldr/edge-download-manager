@@ -193,45 +193,7 @@ fn main() {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
         loop {
             interval.tick().await;
-            if let Ok(queues) = queue_state.store.list_queues() {
-                let now = chrono::Local::now();
-                for q in queues {
-                    if features::is_queue_active_at_time(&q, now) {
-                        let active_count = {
-                            if let Ok(tasks) = queue_state.tasks.lock() {
-                                tasks
-                                    .values()
-                                    .filter(|h| !h.cancelled.load(Ordering::Relaxed))
-                                    .count()
-                            } else {
-                                0
-                            }
-                        };
-                        let max_allowed = (q.max_concurrent as usize).max(1);
-                        if active_count < max_allowed {
-                            if let Ok(records) = queue_state.store.list_all_downloads() {
-                                for r in records {
-                                    if r.state == DownloadState::Queued {
-                                        let _ = execute_download(
-                                            &queue_state,
-                                            r.id,
-                                            r.url,
-                                            Some(r.filename),
-                                            Some(PathBuf::from(r.save_dir)),
-                                            Some(r.connections),
-                                            r.size_total,
-                                            None,
-                                            r.referer,
-                                            r.user_agent,
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            services::download_manager::try_start_next_queued(&queue_state);
         }
     });
 
@@ -285,7 +247,7 @@ fn main() {
                 cmd.referrer,
                 cmd.user_agent,
             );
-            let _ = cmd.resp_tx.send(res.map(|u| u.to_string()));
+            let _ = cmd.resp_tx.send(res.map(|(u, _)| u.to_string()));
         }
     });
 
@@ -297,8 +259,8 @@ fn main() {
                 "pause" => {
                     if let Ok(id_uuid) = Uuid::parse_str(&cmd.id) {
                         {
-                            let tasks = action_state.tasks.lock().unwrap();
-                            if let Some(t) = tasks.get(&cmd.id) {
+                            let mut tasks = action_state.tasks.lock().unwrap();
+                            if let Some(t) = tasks.remove(&cmd.id) {
                                 t.cancelled.store(true, Ordering::Relaxed);
                             }
                         }
@@ -311,6 +273,7 @@ fn main() {
                             .ws_manager
                             .update_task_progress(&cmd.id, 0, None, 0, "paused")
                             .await;
+                        services::download_manager::try_start_next_queued(&action_state);
                         Ok(())
                     } else {
                         Err("Invalid task id".into())
@@ -319,34 +282,13 @@ fn main() {
                 "resume" => {
                     if let Ok(id_uuid) = Uuid::parse_str(&cmd.id) {
                         let records = action_state.store.list_all_downloads().unwrap_or_default();
-                        if let Some(r) = records.into_iter().find(|d| d.id == id_uuid) {
-                            let _ = execute_download(
-                                &action_state,
-                                id_uuid,
-                                r.url,
-                                Some(r.filename),
-                                Some(PathBuf::from(r.save_dir)),
-                                Some(r.connections),
-                                r.size_total,
-                                None,
-                                r.referer,
-                                r.user_agent,
-                            );
+                        if let Some(_) = records.into_iter().find(|d| d.id == id_uuid) {
                             let _ = action_state.store.update_download_state(
                                 id_uuid,
-                                DownloadState::Downloading,
+                                DownloadState::Queued,
                                 None,
                             );
-                            action_state
-                                .ws_manager
-                                .update_task_progress(
-                                    &cmd.id,
-                                    r.size_done,
-                                    r.size_total,
-                                    0,
-                                    "downloading",
-                                )
-                                .await;
+                            services::download_manager::try_start_next_queued(&action_state);
                             Ok(())
                         } else {
                             Err("Task not found".into())
@@ -358,8 +300,8 @@ fn main() {
                 "cancel" => {
                     if let Ok(id_uuid) = Uuid::parse_str(&cmd.id) {
                         {
-                            let tasks = action_state.tasks.lock().unwrap();
-                            if let Some(t) = tasks.get(&cmd.id) {
+                            let mut tasks = action_state.tasks.lock().unwrap();
+                            if let Some(t) = tasks.remove(&cmd.id) {
                                 t.cancelled.store(true, Ordering::Relaxed);
                             }
                         }
@@ -370,8 +312,9 @@ fn main() {
                         );
                         action_state
                             .ws_manager
-                            .update_task_progress(&cmd.id, 0, None, 0, "failed")
+                            .update_task_progress(&cmd.id, 0, None, 0, "cancelled")
                             .await;
+                        services::download_manager::try_start_next_queued(&action_state);
                         Ok(())
                     } else {
                         Err("Invalid task id".into())
@@ -685,25 +628,14 @@ fn main() {
                             if let Ok(records) = state.store.list_all_downloads() {
                                 for r in records {
                                     if r.state == DownloadState::Paused {
-                                        let _ = execute_download(
-                                            &state,
-                                            r.id,
-                                            r.url,
-                                            Some(r.filename),
-                                            Some(PathBuf::from(r.save_dir)),
-                                            Some(r.connections),
-                                            r.size_total,
-                                            None,
-                                            r.referer,
-                                            r.user_agent,
-                                        );
                                         let _ = state.store.update_download_state(
                                             r.id,
-                                            DownloadState::Downloading,
+                                            DownloadState::Queued,
                                             None,
                                         );
                                     }
                                 }
+                                services::download_manager::try_start_next_queued(&state);
                             }
                         }
                         "settings" => {

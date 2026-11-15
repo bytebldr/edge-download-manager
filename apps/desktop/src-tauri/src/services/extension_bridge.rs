@@ -226,19 +226,22 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
         } => {
             let id = Uuid::new_v4();
             match execute_download(state, id, url, filename, None, None, size, None, None, None) {
-                Ok(id) => AppReply::Accepted { id },
+                Ok((id, _)) => AppReply::Accepted { id },
                 Err(err) => AppReply::Error { message: err },
             }
         }
 
         ExtensionMessage::PauseDownload { id } => {
-            let tasks = state.tasks.lock().unwrap();
-            if let Some(task) = tasks.get(&id.to_string()) {
-                task.cancelled.store(true, Ordering::Relaxed);
+            {
+                let mut tasks = state.tasks.lock().unwrap();
+                if let Some(task) = tasks.remove(&id.to_string()) {
+                    task.cancelled.store(true, Ordering::Relaxed);
+                }
             }
             let _ = state
                 .store
                 .update_download_state(id, DownloadState::Paused, None);
+            crate::services::download_manager::try_start_next_queued(state);
             AppReply::Success {
                 action: "pause".into(),
                 id: Some(id),
@@ -247,22 +250,11 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
 
         ExtensionMessage::ResumeDownload { id } => {
             let records = state.store.list_all_downloads().unwrap_or_default();
-            if let Some(r) = records.into_iter().find(|d| d.id == id) {
-                let _ = execute_download(
-                    state,
-                    id,
-                    r.url,
-                    Some(r.filename),
-                    Some(PathBuf::from(r.save_dir)),
-                    Some(r.connections),
-                    r.size_total,
-                    None,
-                    r.referer,
-                    r.user_agent,
-                );
+            if let Some(_) = records.into_iter().find(|d| d.id == id) {
                 let _ = state
                     .store
-                    .update_download_state(id, DownloadState::Downloading, None);
+                    .update_download_state(id, DownloadState::Queued, None);
+                crate::services::download_manager::try_start_next_queued(state);
             }
             AppReply::Success {
                 action: "resume".into(),
@@ -271,15 +263,18 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
         }
 
         ExtensionMessage::CancelDownload { id } => {
-            let tasks = state.tasks.lock().unwrap();
-            if let Some(task) = tasks.get(&id.to_string()) {
-                task.cancelled.store(true, Ordering::Relaxed);
+            {
+                let mut tasks = state.tasks.lock().unwrap();
+                if let Some(task) = tasks.remove(&id.to_string()) {
+                    task.cancelled.store(true, Ordering::Relaxed);
+                }
             }
             let _ = state.store.update_download_state(
                 id,
                 DownloadState::Cancelled,
                 Some("Cancelled by user"),
             );
+            crate::services::download_manager::try_start_next_queued(state);
             AppReply::Success {
                 action: "cancel".into(),
                 id: Some(id),

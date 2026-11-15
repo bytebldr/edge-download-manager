@@ -73,47 +73,7 @@ pub async fn save_settings(
     }
 
     // Dynamic Concurrency Limit adjustment: drain queued tasks if capacity opened up
-    let max_active = settings
-        .get("downloads")
-        .and_then(|d| d.get("maxActiveDownloads"))
-        .and_then(|m| m.as_u64())
-        .unwrap_or(3) as usize;
-
-    let active_count = {
-        let tasks = state.tasks.lock().unwrap();
-        tasks
-            .values()
-            .filter(|h| !h.cancelled.load(std::sync::atomic::Ordering::Relaxed))
-            .count()
-    };
-
-    if active_count < max_active {
-        let to_drain = max_active - active_count;
-        if let Ok(records) = state.store.list_all_downloads() {
-            let queued_items: Vec<_> = records
-                .into_iter()
-                .filter(|d| d.state == edm_ipc::DownloadState::Queued)
-                .take(to_drain)
-                .collect();
-            for queued in queued_items {
-                let st = state.inner().clone();
-                tokio::spawn(async move {
-                    let _ = crate::services::download_manager::execute_download(
-                        &st,
-                        queued.id,
-                        queued.url,
-                        Some(queued.filename),
-                        Some(std::path::PathBuf::from(queued.save_dir)),
-                        Some(queued.connections),
-                        queued.size_total,
-                        None,
-                        queued.referer,
-                        queued.user_agent,
-                    );
-                });
-            }
-        }
-    }
+    crate::services::download_manager::try_start_next_queued(&state);
 
     Ok(serde_json::json!({ "status": "saved" }))
 }

@@ -34,7 +34,6 @@ import {
   Copy,
   Check,
   Image,
-  Sparkles,
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
@@ -824,21 +823,24 @@ export default function App() {
       maxConnections: conns,
     });
 
+    const isQueued = backendRes?.status === "queued";
     const realTotal = 100_000_000;
 
-    const initialWorkers: WorkerInfo[] = Array.from({ length: conns }).map((_, idx) => {
-      const chunkBytes = Math.floor(realTotal / conns);
-      const start = idx * chunkBytes;
-      const end = idx === conns - 1 ? realTotal : (idx + 1) * chunkBytes;
-      return {
-        idx: idx + 1,
-        start,
-        end,
-        pos: start,
-        speed: "0 B/s",
-        status: "Connecting socket...",
-      };
-    });
+    const initialWorkers: WorkerInfo[] = isQueued
+      ? []
+      : Array.from({ length: conns }).map((_, idx) => {
+          const chunkBytes = Math.floor(realTotal / conns);
+          const start = idx * chunkBytes;
+          const end = idx === conns - 1 ? realTotal : (idx + 1) * chunkBytes;
+          return {
+            idx: idx + 1,
+            start,
+            end,
+            pos: start,
+            speed: "0 B/s",
+            status: "Connecting socket...",
+          };
+        });
 
     const newItem: DownloadItem = {
       id: backendRes.id || Date.now().toString(),
@@ -847,9 +849,9 @@ export default function App() {
       sizeTotal: realTotal,
       sizeDone: 0,
       speed: "0 B/s",
-      eta: "Connecting...",
-      connections: conns,
-      state: "downloading",
+      eta: isQueued ? "Queued" : "Connecting...",
+      connections: isQueued ? 0 : conns,
+      state: isQueued ? "queued" : "downloading",
       progress: 0,
       url: targetUrl,
       domain: hostname,
@@ -985,10 +987,12 @@ export default function App() {
               }
             }
 
-            // Target connection count from AdaptiveTelemetry (never 0 while downloading)
+            const isVerifying = phase === "Verifying" || telem.decision_reason?.toLowerCase().includes("verif");
             const targetConns = isFinished
               ? 0
-              : Math.max(1, telem.target_connections || telem.active_connections || smooth.displayedConns || 1);
+              : isVerifying
+              ? 0
+              : (telem.active_connections !== undefined ? telem.active_connections : (telem.target_connections || 1));
 
             // Throttle UI label updates to at most 1-2 per second (500ms)
             if (now - smooth.lastUiUpdate >= 500 || isFinished) {
@@ -998,26 +1002,50 @@ export default function App() {
               smooth.lastUiUpdate = now;
             }
 
+            const isTorrent =
+              task.url.startsWith("magnet:") ||
+              task.url.toLowerCase().includes(".torrent") ||
+              task.name.toLowerCase().endsWith(".torrent") ||
+              task.category?.toLowerCase() === "torrents";
+
             if (telem.workers && telem.workers.length > 0) {
-              newWorkers = telem.workers.map((w) => ({
-                idx: w.idx,
-                start: w.start,
-                end: w.end,
-                pos: isFinished ? w.end : w.pos,
-                speed: isFinished ? "0 B/s" : formatSpeed(Math.floor(w.speed_bps / 8)),
-                status:
-                  isFinished || w.status === "completed"
-                    ? "Chunk verified • Complete"
-                    : w.status === "downloading"
-                    ? "Receiving chunk (HTTP 206)..."
-                    : w.status === "stalled"
-                    ? "Worker stalled • Reconnecting..."
-                    : w.status === "connecting"
-                    ? "Connecting socket..."
-                    : w.status,
-              }));
+              const rawWorkerBpsSum = telem.workers.reduce((acc, w) => acc + (w.speed_bps || 0), 0);
+              const activeCount = telem.workers.filter(
+                (w) => w.status === "downloading" || w.status === "connecting"
+              ).length || telem.workers.length;
+
+              newWorkers = telem.workers.map((w) => {
+                let workerSpeedBps = 0;
+                if (!isFinished && smoothedSpeedBps > 0) {
+                  if (rawWorkerBpsSum > 0) {
+                    workerSpeedBps = Math.round(smoothedSpeedBps * ((w.speed_bps || 0) / rawWorkerBpsSum));
+                  } else if (w.status === "downloading" || w.status === "connecting") {
+                    workerSpeedBps = Math.floor(smoothedSpeedBps / activeCount);
+                  }
+                }
+
+                let workerStatusStr = w.status;
+                if (isFinished || w.status === "completed") {
+                  workerStatusStr = isTorrent ? "Verified • Seeding" : "Chunk verified • Complete";
+                } else if (w.status === "downloading") {
+                  workerStatusStr = isTorrent ? "Active swarm exchange" : "Receiving chunk (HTTP 206)...";
+                } else if (w.status === "stalled") {
+                  workerStatusStr = "Worker stalled • Reconnecting...";
+                } else if (w.status === "connecting") {
+                  workerStatusStr = isTorrent ? "Contacting peer..." : "Connecting socket...";
+                }
+
+                return {
+                  idx: w.idx,
+                  start: w.start,
+                  end: w.end,
+                  pos: isFinished ? w.end : w.pos,
+                  speed: isFinished ? "0 B/s" : formatSpeed(workerSpeedBps),
+                  status: workerStatusStr,
+                };
+              });
             } else {
-              const numConns = smooth.displayedConns;
+              const numConns = Math.max(1, smooth.displayedConns);
               const chunkBytes = Math.floor(sizeTotal / numConns);
               newWorkers = Array.from({ length: numConns }).map((_, idx) => {
                 const start = idx * chunkBytes;
@@ -1031,8 +1059,8 @@ export default function App() {
                   pos: start + workerBytes,
                   speed: formatSpeed(Math.floor(smoothedSpeedBps / numConns)),
                   status: isFinished
-                    ? "Chunk verified • Complete"
-                    : "Receiving chunk (HTTP 206)...",
+                    ? isTorrent ? "Verified • Seeding" : "Chunk verified • Complete"
+                    : isTorrent ? "Active swarm exchange" : "Receiving chunk (HTTP 206)...",
                 };
               });
             }
@@ -1278,12 +1306,14 @@ export default function App() {
 
   // Real aggregate network telemetry calculations
   const activeDownloadsList = downloads.filter((d) => d.state === "downloading");
-  const totalActiveThreads = activeDownloadsList.reduce((sum, d) => sum + Math.max(1, d.connections || 1), 0);
+  const totalActiveThreads = activeDownloadsList.reduce((sum, d) => sum + (d.connections || 0), 0);
   const totalSessionBytes = downloads.reduce((sum, d) => sum + (d.sizeDone || 0), 0);
 
   let totalSpeedDisplay = "0 B/s";
+  let totalUploadSpeedDisplay = "0 B/s";
   if (activeDownloadsList.length > 0) {
     let totalSpeedBps = 0;
+    let totalUploadBps = 0;
     for (const d of activeDownloadsList) {
       const match = d.speed.match(/([\d.]+)\s*([KMG]?B\/s)/i);
       if (match) {
@@ -1294,8 +1324,12 @@ export default function App() {
         else if (unit.startsWith("K")) totalSpeedBps += val * 1024;
         else totalSpeedBps += val;
       }
+      if (d.uploadHistory && d.uploadHistory.length > 0) {
+        totalUploadBps += d.uploadHistory[d.uploadHistory.length - 1] || 0;
+      }
     }
     totalSpeedDisplay = formatSpeed(totalSpeedBps);
+    totalUploadSpeedDisplay = formatSpeed(totalUploadBps);
   }
 
   const getCategoryLucideIcon = (category: string) => {
@@ -2288,9 +2322,9 @@ export default function App() {
                 <span className="text-[var(--text-muted)] hidden xs:inline">•</span>
                 <span className="hidden xs:inline whitespace-nowrap">
                   {activeSelectedDownload.state === "downloading"
-                    ? Math.max(1, activeSelectedDownload.connections || 1)
+                    ? (activeSelectedDownload.connections || 0)
                     : 0}{" "}
-                  TCP Threads
+                  Active Threads
                 </span>
               </div>
             ) : (
@@ -2305,14 +2339,14 @@ export default function App() {
             <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>{totalSpeedDisplay}</span>
           </div>
-          <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] whitespace-nowrap">
+          <div className={`hidden sm:flex items-center gap-1 whitespace-nowrap ${totalUploadSpeedDisplay !== "0 B/s" ? "text-[#818CF8] font-semibold" : "text-[var(--text-muted)]"}`}>
             <ArrowUp className="w-3.5 h-3.5" />
-            <span>0 B/s</span>
+            <span>{totalUploadSpeedDisplay}</span>
           </div>
           <div className="hidden md:block text-[var(--text-muted)]">|</div>
           <div className="hidden md:flex text-[var(--text-secondary)] items-center gap-1 whitespace-nowrap">
             <Cpu className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>{totalActiveThreads} TCP Threads</span>
+            <span>{totalActiveThreads} Active Threads</span>
           </div>
           <div className="hidden lg:block text-[var(--text-muted)]">|</div>
           <div className="hidden lg:flex text-[var(--text-secondary)] items-center gap-1 whitespace-nowrap">
@@ -2509,59 +2543,50 @@ export default function App() {
             transition={{ duration: 0.2, ease: "easeOut" }}
             role="alert"
             aria-label="Update notification"
-            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3.5 px-4 py-2.5 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs max-w-xl w-[92vw] sm:w-auto select-none"
+            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs w-auto select-none"
           >
-            {/* Green Badge Accent */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] shrink-0">
-              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-              <span>Update Available</span>
-            </div>
-
-            {/* Clean Structured Content */}
-            <div className="flex-1 min-w-0 pr-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-[var(--text-primary)] text-[12px] truncate">
-                  EDM v{updateInfo.latest_version} is ready to install
-                </span>
-                {updateInfo.html_url && updateInfo.html_url.startsWith("https://") && (
-                  <a
-                    href={updateInfo.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 shrink-0 inline-flex items-center gap-0.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Release notes ↗
-                  </a>
-                )}
-              </div>
-
-              {updateBannerState === "downloading" ? (
-                <div className="mt-1.5 flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-200"
-                      style={{ width: `${updateBannerProgress}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-emerald-400 font-mono font-medium shrink-0">
-                    {updateBannerProgress}%
-                  </span>
-                </div>
-              ) : updateBannerState === "installing" ? (
-                <p className="text-[10.5px] text-blue-400 animate-pulse mt-0.5">
-                  Installing update and restarting EDM...
-                </p>
-              ) : updateBannerState === "failed" ? (
-                <p className="text-[10.5px] text-rose-400 mt-0.5 truncate" title={updateBannerError || ""}>
-                  ⚠ {updateBannerError || "Installation failed"}
-                </p>
-              ) : (
-                <p className="text-[10.5px] text-[var(--text-muted)] mt-0.5">
-                  Fast native download accelerator update
-                </p>
+            {/* Floating Update Toast (Astryx Chassis Compact Pill) */}
+            {/* Version Text & Subtle Release Notes Link */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="font-bold text-[var(--text-primary)] text-xs sm:text-sm whitespace-nowrap">
+                EDM v{updateInfo.latest_version}
+              </span>
+              {updateInfo.html_url && updateInfo.html_url.startsWith("https://") && (
+                <a
+                  href={updateInfo.html_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 whitespace-nowrap inline-flex items-center gap-0.5"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Release notes ↗
+                </a>
               )}
             </div>
+
+            {updateBannerState === "downloading" && (
+              <div className="flex items-center gap-2 min-w-[100px]">
+                <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-200"
+                    style={{ width: `${updateBannerProgress}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-emerald-400 font-mono font-medium shrink-0">
+                  {updateBannerProgress}%
+                </span>
+              </div>
+            )}
+            {updateBannerState === "installing" && (
+              <span className="text-[10.5px] text-blue-400 animate-pulse whitespace-nowrap">
+                Installing...
+              </span>
+            )}
+            {updateBannerState === "failed" && (
+              <span className="text-[10.5px] text-rose-400 whitespace-nowrap" title={updateBannerError || ""}>
+                ⚠ {updateBannerError || "Installation failed"}
+              </span>
+            )}
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">

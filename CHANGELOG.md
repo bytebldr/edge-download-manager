@@ -2,6 +2,28 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.17] - 2026-11-15
+
+### ⚡ Hotfix: Centralized Queue Manager, Compact Toast UI, and BitTorrent Seeding & Telemetry Engine
+
+#### 1. PART A: Centralized FIFO Queue Manager & Concurrency Limit
+- **Root Cause**: Adding a download when `active >= max_active` previously allowed optimistic frontend state transition to `"downloading"` while backend tasks lacked active task registration, causing telemetry polling failures and marking downloads as Failed. Furthermore, pausing, cancelling, or updating settings never invoked queue slot refills.
+- **Atomic Queue Scheduling**: Added centralized `try_start_next_queued` in `download_manager.rs`. Any download added above concurrency limits atomically receives `DownloadState::Queued` without failure.
+- **Event-Driven Drain**: Automatically triggers next queued item in FIFO creation order on task completion, pause, cancellation, removal, and runtime concurrency limit adjustments in Settings.
+
+#### 2. PART B: Compact Glassmorphic Update Toast
+- **Root Cause**: The update notification container was constrained by overly aggressive truncation classes, and a redundant green badge occupied horizontal layout space.
+- **Redesigned Notification Toast**: Removed the green badge completely. Rendered a sleek, horizontally compact glassmorphic pill showing full untruncated version text (`EDM v0.0.17`), subtle `Release notes ↗` link, primary `Update Now` button, and quick dismiss `X`.
+
+#### 3. PART C: BitTorrent Seeding, Swarm View, Resume Hashing & Telemetry
+- **C1 - Seeding & Incoming Listener**: Configured `librqbit::ListenerOptions` with `enable_upnp_port_forwarding = true` and `0.0.0.0:0` TCP listener. Real-time upload throughput is tracked and reported across telemetry ticks.
+- **C2 - Dedicated Torrent Swarm View**: Replaced HTTP 206 byte-range table with a dedicated Torrent Swarm view displaying connected peers, share ratio, uploaded bytes, swarm health, and peer piece exchanges.
+- **C3 - Zero Fake Speed Spikes on Resume**: During piece hash verification (`is_initializing`), reported state is `"Verifying"`, network transfer rate is clamped to `0 B/s`, and ETA displays `"Verifying existing data on disk..."`, ensuring disk hashing bytes are never counted toward network download metrics.
+- **C4 - Worker Speed Sum & Segment Offsets**: Synced worker speeds proportionally so their sum matches the header download rate. Persisted `SegmentRecord`s via `save_segment_positions` on pause/checkpoint so HTTP multi-stream downloads resume from their exact byte offsets without re-splitting.
+- **C5 - Real Thread Tracking**: Updated bottom status bar to report live active connections (reporting 0 when paused, queued, or completed).
+- **C6 - Smoothed ETA & Elapsed Ticker**: Applied exponential moving average (alpha=0.1) with 3-sample warmup gate for stable ETA calculations, and ensured monotonic elapsed time formatting.
+- **C7 - Pre-Populated Speed Chart**: Pre-seeds 60-second rolling telemetry curve when details drawer opens to eliminate initial flatline rendering.
+
 ## [v0.0.16] - 2026-11-15
 
 ### ⚡ Critical Hotfix: Zero-Console Updater Engine, Detached Shell Execution & Sibling Cleanup

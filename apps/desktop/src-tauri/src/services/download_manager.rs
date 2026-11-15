@@ -22,7 +22,7 @@ pub fn execute_download(
     cookies: Option<String>,
     referer: Option<String>,
     user_agent: Option<String>,
-) -> Result<Uuid, String> {
+) -> Result<(Uuid, bool), String> {
     let lc = state.lifecycle.clone();
     state.rt_handle.spawn(async move {
         lc.record_activity().await;
@@ -413,7 +413,18 @@ pub fn execute_download(
                 .await;
             ws_mgr.broadcast_snapshot().await;
         });
-        return Ok(id);
+
+        if let Ok(guard) = state.app_handle.lock() {
+            if let Some(ref handle) = *guard {
+                use tauri::Emitter;
+                let _ = handle.emit(
+                    "downloads-changed",
+                    serde_json::json!({ "id": id_str, "action": "queued" }),
+                );
+            }
+        }
+
+        return Ok((id, false));
     }
 
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -708,13 +719,67 @@ pub fn execute_download(
         // Evict active task handle and telemetry buffers from live memory
         tasks_map.lock().unwrap().remove(&ws_id_cb);
 
-        // Auto-drain next queued task from the persistent database
-        let next_queued = store_clone.list_all_downloads().ok().and_then(|records| {
-            records.into_iter().find(|d| d.state == DownloadState::Queued)
-        });
-        if let Some(queued) = next_queued {
-            let state_clone = state_drain.clone();
-            tokio::spawn(async move {
+        if let Ok(guard) = state_drain.app_handle.lock() {
+            if let Some(ref handle) = *guard {
+                use tauri::Emitter;
+                let _ = handle.emit(
+                    "downloads-changed",
+                    serde_json::json!({ "id": ws_id_cb, "action": "finished" }),
+                );
+            }
+        }
+
+        // Auto-drain next queued tasks from the persistent database in FIFO order
+        try_start_next_queued(&state_drain);
+    });
+
+    Ok((id, true))
+}
+
+pub fn try_start_next_queued(state: &AppState) {
+    let settings_val = state
+        .store
+        .get_setting("app_settings")
+        .ok()
+        .flatten()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok());
+
+    let max_active = settings_val
+        .as_ref()
+        .and_then(|v| v.get("downloads"))
+        .and_then(|d| d.get("maxActiveDownloads"))
+        .and_then(|m| m.as_u64())
+        .unwrap_or(3)
+        .max(1) as usize;
+
+    let active_count = {
+        let tasks = state.tasks.lock().unwrap();
+        tasks
+            .values()
+            .filter(|h| !h.cancelled.load(Ordering::Relaxed))
+            .count()
+    };
+
+    if active_count >= max_active {
+        return;
+    }
+
+    let slots_available = max_active.saturating_sub(active_count);
+    if slots_available == 0 {
+        return;
+    }
+
+    if let Ok(records) = state.store.list_all_downloads() {
+        let mut queued_items: Vec<_> = records
+            .into_iter()
+            .filter(|d| d.state == DownloadState::Queued)
+            .collect();
+        // FIFO order: oldest created first
+        queued_items.sort_by_key(|d| d.created_at);
+
+        for queued in queued_items.into_iter().take(slots_available) {
+            let state_clone = state.clone();
+            state.rt_handle.spawn(async move {
                 let _ = execute_download(
                     &state_clone,
                     queued.id,
@@ -729,9 +794,7 @@ pub fn execute_download(
                 );
             });
         }
-    });
-
-    Ok(id)
+    }
 }
 
 pub async fn remove_download_task(
@@ -798,6 +861,9 @@ pub async fn remove_download_task(
             );
         }
     }
+
+    // 7. Auto-drain queued tasks now that a slot may have freed up
+    try_start_next_queued(state);
 
     Ok(())
 }

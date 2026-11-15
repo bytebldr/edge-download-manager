@@ -19,7 +19,7 @@ pub async fn start_download(
 ) -> Result<serde_json::Value, String> {
     let id = Uuid::new_v4();
     let save_path = save_dir.map(PathBuf::from);
-    let download_id = execute_download(
+    let (download_id, is_started) = execute_download(
         &state,
         id,
         url,
@@ -33,7 +33,7 @@ pub async fn start_download(
     )?;
 
     Ok(serde_json::json!({
-        "status": "started",
+        "status": if is_started { "started" } else { "queued" },
         "id": download_id.to_string()
     }))
 }
@@ -54,24 +54,22 @@ pub async fn resume_download(
 ) -> Result<serde_json::Value, String> {
     if let Ok(uuid) = Uuid::parse_str(&id) {
         let records = state.store.list_all_downloads().unwrap_or_default();
-        if let Some(r) = records.into_iter().find(|d| d.id == uuid) {
-            let download_url = r.url.clone();
-
-            let _ = execute_download(
-                &state,
-                uuid,
-                download_url,
-                Some(r.filename),
-                Some(PathBuf::from(r.save_dir)),
-                Some(r.connections),
-                r.size_total,
-                None,
-                r.referer,
-                r.user_agent,
-            );
+        if let Some(_) = records.into_iter().find(|d| d.id == uuid) {
             let _ = state
                 .store
-                .update_download_state(uuid, DownloadState::Downloading, None);
+                .update_download_state(uuid, DownloadState::Queued, None);
+
+            crate::services::download_manager::try_start_next_queued(&state);
+
+            if let Ok(guard) = state.app_handle.lock() {
+                if let Some(ref handle) = *guard {
+                    use tauri::Emitter;
+                    let _ = handle.emit(
+                        "downloads-changed",
+                        serde_json::json!({ "id": id, "action": "resumed" }),
+                    );
+                }
+            }
             return Ok(serde_json::json!({ "status": "resumed", "id": id }));
         }
     }
@@ -83,9 +81,11 @@ pub fn cancel_download(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    let tasks = state.tasks.lock().unwrap();
-    if let Some(task) = tasks.get(&id) {
-        task.cancelled.store(true, Ordering::Relaxed);
+    {
+        let mut tasks = state.tasks.lock().unwrap();
+        if let Some(task) = tasks.remove(&id) {
+            task.cancelled.store(true, Ordering::Relaxed);
+        }
     }
     if let Ok(uuid) = Uuid::parse_str(&id) {
         let _ = state.store.update_download_state(
@@ -93,6 +93,17 @@ pub fn cancel_download(
             DownloadState::Cancelled,
             Some("Cancelled by user"),
         );
+    }
+    crate::services::download_manager::try_start_next_queued(&state);
+
+    if let Ok(guard) = state.app_handle.lock() {
+        if let Some(ref handle) = *guard {
+            use tauri::Emitter;
+            let _ = handle.emit(
+                "downloads-changed",
+                serde_json::json!({ "id": id, "action": "cancelled" }),
+            );
+        }
     }
     Ok(serde_json::json!({ "status": "cancelled", "id": id }))
 }
@@ -135,18 +146,29 @@ pub fn open_dir_path(state: State<'_, AppState>, id: String) -> Result<serde_jso
 
 #[command]
 pub fn pause_download(state: State<'_, AppState>, id: String) -> Result<serde_json::Value, String> {
-    let tasks = state.tasks.lock().unwrap();
-    if let Some(task) = tasks.get(&id) {
-        task.cancelled.store(true, Ordering::Relaxed);
-        if let Ok(uuid) = Uuid::parse_str(&id) {
-            let _ = state
-                .store
-                .update_download_state(uuid, DownloadState::Paused, None);
+    {
+        let mut tasks = state.tasks.lock().unwrap();
+        if let Some(task) = tasks.remove(&id) {
+            task.cancelled.store(true, Ordering::Relaxed);
         }
-        Ok(serde_json::json!({ "status": "paused", "id": id }))
-    } else {
-        Err(format!("Task {} not found", id))
     }
+    if let Ok(uuid) = Uuid::parse_str(&id) {
+        let _ = state
+            .store
+            .update_download_state(uuid, DownloadState::Paused, None);
+    }
+    crate::services::download_manager::try_start_next_queued(&state);
+
+    if let Ok(guard) = state.app_handle.lock() {
+        if let Some(ref handle) = *guard {
+            use tauri::Emitter;
+            let _ = handle.emit(
+                "downloads-changed",
+                serde_json::json!({ "id": id, "action": "paused" }),
+            );
+        }
+    }
+    Ok(serde_json::json!({ "status": "paused", "id": id }))
 }
 
 #[command]

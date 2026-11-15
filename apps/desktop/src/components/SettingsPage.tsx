@@ -2231,9 +2231,9 @@ export default function SettingsPage({
                 <span className="text-[var(--text-muted)] hidden xs:inline">•</span>
                 <span className="hidden xs:inline whitespace-nowrap">
                   {selectedDownload.state === "downloading"
-                    ? Math.max(1, selectedDownload.connections || 1)
+                    ? (selectedDownload.connections || 0)
                     : 0}{" "}
-                  TCP Threads
+                  Active Threads
                 </span>
               </div>
             ) : (
