@@ -2,7 +2,7 @@
   <img src="./assets/logo.png" alt="EDM Download Manager Logo" width="120" height="120" />
 </p>
 
-<h1 align="center">EDM — Edge Download Manager</h1>
+<h1 align="center">Edge Download Manager</h1>
 
 <p align="center">
   <strong>The modern, ultra-fast, open-source download manager and download accelerator for Windows (IDM & FDM Alternative). Built with Rust and Tauri v2.</strong>
