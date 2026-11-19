@@ -2,6 +2,19 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.19] - 2026-11-19
+
+### ⚡ Hotfix: Extension Queued Download State & Parity Alignment
+
+#### 1. Extension Popup Queued State Rendering
+- **Root Cause**: In `extension/src/popup.ts` (and transpiled `popup.js`), `renderDownloadItem()` processed task status through an `if / else if / else` ladder covering `isDownloading`, `isCompleted`, `isPaused`, and `link_expired`. Because `queued` and `connecting` states were missing from the ladder, queued tasks fell through to the fallback `else` branch, which erroneously rendered `<span style="color: #F87171;">Failed</span>` with zero size progress despite the task waiting legitimately in the backend queue.
+- **Explicit Queued Representation**:
+  - Added SVG clock icon and explicit `isQueued` evaluation for states `"queued"` and `"connecting"`.
+  - Rendered a blue accent badge with clock icon, formatted file size, and `"Queued"` status indicator.
+  - Added primary `"Start Download Now"` resume action button and cancel button for queued cards, matching desktop app parity.
+  - Added `.download-card.card-queued` styling in `popup.css`.
+  - Updated active task tab count to include queued and connecting downloads matching badge and header counters.
+
 ## [v0.0.18] - 2026-11-15
 
 ### ⚡ Critical Hotfix: In-Place Auto-Update Deadlock Fix, Zero-Console Process Lifecycle & Non-Elevated Relaunch

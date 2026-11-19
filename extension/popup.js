@@ -43,7 +43,8 @@
     openFolder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`,
     copy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
-    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+    clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
   };
   var CATEGORY_SVGS = {
     video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>`,
@@ -209,7 +210,7 @@
       }
     }
     updateAllCounters() {
-      const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed";
+      const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
       const activeDownloads = this.downloads.filter(
         (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
       );
@@ -544,9 +545,12 @@
     // 1. TASKS TAB
     // ─────────────────────────────────────────────────────────────
     renderTasksTab() {
-      const activeDownloads = this.downloads.filter((d) => d.state === "downloading");
+      const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
+      const activeDownloads = this.downloads.filter(
+        (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
+      );
       const aggSpeed = activeDownloads.reduce((sum, d) => sum + (d.speed_bytes_per_sec || 0), 0);
-      const completedCount = this.downloads.filter((d) => d.state === "completed").length;
+      const completedCount = this.downloads.filter((d) => isDone(d)).length;
       return `
       <div class="tasks-toolbar">
         <div class="toolbar-row">
@@ -589,7 +593,7 @@
     renderTasksListHtml() {
       const filtered = this.downloads.filter((d) => {
         const matchesSearch = d.filename.toLowerCase().includes(this.searchQuery.toLowerCase()) || d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
-        const isDone = d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed";
+        const isDone = d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
         const matchesFilter = this.taskFilter === "all" || this.taskFilter === "active" && (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone || this.taskFilter === "completed" && isDone || this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled");
         return matchesSearch && matchesFilter;
       });
@@ -622,9 +626,10 @@
         const total = item.size_total || 0;
         const done = item.size_done || 0;
         const pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
-        const isCompleted = item.state === "completed" || total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed";
+        const isCompleted = item.state === "completed" || total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed" && item.state !== "queued";
         const isDownloading = item.state === "downloading" && !isCompleted;
         const isPaused = item.state === "paused";
+        const isQueued = item.state === "queued" || item.state === "connecting";
         const isFailed = item.state === "failed" || item.state === "cancelled";
         let catClass = "tile-programs";
         let catSvg = CATEGORY_SVGS.programs;
@@ -676,6 +681,14 @@
             <span>\u2022</span>
             <span style="color: #F59E0B; font-weight: 600;">Link Expired</span>
           `;
+        } else if (isQueued) {
+          metaHtml = `
+            <span>${formatBytes(total || done)}</span>
+            <span>\u2022</span>
+            <span style="color: #60A5FA; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;">
+              <span style="display: inline-block; width: 11px; height: 11px;">${SVG_ICONS.clock}</span> Queued
+            </span>
+          `;
         } else {
           const failReason = item.error_msg ? escapeHtml(item.error_msg) : "Download failed or link expired";
           metaHtml = `
@@ -700,6 +713,11 @@
             <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Resume Download">${SVG_ICONS.play}</button>
             <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
           `;
+        } else if (isQueued) {
+          actionsHtml = `
+            <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Start Download Now">${SVG_ICONS.play}</button>
+            <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
+          `;
         } else if (isCompleted) {
           actionsHtml = `
             <button class="btn-icon-3d act-open-file" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open File">${SVG_ICONS.openFile}</button>
@@ -719,7 +737,7 @@
           <button class="btn-icon-3d btn-icon-danger act-delete" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" data-name="${escapeHtml(item.filename)}" title="Remove">${SVG_ICONS.trash}</button>
         `;
         return `
-          <div class="download-card ${isCompleted ? "card-completed" : "card-downloading"}" data-id="${escapeHtml(item.id)}">
+          <div class="download-card ${isCompleted ? "card-completed" : isQueued ? "card-queued" : "card-downloading"}" data-id="${escapeHtml(item.id)}">
             <div class="card-inner">
               <div class="card-icon-tile ${catClass}">
                 ${catSvg}

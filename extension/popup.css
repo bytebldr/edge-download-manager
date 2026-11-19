@@ -470,6 +470,9 @@ body {
 .download-card.card-completed {
   min-height: 52px;
 }
+.download-card.card-queued {
+  min-height: 52px;
+}
 .download-card.card-downloading {
   min-height: 56px;
 }
