@@ -409,6 +409,7 @@ pub fn execute_download(
                     ws_savedir,
                     ws_total,
                     "queued".into(),
+                    Some(chrono::Utc::now().timestamp_millis() as u64),
                 )
                 .await;
             ws_mgr.broadcast_snapshot().await;
@@ -484,6 +485,7 @@ pub fn execute_download(
                 ws_savedir,
                 ws_total,
                 "downloading".into(),
+                Some(chrono::Utc::now().timestamp_millis() as u64),
             )
             .await;
     });

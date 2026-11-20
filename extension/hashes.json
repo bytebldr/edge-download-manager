@@ -1,13 +1,13 @@
 {
-  "version": "0.0.23",
-  "generated_at": "2026-11-20T08:31:54.901Z",
+  "version": "0.0.24",
+  "generated_at": "2026-11-20T16:31:14.933Z",
   "files": {
-    "manifest.json": "sha256:7d36c7ddc1c1c16c9a6e9521ccd6771936d227bd61087216ed5a2737ff6e2566",
+    "manifest.json": "sha256:5991f5ff95bba81ec0ff1396e3f6fc7cec1428c5210b85cdb4069f40ea404cc7",
     "background.js": "sha256:bddfbabb1c052c5d87b89fe08cc296b91d784ad623cf0c869e2549827f913d41",
     "content.js": "sha256:da4bbff3d4ee44107e7fdc5880387791a8872594c06cce28b4c780e6e3aa9725",
     "popup.html": "sha256:62db56152e91701830779c3dc20f139bc51f28d4313a7896618023ccedce3691",
     "popup.css": "sha256:a825d504e016315321e50224320cbe60c0a6ce0952a80a1f0c1e0954e4285b33",
-    "popup.js": "sha256:ef29f1c73e09bc2cba431ac376e2b826a0586ca14af1278f5b6af1069bcd883b",
+    "popup.js": "sha256:f4fd14356a54d13f81ab7dc1149a1cab532bcd68685d35762736098aadf0fa49",
     "options.html": "sha256:3c367809a41d51baaece79f88a5020600d57f8355b3b5973629a47a83c960120",
     "options.js": "sha256:edd2c472e42eaaab8ada88cb1aaca17f77e52031efb18e13272fdc572a02c1fc",
     "yt-main.js": "sha256:d104ad3fe0b9b00a8f877dae00a97123b45e1275b8aac7b8ea78351b73f9cd8b",

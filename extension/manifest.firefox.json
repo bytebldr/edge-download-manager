@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EDM",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "description": "High-performance live download dashboard and acceleration integration for EDM",
   "permissions": [
     "downloads",

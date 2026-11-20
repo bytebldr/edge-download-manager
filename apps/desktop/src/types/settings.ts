@@ -10,26 +10,29 @@ export interface CategoryRule {
   priority: "high" | "normal" | "low";
 }
 
+export interface GeneralSettings {
+  theme: "dark" | "light" | "system";
+  palette: "blue" | "emerald" | "amber" | "violet" | "rose" | "titanium";
+  language: string;
+  uiStyle: "pro" | "compact" | "modern";
+  launchAtStartup: boolean;
+  startMinimized: boolean;
+  minimizeToTray: boolean;
+  restoreDownloadsOnLaunch: boolean;
+  confirmBeforeExit: boolean;
+  preventDuplicateInstances: boolean;
+  autoCheckUpdates: boolean;
+  anonymousAnalytics: boolean;
+  confirmDestructiveActions: boolean;
+  keepAwake?: boolean;
+  idleExitMinutes?: number | null; // null = never, 0 = immediately after listener sleep, 5, 15, 30, 60
+  showConnectionBoundaries?: boolean;
+  deletePreference?: "always_ask" | "list_only" | "delete_file";
+}
+
 export interface EdmSettings {
   schemaVersion: number;
-  general: {
-    theme: "dark" | "light" | "system";
-    palette: "blue" | "emerald" | "amber" | "violet" | "rose" | "titanium";
-    language: string;
-    uiStyle: "pro" | "compact" | "modern";
-    launchAtStartup: boolean;
-    startMinimized: boolean;
-    minimizeToTray: boolean;
-    restoreDownloadsOnLaunch: boolean;
-    confirmBeforeExit: boolean;
-    preventDuplicateInstances: boolean;
-    autoCheckUpdates: boolean;
-    anonymousAnalytics: boolean;
-    confirmDestructiveActions: boolean;
-    keepAwake?: boolean;
-    idleExitMinutes?: number | null; // null = never, 0 = immediately after listener sleep, 5, 15, 30, 60
-    showConnectionBoundaries?: boolean;
-  };
+  general: GeneralSettings;
   downloads: {
     defaultDirectory: string;
     temporaryDirectory: string;
@@ -129,6 +132,7 @@ export const defaultSettings: EdmSettings = {
     keepAwake: false,
     idleExitMinutes: 15,
     showConnectionBoundaries: false,
+    deletePreference: "always_ask",
   },
   downloads: {
     defaultDirectory: "",

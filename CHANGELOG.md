@@ -2,6 +2,25 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.24] - 2026-11-20
+
+### ⚡ Critical Hotfix: Extension LIFO Queue Parity & Dual Deletion Architecture
+
+#### 1. Extension LIFO Queue Ordering (Newest Download at Top)
+- **Root Cause**: `WsTaskItem` previously lacked creation timestamps and emitted snapshots from an unordered Rust `HashMap`, causing browser extension tasks to appear in arbitrary hash bucket order.
+- **Timestamp Parity & LIFO Sorting**:
+  - Added `pub created_at: Option<u64>` (epoch milliseconds) to `WsTaskItem`.
+  - Populated `created_at` from SQLite database and live task creation in `ws/manager.rs` and `download_manager.rs`.
+  - Added reverse chronological sorting in WebSocket snapshots and extension `popup.ts` (`(b.created_at - a.created_at)`), guaranteeing that newly initiated downloads always occupy Row 1 at the top of the extension across All, Active, Done, and Failed tabs.
+
+#### 2. Dual Deletion Architecture with Windows Recycle Bin Parity
+- **Desktop & Extension Confirmation Modal**:
+  - Clicking the delete icon now presents two distinct choices:
+    - **Remove from List Only**: Removes entry from EDM history and SQLite store while safely preserving the file on disk.
+    - **Move File to Recycle Bin & Remove**: Safely moves the target file and any `.edmpart` files to the native Windows Recycle Bin via Win32 `SHFileOperationW` (`FOF_ALLOWUNDO`), ensuring accidentally deleted files can be restored anytime from the Windows desktop Recycle Bin.
+  - **"Don't ask again" Persistence**: Includes a checkbox to permanently store the chosen policy (`always_ask`, `list_only`, `delete_file`).
+  - **Settings Integration**: Added "Download Deletion Policy" dropdown in both Desktop Settings and Extension Settings tabs so users can reconfigure or reset their deletion preference at any time.
+
 ## [v0.0.23] - 2026-11-20
 
 ### ⚡ Critical Hotfix: Industrial Lifecycle Architecture & OS Error 32 Elimination

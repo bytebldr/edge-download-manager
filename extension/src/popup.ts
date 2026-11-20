@@ -14,7 +14,7 @@ interface DownloadItem {
   resumable: boolean;
   speed_bytes_per_sec: number;
   connections: number;
-  created_at: string;
+  created_at: number;
   completed_at?: string | null;
   error_msg?: string | null;
 }
@@ -125,6 +125,7 @@ class PopupController {
   private pollInterval: any = null;
   private refreshRateMs: number = 500;
   private port: chrome.runtime.Port | null = null;
+  private deletePreference: "always_ask" | "list_only" | "delete_file" = "always_ask";
   private deleteModalTarget: { id: string; filename: string } | null = null;
 
   constructor() {
@@ -182,19 +183,20 @@ class PopupController {
           if (Array.isArray(msg.tasks)) {
             this.downloads = msg.tasks.map((t: any) => ({
               id: t.id,
-              url: "",
+              url: t.url || "",
               filename: t.filename,
-              save_dir: "Downloads",
-              category: "General",
+              save_dir: t.save_dir || "Downloads",
+              category: t.category || "General",
               state: t.status,
               size_total: t.total,
               size_done: t.downloaded,
               resumable: true,
               speed_bytes_per_sec: t.speed,
               connections: 8,
-              created_at: "",
+              created_at: Number(t.created_at) || (t.created_at ? Date.parse(t.created_at) : 0) || Date.now(),
               error_msg: t.error_msg || null,
             }));
+            this.downloads.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
             this.updateAllCounters();
             if (this.activeTab === "tasks") {
               this.renderTasksListOnly();
@@ -298,7 +300,14 @@ class PopupController {
       "edm_notify_complete",
       "edm_notify_fail",
       "edm_youtube_pill_enabled",
+      "deletePreference",
+      "edm_delete_preference",
     ]);
+    if (data.deletePreference === "always_ask" || data.deletePreference === "list_only" || data.deletePreference === "delete_file") {
+      this.deletePreference = data.deletePreference;
+    } else if (data.edm_delete_preference === "always_ask" || data.edm_delete_preference === "list_only" || data.edm_delete_preference === "delete_file") {
+      this.deletePreference = data.edm_delete_preference;
+    }
     if (data.edm_refresh_rate) {
       this.refreshRateMs = parseInt(data.edm_refresh_rate, 10);
     }
@@ -570,6 +579,7 @@ class PopupController {
               action: "create_task",
               url: media.url,
               filename: media.title,
+              created_at: Date.now(),
             },
             (resp) => {
               if (resp && resp.ok) {
@@ -652,7 +662,10 @@ class PopupController {
   }
 
   private renderTasksListHtml(): string {
-    const filtered = this.downloads.filter((d) => {
+    const sorted = this.downloads
+      .slice()
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    const filtered = sorted.filter((d) => {
       const matchesSearch =
         d.filename.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
         d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
@@ -913,6 +926,7 @@ class PopupController {
             type: "create_task",
             url,
             filename: filename || undefined,
+            created_at: Date.now(),
           });
         }
 
@@ -1037,7 +1051,13 @@ class PopupController {
         e.stopPropagation();
         const id = btn.getAttribute("data-id");
         const filename = btn.getAttribute("data-name") || "Download";
-        if (id) {
+        if (!id) return;
+
+        if (this.deletePreference === "list_only") {
+          this.sendTaskAction(id, "remove", false);
+        } else if (this.deletePreference === "delete_file") {
+          this.sendTaskAction(id, "remove", true);
+        } else {
           this.openDeleteModal(id, filename);
         }
       });
@@ -1060,10 +1080,14 @@ class PopupController {
         <div class="modal-desc">
           Are you sure you want to remove <strong>${escapeHtml(filename)}</strong>?
         </div>
-        <div class="modal-buttons">
-          <button id="modalCancelBtn" class="btn-3d">Cancel</button>
-          <button id="modalRemoveListBtn" class="btn-3d">Remove from list</button>
-          <button id="modalRecycleFileBtn" class="btn-3d btn-danger">Recycle File</button>
+        <div style="margin: 6px 0 8px 0; display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-muted);">
+          <input type="checkbox" id="modalDontAskAgain" style="cursor: pointer; margin: 0; width: 14px; height: 14px; accent-color: var(--accent);" />
+          <label for="modalDontAskAgain" style="cursor: pointer; user-select: none; color: #8fa0be;">Don't ask again (You can change this anytime in Settings)</label>
+        </div>
+        <div class="modal-buttons" style="display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin-top: 4px;">
+          <button id="modalRemoveListBtn" class="btn-3d" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500;">Remove from list only</button>
+          <button id="modalRecycleFileBtn" class="btn-3d btn-danger" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500; background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #f59e0b; color: #ffffff;">Move File to Recycle Bin &amp; Remove</button>
+          <button id="modalCancelBtn" class="btn-3d" style="padding: 7px 12px; font-size: 11px; opacity: 0.85; margin-top: 2px;">Cancel</button>
         </div>
       </div>
     `;
@@ -1071,13 +1095,31 @@ class PopupController {
     document.getElementById("modalCancelBtn")?.addEventListener("click", () => {
       this.closeDeleteModal();
     });
-    document.getElementById("modalRemoveListBtn")?.addEventListener("click", () => {
+
+    document.getElementById("modalRemoveListBtn")?.addEventListener("click", async () => {
+      const dontAsk = (document.getElementById("modalDontAskAgain") as HTMLInputElement)?.checked;
+      if (dontAsk) {
+        this.deletePreference = "list_only";
+        await chrome.storage.local.set({
+          deletePreference: "list_only",
+          edm_delete_preference: "list_only",
+        });
+      }
       if (this.deleteModalTarget) {
         this.sendTaskAction(this.deleteModalTarget.id, "remove", false);
       }
       this.closeDeleteModal();
     });
-    document.getElementById("modalRecycleFileBtn")?.addEventListener("click", () => {
+
+    document.getElementById("modalRecycleFileBtn")?.addEventListener("click", async () => {
+      const dontAsk = (document.getElementById("modalDontAskAgain") as HTMLInputElement)?.checked;
+      if (dontAsk) {
+        this.deletePreference = "delete_file";
+        await chrome.storage.local.set({
+          deletePreference: "delete_file",
+          edm_delete_preference: "delete_file",
+        });
+      }
       if (this.deleteModalTarget) {
         this.sendTaskAction(this.deleteModalTarget.id, "remove", true);
       }
@@ -1182,6 +1224,22 @@ class PopupController {
               <input type="checkbox" id="youtubePillToggle" ${this.youtubePillEnabled ? "checked" : ""}>
               <span class="slider"></span>
             </label>
+          </div>
+        </div>
+
+        <!-- Download Deletion Policy -->
+        <div class="settings-group" style="padding: 14px; background: #070e1b; border: 1px solid #1a273e; border-radius: 10px;">
+          <div class="settings-group-title" style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px;">Download Deletion Policy</div>
+          <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div class="setting-label" style="font-size: 12px; font-weight: 600;">When removing a download</div>
+              <div class="setting-desc" style="font-size: 11px; color: #8fa0be;">Choose default action when deleting downloads from list</div>
+            </div>
+            <select id="deletePrefSelect" style="background: #040914; border: 1px solid #1a2a44; border-radius: 8px; color: #FFFFFF; font-size: 11.5px; padding: 6px 10px;">
+              <option value="always_ask" ${this.deletePreference === "always_ask" ? "selected" : ""}>Always ask (Show confirmation)</option>
+              <option value="list_only" ${this.deletePreference === "list_only" ? "selected" : ""}>Remove from list only</option>
+              <option value="delete_file" ${this.deletePreference === "delete_file" ? "selected" : ""}>Move file to Recycle Bin &amp; remove</option>
+            </select>
           </div>
         </div>
 
@@ -1318,6 +1376,19 @@ class PopupController {
       youtubePillToggle.addEventListener("change", async () => {
         this.youtubePillEnabled = youtubePillToggle.checked;
         await chrome.storage.local.set({ edm_youtube_pill_enabled: this.youtubePillEnabled });
+      });
+    }
+
+    // Download deletion policy
+    const deletePrefSelect = document.getElementById("deletePrefSelect") as HTMLSelectElement;
+    if (deletePrefSelect) {
+      deletePrefSelect.addEventListener("change", async () => {
+        const val = deletePrefSelect.value as "always_ask" | "list_only" | "delete_file";
+        this.deletePreference = val;
+        await chrome.storage.local.set({
+          deletePreference: val,
+          edm_delete_preference: val,
+        });
       });
     }
 

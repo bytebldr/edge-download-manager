@@ -102,10 +102,11 @@ impl WsManager {
     }
 
     pub async fn build_snapshot(&self) -> OutboundWsMessage {
-        let tasks: Vec<WsTaskItem> = {
+        let mut tasks: Vec<WsTaskItem> = {
             let map = self.tasks.read().await;
             map.values().cloned().collect()
         };
+        tasks.sort_by(|a, b| b.created_at.unwrap_or(0).cmp(&a.created_at.unwrap_or(0)));
         let theme = self.theme.read().await.clone();
         let palette = self.palette.read().await.clone();
         let lifecycle_state = self.lifecycle_state.read().await.clone();
@@ -186,6 +187,7 @@ impl WsManager {
         save_dir: PathBuf,
         total: Option<u64>,
         status: String,
+        created_at: Option<u64>,
     ) {
         let mut map = self.tasks.write().await;
         map.insert(
@@ -199,10 +201,31 @@ impl WsManager {
                 speed: 0,
                 status,
                 error_msg: None,
+                created_at: created_at.or_else(|| Some(chrono::Utc::now().timestamp_millis() as u64)),
             },
         );
         drop(map);
         self.bump_rev();
+    }
+
+    #[allow(dead_code)]
+    pub async fn create_task(
+        &self,
+        id: String,
+        filename: String,
+        save_dir: PathBuf,
+        total: Option<u64>,
+        status: String,
+    ) {
+        self.register_task(
+            id,
+            filename,
+            save_dir,
+            total,
+            status,
+            Some(chrono::Utc::now().timestamp_millis() as u64),
+        )
+        .await;
     }
 
     /// Constant-time token verification to defend against timing attacks
@@ -281,6 +304,7 @@ impl WsManager {
                         speed: 0,
                         status: status.to_string(),
                         error_msg: r.error_msg,
+                        created_at: Some(r.created_at.timestamp_millis() as u64),
                     },
                 );
             }

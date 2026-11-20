@@ -27,6 +27,8 @@ pub struct WsTaskItem {
     pub status: String, // "queued" | "downloading" | "paused" | "completed" | "failed"
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub error_msg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub created_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

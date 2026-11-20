@@ -46,7 +46,7 @@ import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
 import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
 import { motion, AnimatePresence } from "motion/react";
-import { viewVariants } from "./utils/motion";
+import { viewVariants, backdropVariants, modalVariants } from "./utils/motion";
 import {
   isTauri,
   tauriStartDownload,
@@ -223,6 +223,8 @@ export default function App() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
+  const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteModalDontAsk, setDeleteModalDontAsk] = useState<boolean>(false);
   const [speedLimit, setSpeedLimit] = useState<string>("Unlimited");
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [showUpdateBanner, setShowUpdateBanner] = useState<boolean>(false);
@@ -1184,8 +1186,62 @@ export default function App() {
     });
   };
 
+  const handleRequestDelete = (id: string, name: string) => {
+    const pref = settings.general?.deletePreference || "always_ask";
+    if (pref === "list_only") {
+      tauriDeleteDownload(id, false);
+      setDownloads((prev) => prev.filter((d) => d.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
+      if (selectedDownload?.id === id) setSelectedDownload(null);
+    } else if (pref === "delete_file") {
+      tauriDeleteDownload(id, true);
+      setDownloads((prev) => prev.filter((d) => d.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
+      if (selectedDownload?.id === id) setSelectedDownload(null);
+    } else {
+      setDeleteModalDontAsk(false);
+      setDeleteModalTarget({ id, name });
+    }
+  };
+
+  const handleConfirmDelete = (deleteFile: boolean) => {
+    if (!deleteModalTarget) return;
+    const { id } = deleteModalTarget;
+    tauriDeleteDownload(id, deleteFile);
+    setDownloads((prev) => prev.filter((d) => d.id !== id));
+    setSelectedIds((prev) => prev.filter((item) => item !== id));
+    if (selectedDownload?.id === id) setSelectedDownload(null);
+
+    if (deleteModalDontAsk) {
+      const newPref = deleteFile ? "delete_file" : "list_only";
+      const updatedSettings: EdmSettings = {
+        ...settings,
+        general: {
+          ...settings.general,
+          deletePreference: newPref,
+        },
+      };
+      setSettings(updatedSettings);
+      saveSettings(updatedSettings);
+      tauriSaveSettings(updatedSettings).catch(() => {});
+    }
+
+    setDeleteModalTarget(null);
+    setDeleteModalDontAsk(false);
+  };
+
   const deleteSelected = () => {
-    selectedIds.forEach((id) => tauriDeleteDownload(id));
+    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 1) {
+      const item = downloads.find((d) => d.id === selectedIds[0]);
+      if (item) {
+        handleRequestDelete(item.id, item.name);
+        return;
+      }
+    }
+    const pref = settings.general?.deletePreference || "always_ask";
+    const deleteFile = pref === "delete_file";
+    selectedIds.forEach((id) => tauriDeleteDownload(id, deleteFile));
     setDownloads((prev) => prev.filter((d) => !selectedIds.includes(d.id)));
     setSelectedIds([]);
     setSelectedDownload(null);
@@ -1258,6 +1314,11 @@ export default function App() {
       }
       if (e.key === "Escape") {
         setContextMenu((p) => ({ ...p, visible: false }));
+        if (deleteModalTarget) {
+          setDeleteModalTarget(null);
+          setDeleteModalDontAsk(false);
+          return;
+        }
         if (activeView === "settings") {
           setActiveView("downloads");
           return;
@@ -1293,9 +1354,7 @@ export default function App() {
         if (selectedIds.length > 0) {
           deleteSelected();
         } else if (activeSelectedDownload) {
-          tauriDeleteDownload(activeSelectedDownload.id);
-          setDownloads((prev) => prev.filter((d) => d.id !== activeSelectedDownload.id));
-          setSelectedDownload(null);
+          handleRequestDelete(activeSelectedDownload.id, activeSelectedDownload.name);
         }
         return;
       }
@@ -2010,10 +2069,7 @@ export default function App() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                tauriDeleteDownload(item.id);
-                                setDownloads((prev) => prev.filter((d) => d.id !== item.id));
-                                setSelectedIds((prev) => prev.filter((id) => id !== item.id));
-                                if (selectedDownload?.id === item.id) setSelectedDownload(null);
+                                handleRequestDelete(item.id, item.name);
                               }}
                               className="p-1.5 rounded-lg btn-3d text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-all"
                               title="Delete Task"
@@ -2242,10 +2298,7 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            tauriDeleteDownload(item.id);
-                            setDownloads((prev) => prev.filter((d) => d.id !== item.id));
-                            setSelectedIds((prev) => prev.filter((id) => id !== item.id));
-                            if (selectedDownload?.id === item.id) setSelectedDownload(null);
+                            handleRequestDelete(item.id, item.name);
                           }}
                           className="btn-3d p-1.5 rounded-md text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-all"
                           title="Delete Task"
@@ -2427,6 +2480,135 @@ export default function App() {
 
       <PowerCountdownModal />
 
+      {/* ─────────────────────────────────────────────────────────────
+          DELETE CONFIRMATION MODAL (Glassmorphic)
+      ────────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {deleteModalTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              variants={backdropVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              onClick={() => {
+                setDeleteModalTarget(null);
+                setDeleteModalDontAsk(false);
+              }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            {/* Modal Window */}
+            <motion.div
+              variants={modalVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="relative w-full max-w-md rounded-2xl panel-3d shadow-2xl overflow-hidden flex flex-col z-10 border border-[var(--border-subtle)] bg-[var(--bg-card)]/95 backdrop-blur-xl"
+            >
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-panel)]">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-tight text-[var(--text-primary)]">
+                      Remove Download
+                    </h3>
+                    <p className="text-xs text-[var(--text-muted)] truncate max-w-[280px]">
+                      Are you sure you want to remove <span className="text-[var(--text-primary)] font-medium">{deleteModalTarget.name}</span>?
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setDeleteModalTarget(null);
+                    setDeleteModalDontAsk(false);
+                  }}
+                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4">
+                <div className="space-y-2.5">
+                  {/* Choice 1: Remove from List Only */}
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmDelete(false)}
+                    className="w-full p-3.5 rounded-xl border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--bg-active)] flex items-start gap-3 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="p-2 rounded-lg bg-[var(--bg-chassis)] group-hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] group-hover:text-[var(--accent)] mt-0.5 shrink-0 transition-colors">
+                      <LayoutList className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-[var(--text-primary)] block">
+                        Remove from List Only
+                      </span>
+                      <span className="text-[11px] text-[var(--text-muted)] block mt-0.5">
+                        Keeps file on disk
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Choice 2: Move File to Recycle Bin & Remove */}
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmDelete(true)}
+                    className="w-full p-3.5 rounded-xl border border-rose-500/20 hover:border-rose-500/60 hover:bg-rose-500/5 flex items-start gap-3 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="p-2 rounded-lg bg-rose-500/10 text-rose-400 group-hover:bg-rose-500/20 mt-0.5 shrink-0 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-rose-300 block">
+                        Move File to Recycle Bin & Remove
+                      </span>
+                      <span className="text-[11px] text-[var(--text-muted)] block mt-0.5">
+                        Safely moves to Windows Recycle Bin
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Don't ask again checkbox */}
+                <div className="pt-2 border-t border-[var(--border-subtle)]">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={deleteModalDontAsk}
+                      onChange={(e) => setDeleteModalDontAsk(e.target.checked)}
+                      className="edm-checkbox"
+                    />
+                    <span className="text-xs text-[var(--text-secondary)]">
+                      Don't ask again (You can change this anytime in Settings)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModalTarget(null);
+                    setDeleteModalDontAsk(false);
+                  }}
+                  className="btn-3d px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modern Context Menu */}
       {contextMenu.visible && contextMenu.item && (
         <div
@@ -2531,11 +2713,9 @@ export default function App() {
           <div className="pt-1 mt-1 border-t border-[var(--border-subtle)]/70">
             <button
               onClick={() => {
-                tauriDeleteDownload(contextMenu.item!.id);
-                setDownloads((prev) => prev.filter((d) => d.id !== contextMenu.item!.id));
-                setSelectedIds((prev) => prev.filter((id) => id !== contextMenu.item!.id));
-                if (selectedDownload?.id === contextMenu.item!.id) setSelectedDownload(null);
+                const item = contextMenu.item!;
                 setContextMenu((p) => ({ ...p, visible: false }));
+                handleRequestDelete(item.id, item.name);
               }}
               className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
             >

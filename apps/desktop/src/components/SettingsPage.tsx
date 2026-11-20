@@ -424,6 +424,10 @@ export default function SettingsPage({
     saveSettings(updated);
   };
 
+  const handleSettingChange = (section: any, key: string, value: any) => {
+    update(section, { [key]: value });
+  };
+
   const resetCurrentSection = () => {
     if (confirm(`Reset ${activeSection.toUpperCase()} settings to factory defaults?`)) {
       let updated = { ...settings };
@@ -999,6 +1003,22 @@ export default function SettingsPage({
                     onChange={(e) => update("general", { showConnectionBoundaries: e.target.checked })}
                     className="edm-checkbox"
                   />
+                </div>
+
+                <div className="pt-3 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="font-medium text-xs text-[var(--text-primary)] block">Download Deletion Policy</span>
+                    <span className="text-[11px] text-[var(--text-muted)]">Choose default behavior when removing downloads from your list.</span>
+                  </div>
+                  <select
+                    value={settings.general.deletePreference || "always_ask"}
+                    onChange={(e) => handleSettingChange("general", "deletePreference", e.target.value)}
+                    className="h-8 px-2.5 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer shrink-0"
+                  >
+                    <option value="always_ask">Always ask (show confirmation modal)</option>
+                    <option value="list_only">Remove from list only (always keep files on disk)</option>
+                    <option value="delete_file">Move file to Recycle Bin and remove from list</option>
+                  </select>
                 </div>
               </div>
             </section>
