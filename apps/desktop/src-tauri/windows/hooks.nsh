@@ -131,7 +131,7 @@ done_webview2:
   WriteRegStr HKCU "Software\EDM" "AppPath" "$INSTDIR\EDM.exe"
 done_apppath:
   WriteRegStr HKCU "Software\EDM" "NmhPath" "$LOCALAPPDATA\EDM\edm-nmh.exe"
-  WriteRegStr HKCU "Software\EDM" "Version" "0.0.21"
+  WriteRegStr HKCU "Software\EDM" "Version" "0.0.22"
 
   WriteRegStr HKCU "Software\Classes\edm" "" "URL:EDM Protocol"
   WriteRegStr HKCU "Software\Classes\edm" "URL Protocol" ""

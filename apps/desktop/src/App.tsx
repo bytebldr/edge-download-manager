@@ -1837,7 +1837,11 @@ export default function App() {
                         {sortField === "speed" && (sortDirection === "asc" ? <ChevronUp className="w-3 h-3 text-[var(--accent)]" /> : <ChevronDown className="w-3 h-3 text-[var(--accent)]" />)}
                       </div>
                     </th>
-                    <th className="py-2 px-3 w-48 min-w-[188px] text-left pl-3 sm:pl-4 whitespace-nowrap">Actions</th>
+                    <th className="py-2 px-3 pr-3 sm:pr-4 w-48 min-w-[188px] whitespace-nowrap">
+                      <div className="flex items-center justify-end">
+                        <div className="w-[130px] text-left select-none">Actions</div>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="text-xs">

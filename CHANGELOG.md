@@ -2,6 +2,22 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.22] - 2026-11-20
+
+### ⚡ Hotfix: Actions Column Header Symmetry & Alignment
+
+#### 1. Table Header Actions Alignment
+- **Root Cause**: While row cells align action buttons to the right (`justify-end`, `pr-3 sm:pr-4`) taking up ~130px, setting `text-left` on the outer `<th>` caused the "Actions" title to sit too far to the left of the column, floating disconnected over empty space.
+- **Symmetric Alignment**: Wrapped the header label in a right-aligned container with a matching `w-[130px] text-left` slot:
+  ```tsx
+  <th className="py-2 px-3 pr-3 sm:pr-4 w-48 min-w-[188px] whitespace-nowrap">
+    <div className="flex items-center justify-end">
+      <div className="w-[130px] text-left select-none">Actions</div>
+    </div>
+  </th>
+  ```
+  The text "Actions" now starts exactly aligned with the left edge of the first action button across all rows and resolutions.
+
 ## [v0.0.21] - 2026-11-20
 
 ### ⚡ Critical Hotfix & Architecture: Dedicated Lifecycle Engine, Autonomous Zero-Click Update, and LIFO Download Queue
