@@ -99,6 +99,7 @@ export interface DownloadItem {
   progress: number;
   url: string;
   domain: string;
+  createdAt: number;
   dateAdded: string;
   workers?: WorkerInfo[];
   speedHistory?: number[];
@@ -107,6 +108,8 @@ export interface DownloadItem {
   elapsedSeconds?: number;
   error_msg?: string | null;
 }
+
+export type DownloadTask = DownloadItem;
 
 export const INITIAL_NETPULSE_PROFILE: number[] = [];
 
@@ -457,10 +460,14 @@ export default function App() {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
             return parsed.map((item: DownloadItem) => {
+              const itemWithCreated: DownloadItem = {
+                ...item,
+                createdAt: item.createdAt || (item.dateAdded && item.dateAdded !== "Just now" && item.dateAdded !== "Today" ? new Date(item.dateAdded).getTime() : 0) || Date.now(),
+              };
               if (item.state === "completed" || item.progress >= 100 || (item.sizeTotal > 0 && item.sizeDone >= item.sizeTotal)) {
                 const total = item.sizeTotal || item.sizeDone || 0;
                 return {
-                  ...item,
+                  ...itemWithCreated,
                   state: "completed" as const,
                   progress: 100,
                   sizeDone: total,
@@ -476,7 +483,7 @@ export default function App() {
                   })),
                 };
               }
-              return item;
+              return itemWithCreated;
             });
           }
         }
@@ -673,6 +680,7 @@ export default function App() {
             progress: isCompleted ? 100 : pct,
             url: b.url,
             domain,
+            createdAt: b.created_at ? new Date(b.created_at).getTime() : (existing?.createdAt || Date.now()),
             dateAdded: b.created_at ? new Date(b.created_at).toLocaleDateString() : (existing?.dateAdded || "Today"),
             workers: finalWorkers,
             speedHistory: history,
@@ -683,7 +691,7 @@ export default function App() {
         // Also keep any local-only preview items that haven't hit backend yet
         const backendIds = new Set(backendItems.map((b) => b.id));
         for (const item of prev) {
-          if (!backendIds.has(item.id) && Date.now() - Number(item.id) < 5000) {
+          if (!backendIds.has(item.id) && Date.now() - (item.createdAt || Number(item.id) || 0) < 5000) {
             updated.push(item);
           }
         }
@@ -855,6 +863,7 @@ export default function App() {
       progress: 0,
       url: targetUrl,
       domain: hostname,
+      createdAt: Date.now(),
       dateAdded: "Just now",
       workers: initialWorkers,
       speedHistory: [0],
@@ -1205,7 +1214,10 @@ export default function App() {
 
     return [...list].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "name") {
+      if (sortField === "dateAdded") {
+        const cmp = (b.createdAt || 0) - (a.createdAt || 0);
+        return sortDirection === "asc" ? -cmp : cmp;
+      } else if (sortField === "name") {
         cmp = a.name.localeCompare(b.name);
       } else if (sortField === "size") {
         cmp = (a.sizeTotal || a.sizeDone) - (b.sizeTotal || b.sizeDone);
@@ -1216,7 +1228,7 @@ export default function App() {
         const speedB = b.state === "downloading" ? (b.peakSpeedBps || 0) : 0;
         cmp = speedA - speedB;
       } else {
-        cmp = a.id.localeCompare(b.id);
+        cmp = (b.createdAt || 0) - (a.createdAt || 0);
       }
       return sortDirection === "asc" ? cmp : -cmp;
     });
@@ -1825,7 +1837,7 @@ export default function App() {
                         {sortField === "speed" && (sortDirection === "asc" ? <ChevronUp className="w-3 h-3 text-[var(--accent)]" /> : <ChevronDown className="w-3 h-3 text-[var(--accent)]" />)}
                       </div>
                     </th>
-                    <th className="py-2 px-3 w-48 min-w-[188px] text-right pr-3 sm:pr-4 whitespace-nowrap">Actions</th>
+                    <th className="py-2 px-3 w-48 min-w-[188px] text-left pl-3 sm:pl-4 whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-xs">

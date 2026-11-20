@@ -166,9 +166,10 @@ fn main() {
         global_limiter,
     };
 
-    // Fast-path: Start WebSocket Server on 127.0.0.1:14370 FIRST (except in installer setup mode)
-    let is_setup_or_uninstall = args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall" || a == "--repair");
-    if !is_setup_or_uninstall {
+    let runtime_mode = lifecycle::RuntimeMode::from_args(&args);
+
+    // Fast-path: Start WebSocket Server on 127.0.0.1:14370 FIRST (except in lifecycle wizard modes)
+    if !runtime_mode.is_lifecycle_wizard() {
         let ws_mgr_srv = ws_manager.clone();
         let t_ws = t_boot;
         rt_handle.spawn(async move {
@@ -180,44 +181,48 @@ fn main() {
         spawn_extension_bridge(app_state.clone(), rt_handle.clone());
     }
 
-    // Register Native Messaging Host and provision extension files immediately on boot
+    // Register Native Messaging Host and provision extension files immediately on boot (normal mode only)
     #[cfg(windows)]
-    {
+    if !runtime_mode.is_lifecycle_wizard() {
         register_native_messaging_host();
         let _ = prepare_extension_files_internal();
     }
 
-    // Background Queue Scheduler loop (evaluates every 10 seconds)
-    let queue_state = app_state.clone();
-    rt_handle.spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
-        loop {
-            interval.tick().await;
-            services::download_manager::try_start_next_queued(&queue_state);
-        }
-    });
+    // Background Queue Scheduler loop (evaluates every 10 seconds, normal mode only)
+    if !runtime_mode.is_lifecycle_wizard() {
+        let queue_state = app_state.clone();
+        rt_handle.spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                services::download_manager::try_start_next_queued(&queue_state);
+            }
+        });
+    }
 
-    // Background lifecycle monitoring loop (checks every 15 seconds)
-    let lc_monitor = lifecycle.clone();
-    let tasks_monitor = app_state.tasks.clone();
-    rt_handle.spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
-        loop {
-            interval.tick().await;
-            let active_count = {
-                let mut count = 0;
-                if let Ok(tasks) = tasks_monitor.lock() {
-                    for handle in tasks.values() {
-                        if !handle.cancelled.load(Ordering::Relaxed) {
-                            count += 1;
+    // Background lifecycle monitoring loop (checks every 15 seconds, normal mode only)
+    if !runtime_mode.is_lifecycle_wizard() {
+        let lc_monitor = lifecycle.clone();
+        let tasks_monitor = app_state.tasks.clone();
+        rt_handle.spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+            loop {
+                interval.tick().await;
+                let active_count = {
+                    let mut count = 0;
+                    if let Ok(tasks) = tasks_monitor.lock() {
+                        for handle in tasks.values() {
+                            if !handle.cancelled.load(Ordering::Relaxed) {
+                                count += 1;
+                            }
                         }
                     }
-                }
-                count
-            };
-            lc_monitor.check_lifecycle_step(active_count, false).await;
-        }
-    });
+                    count
+                };
+                lc_monitor.check_lifecycle_step(active_count, false).await;
+            }
+        });
+    }
 
     // Inbound WebSocket Task Creator Loop
     let create_state = app_state.clone();
@@ -510,12 +515,10 @@ fn main() {
             }
 
             let args: Vec<String> = std::env::args().collect();
+            let runtime_mode = lifecycle::RuntimeMode::from_args(&args);
             let is_autostart_boot = args.iter().any(|arg| arg == "--autostart");
             let is_background_boot = args.iter().any(|arg| arg == "--background" || arg == "--listener-only");
             let show_window = args.iter().any(|arg| arg == "--show-window");
-            let is_setup_mode = args.iter().any(|arg| arg == "--setup");
-            let is_uninstall_mode = args.iter().any(|arg| arg == "--uninstall" || arg == "-uninstall");
-            let is_repair_mode = args.iter().any(|arg| arg == "--repair" || arg == "-repair");
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) =
@@ -524,8 +527,8 @@ fn main() {
                     let _ = window.set_icon(icon);
                 }
 
-                if is_setup_mode {
-                    // Installer / setup wizard mode: fixed 680×440 non-resizable, centred, navigate to #setup
+                if let Some(hash) = runtime_mode.hash_route() {
+                    // Modern lifecycle wizard mode (Setup, Repair, Update, Uninstall): fixed 680×440 non-resizable, centred
                     let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
                         width: 680.0,
                         height: 440.0,
@@ -533,30 +536,8 @@ fn main() {
                     let _ = window.set_resizable(false);
                     let _ = window.center();
                     let _ = window.show();
-                    let _ = window.eval("window.location.hash = '#setup'");
-                    tracing::info!("EDM launched in installer setup mode (--setup)");
-                } else if is_uninstall_mode {
-                    // Custom Uninstaller wizard mode: fixed 680×440 non-resizable, centred, navigate to #uninstall
-                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                        width: 680.0,
-                        height: 440.0,
-                    }));
-                    let _ = window.set_resizable(false);
-                    let _ = window.center();
-                    let _ = window.show();
-                    let _ = window.eval("window.location.hash = '#uninstall'");
-                    tracing::info!("EDM launched in custom uninstaller wizard mode (--uninstall)");
-                } else if is_repair_mode {
-                    // Custom Reinstall & Repair wizard mode: fixed 680×440 non-resizable, centred, navigate to #repair
-                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                        width: 680.0,
-                        height: 440.0,
-                    }));
-                    let _ = window.set_resizable(false);
-                    let _ = window.center();
-                    let _ = window.show();
-                    let _ = window.eval("window.location.hash = '#repair'");
-                    tracing::info!("EDM launched in custom repair mode (--repair)");
+                    let _ = window.eval(&format!("window.location.hash = '{}'", hash));
+                    tracing::info!("EDM launched in {:?} mode ({})", runtime_mode, hash);
                 } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
                         "EDM started in background mode; keeping window hidden"
@@ -584,8 +565,8 @@ fn main() {
 
             handle_cli_arguments(&app.handle().clone(), &args);
 
-            // Tray Icon Setup (only in normal app mode, NOT in setup, repair, or uninstaller mode)
-            if !is_setup_mode && !is_uninstall_mode && !is_repair_mode {
+            // Tray Icon Setup (only in normal app mode, NOT in lifecycle wizard mode)
+            if !runtime_mode.is_lifecycle_wizard() {
                 let open_i = MenuItem::with_id(app, "open", "Open EDM", true, None::<&str>)?;
                 let pause_all_i = MenuItem::with_id(app, "pause_all", "Pause all", true, None::<&str>)?;
                 let resume_all_i =
@@ -802,7 +783,7 @@ fn main() {
                     return;
                 }
                 let args: Vec<String> = std::env::args().collect();
-                if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall" || a == "--repair" || a == "-repair") {
+                if lifecycle::RuntimeMode::from_args(&args).is_lifecycle_wizard() {
                     return;
                 }
                 api.prevent_exit();

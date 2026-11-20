@@ -578,7 +578,6 @@ Function .onInit
   ; Runs for fresh installs, updates, and reinstalls.
   ; ============================================================
   ${IfNot} ${Silent}
-  ${AndIf} $PassiveMode <> 1
     ; Gracefully stop running EDM and NMH processes before extracting/updating
     nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
     Sleep 400
@@ -622,8 +621,13 @@ plugins_wv2_done:
       Goto plugins_nmh_done
 plugins_nmh_done:
 
-    ; Launch the modern frameless setup UI (Image 2)
-    ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
+    ; Launch the modern frameless UI (--update or --setup)
+    ${If} $UpdateMode = 1
+    ${OrIf} $PassiveMode = 1
+      ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --update' $0
+    ${Else}
+      ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
+    ${EndIf}
     ; Clean up the temporary extracted setup files immediately
     RMDir /r "$PLUGINSDIR"
     Quit

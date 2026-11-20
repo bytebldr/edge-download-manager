@@ -524,6 +524,18 @@ export async function tauriInstallUpdate(downloadUrl: string): Promise<void> {
   }
 }
 
+export async function tauriStartOtaUpdate(downloadUrl?: string): Promise<void> {
+  let url = downloadUrl;
+  if (!url) {
+    const update = await tauriCheckForUpdates();
+    if (!update.update_available || !update.download_url) {
+      throw new Error("No update package available to install");
+    }
+    url = update.download_url;
+  }
+  return await tauriInstallUpdate(url);
+}
+
 export async function tauriOpenInstallerFolder(): Promise<void> {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");

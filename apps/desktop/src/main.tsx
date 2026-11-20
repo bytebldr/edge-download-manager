@@ -1,9 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { InstallerWizard } from "./components/InstallerWizard";
-import { UninstallerWizard } from "./components/UninstallerWizard";
-import { RepairWizard } from "./components/RepairWizard";
+import { LifecycleApp, resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
 import "./styles/theme.css";
 
 interface ErrorBoundaryProps {
@@ -88,61 +86,23 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 }
 
 function Root() {
-  const [installerMode, setInstallerMode] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const params = new URLSearchParams(window.location.search);
-    return params.get("mode") === "setup" || window.location.hash === "#setup" || params.get("installer") === "1";
-  });
-
-  const [uninstallerMode, setUninstallerMode] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const params = new URLSearchParams(window.location.search);
-    return params.get("mode") === "uninstall" || window.location.hash === "#uninstall" || params.get("uninstall") === "1";
-  });
-
-  const [repairMode, setRepairMode] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const params = new URLSearchParams(window.location.search);
-    return params.get("mode") === "repair" || window.location.hash === "#repair" || params.get("repair") === "1";
+  const [lifecycleRoute, setLifecycleRoute] = React.useState<LifecycleRoute | null>(() => {
+    return resolveLifecycleRoute();
   });
 
   React.useEffect(() => {
     const handleHashChange = () => {
-      if (window.location.hash === "#setup") {
-        setInstallerMode(true);
-      } else if (window.location.hash === "#uninstall") {
-        setUninstallerMode(true);
-      } else if (window.location.hash === "#repair") {
-        setRepairMode(true);
-      }
+      const resolved = resolveLifecycleRoute();
+      setLifecycleRoute(resolved);
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  if (repairMode) {
+  if (lifecycleRoute) {
     return (
-      <RepairWizard
-        onDone={() => {
-          import("./services/tauriBridge").then((m) => m.tauriWindowClose());
-        }}
-      />
-    );
-  }
-
-  if (uninstallerMode) {
-    return (
-      <UninstallerWizard
-        onDone={() => {
-          import("./services/tauriBridge").then((m) => m.tauriWindowClose());
-        }}
-      />
-    );
-  }
-
-  if (installerMode) {
-    return (
-      <InstallerWizard
+      <LifecycleApp
+        route={lifecycleRoute}
         onDone={() => {
           import("./services/tauriBridge").then((m) => m.tauriWindowClose());
         }}

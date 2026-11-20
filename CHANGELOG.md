@@ -2,6 +2,34 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.21] - 2026-11-20
+
+### ⚡ Critical Hotfix & Architecture: Dedicated Lifecycle Engine, Autonomous Zero-Click Update, and LIFO Download Queue
+
+#### 1. Dedicated Backend Lifecycle Subsystem (`apps/desktop/src-tauri/src/lifecycle/`)
+- **Architectural Isolation**: Extracted 700+ lines of fragmented lifecycle logic out of `commands/system.rs` and `updater.rs` into a modular subsystem:
+  - `lifecycle/types.rs`: Clean schema definitions for `InstallOptions`, `RepairPlan`, `RepairReport`, `ExistingInstallationInfo`, `UpdateCheckResult`, and `RuntimeMode`.
+  - `lifecycle/platform/windows.rs`: Native Win32 COM (`IShellLinkW` / `IPersistFile`) shortcut generation (completely replacing child `powershell.exe` calls with zero console flashing), pure Win32 registry manipulation for NMH, autostart, protocols, and Toolhelp32 process & file lock checks.
+  - `lifecycle/install.rs`: Native installation engine with directory validation, binary co-location, and NMH registration.
+  - `lifecycle/repair.rs`: Targeted diagnostics & repair for browser NMH, COM shortcuts, and binary integrity with zero user data loss.
+  - `lifecycle/update.rs`: Polling releases, secure asset streaming, staging to `%LOCALAPPDATA%\EDM\staging\`, pre-flight file lock validation, and detached handoff without in-place deadlocks.
+  - `lifecycle/uninstall.rs`: Native uninstallation (NMH, protocols, shortcuts, user data purge vs keep settings, detached cleanup).
+  - `lifecycle/manager.rs` & `lifecycle/mod.rs`: Runtime mode dispatcher (`Normal`, `Setup`, `Repair`, `Update`, `Uninstall`), window sizing (680x440), and background service gating.
+
+#### 2. Dedicated Frontend Lifecycle Directory & Autonomous Zero-Click Update UI
+- **Frameless Lifecycle Suite (`apps/desktop/src/lifecycle/`)**:
+  - `wizards/UpdateWizard.tsx`: Modern frameless dark glassmorphic 680x440 update UI. Autonomous zero-click execution: streams OTA update payload, listens to live progress, displays real-time transfer rate and ETA telemetry, release notes, staging status pipeline, and auto-restart countdown. Replaces legacy Win32 NSIS dialogs completely.
+  - `wizards/InstallWizard.tsx`, `wizards/RepairWizard.tsx`, `wizards/UninstallWizard.tsx`: Relocated under `lifecycle/wizards/` with backwards-compatible re-exports in `components/`.
+  - `LifecycleApp.tsx`: Unified shell routing `#setup`, `#repair`, `#update`, `#uninstall`.
+
+#### 3. NSIS Modern UI Delegation (Zero Legacy NSIS Dialogs)
+- **Root Cause of Legacy NSIS Window**: Passing `/P` (passive mode) set `$PassiveMode = 1` in `installer.nsi`, which skipped the modern UI hook (`$PassiveMode <> 1`) and fell back to the 1995-era Win32 `INSTFILES` extract dialog.
+- **Modern Delegation**: Updated `installer.nsi` so `/UPDATE` or update hand-off launches `"$PLUGINSDIR\${MAINBINARYNAME}.exe" --update` via the modern frameless UI instead of falling through to `MUI_PAGE_INSTFILES`.
+
+#### 4. LIFO Download Stacking Order & Actions Column Left-Alignment
+- **LIFO Download Order**: Added `createdAt: number` timestamp to `DownloadTask`. Updated `App.tsx` sort comparator for `dateAdded` to use `(b.createdAt - a.createdAt)`, ensuring the newest download is placed at row 1 (file 1 becomes 2nd when file 2 is added).
+- **Actions Column Alignment**: Updated table header `<th className="text-right">` to `<th className="text-left pl-3 sm:pl-4">` for symmetric column alignment.
+
 ## [v0.0.19] - 2026-11-19
 
 ### ⚡ Hotfix: Extension Queued Download State & Parity Alignment
