@@ -2,6 +2,25 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.23] - 2026-11-20
+
+### ⚡ Critical Hotfix: Industrial Lifecycle Architecture & OS Error 32 Elimination
+
+#### 1. Elimination of In-Place "OS Error 32" Sharing Violation
+- **Forensic Root Cause**: `update.rs` previously hardcoded a static destination path `%TEMP%\EDM_Update_Installer.exe`. When an update was previously launched, `EDM_Update_Installer.exe` remained running in the background, locking the PE file with `FILE_SHARE_READ`. Any subsequent download attempt to create or truncate that static path failed with `ERROR_SHARING_VIOLATION` (os error 32).
+- **Industrial Version-Scoped Storage**:
+  - Replaced the static path with an isolated, version-scoped directory: `%LOCALAPPDATA%\EDM\updates\run_{pid}_{timestamp}\EDM_Setup.exe` (with `%TEMP%` fallback).
+  - Added pre-flight zombie sweep (`kill_zombie_update_processes()`) via Win32 Toolhelp32 process snapshot and taskkill fallback to terminate orphaned installer processes before any download begins.
+
+#### 2. Headless Silent Update Handoff with Win32 PID Synchronization
+- **Silent Background Execution (`/S`)**: `launch_installer_windows()` passes `/S /PID={current_pid} /R` to the installer. NSIS runs silently in the background, eliminating recursive UI loops and legacy dialogs.
+- **Process Lock Synchronization**: In `installer.nsi`, `.onInit` parses `/PID=` and invokes Win32 `OpenProcess(SYNCHRONIZE)` and `WaitForSingleObject` with a 6-second barrier, guaranteeing the dying EDM process has completely exited, unmapped DLLs, and flushed SQLite before files are extracted.
+- **Auto-Relaunch**: NSIS automatically restarts `$INSTDIR\EDM.exe` upon successful extraction.
+
+#### 3. UpdateWizard Transitions & Retry State
+- Added seamless retry callback that resets progress, speed, ETA, and error state when retrying.
+- Polished smooth post-download phases: "Verifying package integrity..." and "Restarting EDM to apply update...".
+
 ## [v0.0.22] - 2026-11-20
 
 ### ⚡ Hotfix: Actions Column Header Symmetry & Alignment

@@ -76,6 +76,7 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var TargetPID
 
 Name "${PRODUCTNAME}"
 BrandingText "EDM — Fast, Intelligent Native Download Accelerator"
@@ -523,6 +524,25 @@ LangString choowHowToInstall 0 ""
 {{/each}}
 
 Function .onInit
+  ClearErrors
+  ${GetOptions} $CMDLINE "/PID=" $TargetPID
+  ${If} ${Errors}
+    ClearErrors
+    ${GetOptions} $CMDLINE "/PID" $TargetPID
+  ${EndIf}
+  ${IfNot} ${Errors}
+    ${If} $TargetPID != ""
+      ; OpenProcess with SYNCHRONIZE (0x00100000) to wait for dying EDM process
+      System::Call 'kernel32::OpenProcess(i 0x00100000, i 0, i $TargetPID) p .r0'
+      ${If} $0 != 0
+        ; Wait up to 6000 ms for the dying EDM process to completely close and release all file locks
+        System::Call 'kernel32::WaitForSingleObject(p r0, i 6000) i .r1'
+        System::Call 'kernel32::CloseHandle(p r0)'
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -869,13 +889,17 @@ Function .onInstSuccess
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1
   ${OrIf} ${Silent}
+    ClearErrors
     ${GetOptions} $CMDLINE "/R" $R0
     ${IfNot} ${Errors}
-      ${GetOptions} $CMDLINE "/ARGS" $R0
+      ClearErrors
+      StrCpy $R1 ""
+      ${GetOptions} $CMDLINE "/ARGS" $R1
+      ClearErrors
       !if "${INSTALLMODE}" == "currentUser"
-        ExecShell "" "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+        ExecShell "" "$INSTDIR\${MAINBINARYNAME}.exe" "$R1"
       !else
-        nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+        nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R1"
       !endif
     ${EndIf}
   ${EndIf}

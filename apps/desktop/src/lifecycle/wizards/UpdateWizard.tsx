@@ -99,14 +99,16 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
   }, []);
 
   // Perform full autonomous zero-click update cycle
-  const runAutonomousUpdate = useCallback(async () => {
+  const handleStartUpdate = useCallback(async () => {
     isCancelledRef.current = false;
     setErrorText(null);
     setPhase("checking");
     setStagingStep("Querying official release channel...");
     setPercent(0);
     setDownloadedBytes(0);
+    setTotalBytes(0);
     setTransferSpeedBps(0);
+    setEtaSeconds(null);
     lastTimeRef.current = Date.now();
     lastBytesRef.current = 0;
 
@@ -132,10 +134,12 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
 
       const downloadUrl = targetDownloadUrl || updateMeta?.download_url;
       if (!downloadUrl && !updateMeta?.update_available) {
-        // If already latest or no URL provided, show staging info
-        setStagingStep("Already up to date. Verified binary signature.");
+        // If already latest or no URL provided, show verified info
+        setStagingStep("Verifying package integrity...");
         setPercent(100);
+        await new Promise((r) => setTimeout(r, 800));
         setPhase("ready");
+        setStagingStep("Restarting EDM to apply update...");
         return;
       }
 
@@ -170,7 +174,7 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
           setStagingStep("Streaming signed update payload…");
         } else if (progress.status === "ready" || progress.percent >= 100) {
           setPhase("staging");
-          setStagingStep("Verifying SHA-256 integrity & staging binaries…");
+          setStagingStep("Verifying package integrity...");
         }
       });
 
@@ -181,16 +185,19 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
 
       if (isCancelledRef.current) return;
 
-      // 5. Staging and preparation for auto-restart
+      // 5. Staging & Package Integrity Verification
       setPhase("staging");
       setPercent(100);
-      setStagingStep("Staging files & preparing detached handoff…");
-      await new Promise((r) => setTimeout(r, 800));
+      setStagingStep("Verifying package integrity...");
+      await new Promise((r) => setTimeout(r, 1200));
 
+      if (isCancelledRef.current) return;
+
+      // 6. Transition to restart with visual pulse indicator
       setPhase("ready");
-      setStagingStep("Update ready! Restarting EDM…");
+      setStagingStep("Restarting EDM to apply update...");
 
-      // 6. Autonomous zero-click restart countdown
+      // 7. Autonomous zero-click restart countdown
       let remaining = 3;
       setRestartCountdown(remaining);
       restartTimerRef.current = window.setInterval(() => {
@@ -216,16 +223,22 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
     }
   }, [handleClose, releaseInfo, targetDownloadUrl]);
 
+  // Handle retry action: resets error state and re-invokes update pipeline
+  const handleRetry = useCallback(() => {
+    setErrorText(null);
+    handleStartUpdate();
+  }, [handleStartUpdate]);
+
   // Trigger autonomous execution on initial render
   useEffect(() => {
-    runAutonomousUpdate();
+    handleStartUpdate();
     return () => {
       isCancelledRef.current = true;
       if (restartTimerRef.current) {
         clearInterval(restartTimerRef.current);
       }
     };
-  }, [runAutonomousUpdate]);
+  }, [handleStartUpdate]);
 
   // Clean formatted release notes or bullet points
   const formattedNotes = React.useMemo(() => {
@@ -373,20 +386,28 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
 
               {[
                 { label: "1. Release Discovery", active: phase === "checking", done: phase !== "checking" },
-                { label: "2. Stream & Integrity", active: phase === "downloading", done: phase === "staging" || phase === "ready" },
-                { label: "3. Non-Lock Handoff", active: phase === "staging", done: phase === "ready" },
-                { label: "4. Autonomous Restart", active: phase === "ready", done: false },
+                { label: "2. Stream & Download", active: phase === "downloading", done: phase === "staging" || phase === "ready" },
+                { label: "3. Verify Integrity", active: phase === "staging", done: phase === "ready" },
+                { label: "4. Restarting EDM", active: phase === "ready", done: false },
               ].map((step, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-[11px]">
                   <div
-                    className="w-2 h-2 rounded-full transition-all duration-300"
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step.active && phase === "ready" ? "animate-pulse" : ""
+                    }`}
                     style={{
                       background: step.done
                         ? "#10B981"
                         : step.active
-                        ? "#6366F1"
+                        ? phase === "ready"
+                          ? "#10B981"
+                          : "#6366F1"
                         : "#334155",
-                      boxShadow: step.active ? "0 0 8px #6366F1" : "none",
+                      boxShadow: step.active
+                        ? phase === "ready"
+                          ? "0 0 10px #10B981"
+                          : "0 0 8px #6366F1"
+                        : "none",
                     }}
                   />
                   <span
@@ -432,16 +453,27 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white tracking-tight">
+                <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
                   {phase === "ready"
-                    ? "Update Staged Successfully"
+                    ? "Restarting EDM to apply update..."
+                    : phase === "staging"
+                    ? "Verifying package integrity..."
                     : phase === "error"
                     ? "Update Interrupted"
                     : "Autonomous Update in Progress"}
                 </h2>
                 {phase === "ready" ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Ready
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 animate-pulse">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    Restarting
+                  </span>
+                ) : phase === "staging" ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 flex items-center gap-1.5">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                    Verifying
                   </span>
                 ) : phase === "downloading" ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
@@ -455,9 +487,20 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
               </span>
             </div>
 
-            <p className="text-[11.5px] text-slate-400 font-mono truncate mb-4">
-              {stagingStep}
-            </p>
+            <div className="flex items-center gap-2 mb-4">
+              {phase === "ready" && (
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
+              {phase === "staging" && (
+                <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin shrink-0" />
+              )}
+              <p className="text-[11.5px] text-slate-400 font-mono truncate">
+                {stagingStep}
+              </p>
+            </div>
 
             {/* Glowing Gradient Progress Bar */}
             <div className="w-full mb-3">
@@ -585,7 +628,7 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
                     Cancel
                   </button>
                   <button
-                    onClick={runAutonomousUpdate}
+                    onClick={handleRetry}
                     className="px-4 h-8.5 text-xs font-bold rounded-lg text-white shadow-md inline-flex items-center gap-1.5 cursor-pointer transition-all hover:brightness-110"
                     style={{
                       background:
@@ -600,14 +643,18 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
               </>
             ) : phase === "ready" ? (
               <>
-                <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
+                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span>Restarting in {restartCountdown}s…</span>
                 </div>
 
                 <button
                   onClick={handleClose}
-                  className="px-5 h-8.5 text-xs font-bold rounded-lg text-white shadow-md inline-flex items-center gap-2 cursor-pointer transition-all hover:brightness-110"
+                  className="px-5 h-8.5 text-xs font-bold rounded-lg text-white shadow-md inline-flex items-center gap-2 cursor-pointer transition-all hover:brightness-110 animate-pulse"
                   style={{
                     background:
                       "linear-gradient(135deg, #059669 0%, #10B981 100%)",

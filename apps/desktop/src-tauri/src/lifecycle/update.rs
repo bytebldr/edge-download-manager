@@ -6,6 +6,127 @@ use super::platform;
 use super::types::{OtaProgress, UpdateCheckResult};
 use crate::AppState;
 
+static LATEST_INSTALLER_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+pub fn set_latest_installer_path(path: PathBuf) {
+    if let Ok(mut lock) = LATEST_INSTALLER_PATH.write() {
+        *lock = Some(path);
+    }
+}
+
+pub fn get_latest_installer_path() -> Option<PathBuf> {
+    if let Ok(lock) = LATEST_INSTALLER_PATH.read() {
+        if let Some(ref p) = *lock {
+            if p.exists() {
+                return Some(p.clone());
+            }
+        }
+    }
+    None
+}
+
+pub fn get_update_dir() -> PathBuf {
+    match std::env::var("LOCALAPPDATA") {
+        Ok(dir) => PathBuf::from(dir).join("EDM").join("updates"),
+        Err(_) => match std::env::var("APPDATA") {
+            Ok(dir) => PathBuf::from(dir).join("EDM").join("updates"),
+            Err(_) => std::env::temp_dir().join("EDM").join("updates"),
+        },
+    }
+}
+
+#[cfg(windows)]
+extern "system" {
+    fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> *mut std::ffi::c_void;
+    fn Process32FirstW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
+    fn Process32NextW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
+    fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+    fn TerminateProcess(hProcess: *mut std::ffi::c_void, uExitCode: u32) -> i32;
+    fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+}
+
+#[cfg(windows)]
+const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+#[cfg(windows)]
+const PROCESS_TERMINATE: u32 = 0x0001;
+#[cfg(windows)]
+const INVALID_HANDLE_VALUE: *mut std::ffi::c_void = -1isize as *mut std::ffi::c_void;
+
+#[cfg(windows)]
+#[repr(C)]
+#[allow(non_snake_case)]
+struct PROCESSENTRY32W {
+    dwSize: u32,
+    cntUsage: u32,
+    th32ProcessID: u32,
+    th32DefaultHeapID: usize,
+    th32ModuleID: u32,
+    cntThreads: u32,
+    th32ParentProcessID: u32,
+    pcPriClassBase: i32,
+    dwFlags: u32,
+    szExeFile: [u16; 260],
+}
+
+pub fn kill_zombie_update_processes() {
+    append_update_log("Sweeping and terminating zombie update processes...");
+
+    #[cfg(windows)]
+    {
+        unsafe {
+            let current_pid = std::process::id();
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot != INVALID_HANDLE_VALUE {
+                let mut entry = PROCESSENTRY32W {
+                    dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                    cntUsage: 0,
+                    th32ProcessID: 0,
+                    th32DefaultHeapID: 0,
+                    th32ModuleID: 0,
+                    cntThreads: 0,
+                    th32ParentProcessID: 0,
+                    pcPriClassBase: 0,
+                    dwFlags: 0,
+                    szExeFile: [0; 260],
+                };
+
+                let target_names = ["edm_update_installer.exe", "edm_setup.exe"];
+
+                if Process32FirstW(snapshot, &mut entry) != 0 {
+                    loop {
+                        let pid = entry.th32ProcessID;
+                        if pid != current_pid && pid != 0 {
+                            let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                            let name = String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase();
+                            if target_names.iter().any(|&t| t == name || name.starts_with("edm_setup") || name.starts_with("edm_update")) {
+                                let proc_handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+                                if !proc_handle.is_null() {
+                                    let _ = TerminateProcess(proc_handle, 0);
+                                    CloseHandle(proc_handle);
+                                    append_update_log(&format!("Terminated zombie update process: {} (PID: {})", name, pid));
+                                }
+                            }
+                        }
+                        if Process32NextW(snapshot, &mut entry) == 0 {
+                            break;
+                        }
+                    }
+                }
+                CloseHandle(snapshot);
+            }
+        }
+
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "EDM_Update_Installer.exe", "/IM", "EDM_Setup.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+}
+
 fn append_update_log(message: &str) {
     let log_dir = match std::env::var("LOCALAPPDATA") {
         Ok(dir) => PathBuf::from(dir).join("EDM").join("logs"),
@@ -184,10 +305,22 @@ pub async fn install_update(
         return Err("Security violation: Update download URL must originate from official bytebldr/edge-download-manager GitHub releases".into());
     }
 
-    let temp_dir = std::env::temp_dir();
-    let installer_path = temp_dir.join("EDM_Update_Installer.exe");
+    // Sweep and terminate any lingering zombie update processes before downloading
+    kill_zombie_update_processes();
 
-    append_update_log(&format!("Starting download of update asset from: {}", trimmed));
+    let updates_base = get_update_dir();
+    let pid = std::process::id();
+    let timestamp = chrono::Utc::now().timestamp_millis();
+    let run_dir = updates_base.join(format!("run_{}_{}", pid, timestamp));
+    let _ = std::fs::create_dir_all(&run_dir);
+    let installer_path = run_dir.join("EDM_Setup.exe");
+    set_latest_installer_path(installer_path.clone());
+
+    append_update_log(&format!(
+        "Starting download of update asset from: {} to: {}",
+        trimmed,
+        installer_path.display()
+    ));
 
     let client = reqwest::Client::builder()
         .user_agent("EDM-OTA-Updater")
@@ -299,9 +432,9 @@ pub async fn install_update(
     append_update_log("Terminating sibling EDM processes...");
     let _ = platform::terminate_sibling_instances();
 
-    // Detached handoff to updater package
+    // Detached handoff to updater package with silent headless flags
     append_update_log(&format!("Handing off execution to update package: {}", installer_path.display()));
-    launch_installer_detached(&installer_path)?;
+    launch_installer_windows(&installer_path)?;
 
     // Gracefully shut down current instance to prevent file locks
     append_update_log("Initiating graceful shutdown of current instance for update replacement...");
@@ -310,14 +443,22 @@ pub async fn install_update(
     Ok(())
 }
 
-fn launch_installer_detached(installer_path: &Path) -> Result<(), String> {
+pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
 
+        let current_pid = std::process::id();
+        let params_str = format!("/S /PID={} /R", current_pid);
+        append_update_log(&format!(
+            "Launching installer: {} with parameters: {}",
+            installer_path.display(),
+            params_str
+        ));
+
         let path_wide: Vec<u16> = installer_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-        let params_wide: Vec<u16> = OsStr::new("/UPDATE").encode_wide().chain(std::iter::once(0)).collect();
+        let params_wide: Vec<u16> = OsStr::new(&params_str).encode_wide().chain(std::iter::once(0)).collect();
 
         extern "system" {
             fn ShellExecuteW(
@@ -346,10 +487,12 @@ fn launch_installer_detached(installer_path: &Path) -> Result<(), String> {
         };
 
         if res > 32 {
+            append_update_log("ShellExecuteW (open) succeeded");
             return Ok(());
         }
 
-        // Try runas fallback
+        append_update_log(&format!("ShellExecuteW (open) returned code {}, trying runas...", res));
+
         let runas_res = unsafe {
             ShellExecuteW(
                 std::ptr::null_mut(),
@@ -362,16 +505,18 @@ fn launch_installer_detached(installer_path: &Path) -> Result<(), String> {
         };
 
         if runas_res > 32 {
+            append_update_log("ShellExecuteW (runas) succeeded");
             return Ok(());
         }
 
-        // Command::new detached breakaway fallback
+        append_update_log(&format!("ShellExecuteW (runas) returned code {}, trying Command spawn fallback...", runas_res));
+
         use std::os::windows::process::CommandExt;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
         let mut cmd = std::process::Command::new(installer_path);
-        cmd.arg("/UPDATE");
+        cmd.args(["/S", &format!("/PID={}", current_pid), "/R"]);
         cmd.creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP);
         cmd.spawn()
             .map(|_| ())
@@ -387,20 +532,61 @@ fn launch_installer_detached(installer_path: &Path) -> Result<(), String> {
     }
 }
 
+pub fn launch_installer_detached(installer_path: &Path) -> Result<(), String> {
+    launch_installer_windows(installer_path)
+}
+
 pub fn open_installer_folder() -> Result<(), String> {
-    let temp_dir = std::env::temp_dir();
-    let installer_path = temp_dir.join("EDM_Update_Installer.exe");
-    append_update_log(&format!("Frontend requested open_installer_folder: target='{}'", installer_path.display()));
+    let updates_base = get_update_dir();
+    let target_path = get_latest_installer_path().or_else(|| {
+        if let Ok(entries) = std::fs::read_dir(&updates_base) {
+            let mut runs: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_dir()
+                        && p.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.starts_with("run_"))
+                            .unwrap_or(false)
+                })
+                .collect();
+            runs.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+            runs.reverse();
+            for r in runs {
+                let exe = r.join("EDM_Setup.exe");
+                if exe.exists() {
+                    return Some(exe);
+                }
+            }
+        }
+        None
+    });
+
+    append_update_log(&format!(
+        "Frontend requested open_installer_folder: target='{:?}' (base='{}')",
+        target_path,
+        updates_base.display()
+    ));
 
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new("explorer");
-        if installer_path.exists() {
-            let arg = format!("/select,\"{}\"", installer_path.display());
-            cmd.raw_arg(&arg);
+        if let Some(ref path) = target_path {
+            if path.exists() {
+                let arg = format!("/select,\"{}\"", path.display());
+                cmd.raw_arg(&arg);
+            } else if let Some(parent) = path.parent() {
+                cmd.arg(parent);
+            } else {
+                cmd.arg(&updates_base);
+            }
+        } else if updates_base.exists() {
+            cmd.arg(&updates_base);
         } else {
+            let temp_dir = std::env::temp_dir();
             cmd.arg(&temp_dir);
         }
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -410,7 +596,11 @@ pub fn open_installer_folder() -> Result<(), String> {
 
     #[cfg(not(windows))]
     {
-        open::that(&temp_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
+        let target_dir = target_path
+            .as_ref()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or(updates_base);
+        open::that(&target_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
         Ok(())
     }
 }
