@@ -5,7 +5,7 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Terminate any running EDM processes to prevent locked binaries during install/reinstall
   nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
-  Sleep 300
+  Sleep 500
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -48,12 +48,18 @@ found_nmh:
     Goto done_webview2
 done_webview2:
 
-  ; Ensure BOTH edm-desktop-app.exe and EDM.exe exist in $INSTDIR and are ALWAYS overwritten with the newest payload
-  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 +2
+  ; Ensure BOTH edm-desktop-app.exe and EDM.exe exist in $INSTDIR.
+  ; EDM.exe (the fresh payload) MUST overwrite edm-desktop-app.exe, NEVER the reverse!
+  ; Only copy edm-desktop-app.exe to EDM.exe if EDM.exe is absent.
+  IfFileExists "$INSTDIR\EDM.exe" 0 check_legacy_binary
+    CopyFiles /SILENT "$INSTDIR\EDM.exe" "$INSTDIR\edm-desktop-app.exe"
+    Goto done_binary_sync
+
+check_legacy_binary:
+  IfFileExists "$INSTDIR\edm-desktop-app.exe" 0 done_binary_sync
     CopyFiles /SILENT "$INSTDIR\edm-desktop-app.exe" "$INSTDIR\EDM.exe"
 
-  IfFileExists "$INSTDIR\EDM.exe" 0 +2
-    CopyFiles /SILENT "$INSTDIR\EDM.exe" "$INSTDIR\edm-desktop-app.exe"
+done_binary_sync:
 
   ; Mirror WebView2Loader.dll into %LOCALAPPDATA%\EDM if INSTDIR is different
   IfFileExists "$INSTDIR\WebView2Loader.dll" 0 +2
@@ -131,7 +137,7 @@ done_webview2:
   WriteRegStr HKCU "Software\EDM" "AppPath" "$INSTDIR\EDM.exe"
 done_apppath:
   WriteRegStr HKCU "Software\EDM" "NmhPath" "$LOCALAPPDATA\EDM\edm-nmh.exe"
-  WriteRegStr HKCU "Software\EDM" "Version" "0.0.24"
+  WriteRegStr HKCU "Software\EDM" "Version" "0.0.25"
 
   WriteRegStr HKCU "Software\Classes\edm" "" "URL:EDM Protocol"
   WriteRegStr HKCU "Software\Classes\edm" "URL Protocol" ""

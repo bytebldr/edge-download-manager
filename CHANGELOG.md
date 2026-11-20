@@ -2,6 +2,23 @@
 
 All notable changes to Edge Download Manager (EDM) are documented in this file.
 
+## [v0.0.25] - 2026-11-20
+
+### ⚡ Critical Hotfix: NSIS Forward-Only Binary Synchronization & Update Loop Elimination
+
+#### 1. Forward-Only Binary Synchronization in NSIS Hooks (`hooks.nsh`)
+- **Downgrade Overwrite Bug Elimination**: Fixed binary copy logic in `NSIS_HOOK_POSTINSTALL`. Previously, an older `edm-desktop-app.exe` present in `$INSTDIR` could erroneously overwrite a freshly installed `EDM.exe`, reverting the binary to an older build and causing perpetual version stagnation.
+- **Forward-Only Sync**: `EDM.exe` (the fresh installation payload) is now guaranteed to synchronize forward to `edm-desktop-app.exe`, ensuring all entry points reference the newest version. Only copies in reverse if `EDM.exe` is completely absent.
+- **Preinstall Process Cleanup**: Strengthened `NSIS_HOOK_PREINSTALL` with thorough process termination and handle release for `EDM.exe`, `edm-desktop-app.exe`, and `edm-nmh.exe` to prevent file locking during updates.
+
+#### 2. Elimination of Early `Quit` Trap on Passive and Update Flags (`installer.nsi`)
+- **Installer Mode Bypass Fix**: Resolved issue where invoking the installer with `/P` (passive) or `/UPDATE` triggered an early `Quit` in `.onInit`, prematurely exiting the installer before reaching `Section Install`.
+- **Silent Extraction Flow**: Updated conditional guards so that headless/silent and passive update workflows bypass interactive setup UI dialogs without quitting, allowing execution to proceed directly to file extraction into `$INSTDIR`.
+
+#### 3. Elimination of Update Loop in UpdateWizard & Version Stagnation
+- **Root Cause**: The combination of early installer exit and reverse binary overwrite caused newly staged update payloads to never properly apply, leaving the running application on an older version and triggering immediate re-prompts for updates in `UpdateWizard`.
+- **Seamless Update Application**: Verified end-to-end atomic update handoff and restart cycle, ensuring the newly installed v0.0.25 binary runs immediately upon update completion with zero version stagnation or update loops.
+
 ## [v0.0.24] - 2026-11-20
 
 ### ⚡ Critical Hotfix: Extension LIFO Queue Parity & Dual Deletion Architecture

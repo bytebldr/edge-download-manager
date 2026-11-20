@@ -591,13 +591,15 @@ Function .onInit
   !endif
 
   ; ============================================================
-  ; EDM UI-DELEGATE: Skip all Win32 wizard pages for interactive
-  ; installs; instead launch the frameless modern setup wizard.
-  ; Extracts main binary and essential runtime resources (including
-  ; WebView2Loader.dll) to $PLUGINSDIR and hands off to the modern UI.
-  ; Runs for fresh installs, updates, and reinstalls.
+  ; EDM UI-DELEGATE: Skip Win32 wizard pages for fresh interactive
+  ; installs; instead launch the frameless modern setup wizard (--setup).
+  ; When an update or non-interactive install is invoked (/P, /UPDATE, or /S),
+  ; do NOT call Quit in .onInit. Allow execution to proceed directly to
+  ; Section Install to extract fresh files directly into $INSTDIR!
   ; ============================================================
   ${IfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+  ${AndIf} $UpdateMode <> 1
     ; Gracefully stop running EDM and NMH processes before extracting/updating
     nsExec::Exec 'taskkill /F /IM EDM.exe /IM edm-desktop-app.exe /IM edm-nmh.exe /T'
     Sleep 400
@@ -641,13 +643,8 @@ plugins_wv2_done:
       Goto plugins_nmh_done
 plugins_nmh_done:
 
-    ; Launch the modern frameless UI (--update or --setup)
-    ${If} $UpdateMode = 1
-    ${OrIf} $PassiveMode = 1
-      ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --update' $0
-    ${Else}
-      ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
-    ${EndIf}
+    ; Launch the modern frameless UI (--setup)
+    ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --setup' $0
     ; Clean up the temporary extracted setup files immediately
     RMDir /r "$PLUGINSDIR"
     Quit

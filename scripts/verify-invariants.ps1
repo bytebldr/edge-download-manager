@@ -31,17 +31,25 @@ if (Test-Path $hooksPath) {
 }
 
 # -----------------------------------------------------------------------------
-# Invariant 2: Bidirectional binary co-location in NSIS hooks
+# Invariant 2: Forward binary synchronization in NSIS hooks (no destructive overwrite)
 # -----------------------------------------------------------------------------
-Write-Host "`n[Check 2/6] Verifying binary bidirectional co-location in hooks.nsh..." -ForegroundColor Yellow
+Write-Host "`n[Check 2/6] Verifying forward binary synchronization in hooks.nsh..." -ForegroundColor Yellow
 if (Test-Path $hooksPath) {
     $hooksContent = Get-Content $hooksPath -Raw
     $hasEdmToDesktop = $hooksContent -match 'CopyFiles\s+/SILENT\s+"\$INSTDIR\\EDM\.exe"\s+"\$INSTDIR\\edm-desktop-app\.exe"'
     $hasDesktopToEdm = $hooksContent -match 'CopyFiles\s+/SILENT\s+"\$INSTDIR\\edm-desktop-app\.exe"\s+"\$INSTDIR\\EDM\.exe"'
-    if (-not ($hasEdmToDesktop -and $hasDesktopToEdm)) {
-        $Failures += "CRITICAL INVARIANT VIOLATION (CRIT-01): hooks.nsh must enforce bidirectional co-location between edm-desktop-app.exe and EDM.exe so both exist in \$INSTDIR."
+    
+    $edmPos = $hooksContent.IndexOf('CopyFiles /SILENT "$INSTDIR\EDM.exe" "$INSTDIR\edm-desktop-app.exe"')
+    $legacyPos = $hooksContent.IndexOf('CopyFiles /SILENT "$INSTDIR\edm-desktop-app.exe" "$INSTDIR\EDM.exe"')
+
+    if (-not $hasEdmToDesktop) {
+        $Failures += "CRITICAL INVARIANT VIOLATION (CRIT-01): hooks.nsh must enforce forward synchronization from EDM.exe to edm-desktop-app.exe."
+    } elseif ($legacyPos -ne -1 -and $legacyPos -lt $edmPos) {
+        $Failures += "CRITICAL INVARIANT VIOLATION (CRIT-01): hooks.nsh has destructive reverse overwrite! edm-desktop-app.exe is copied before EDM.exe, corrupting fresh updates with older binaries."
+    } elseif (-not ($hooksContent -match 'IfFileExists\s+"\$INSTDIR\\EDM\.exe"\s+0\s+check_legacy_binary')) {
+        $Failures += "CRITICAL INVARIANT VIOLATION (CRIT-01): hooks.nsh must guard legacy fallback so edm-desktop-app.exe is only copied if EDM.exe is absent."
     } else {
-        Write-Host "  PASS: Bidirectional co-location verified in hooks.nsh." -ForegroundColor Green
+        Write-Host "  PASS: Forward synchronization verified in hooks.nsh (EDM.exe -> edm-desktop-app.exe without destructive reverse overwrite)." -ForegroundColor Green
     }
 }
 
