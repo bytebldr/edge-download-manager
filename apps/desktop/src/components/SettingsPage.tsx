@@ -1017,7 +1017,7 @@ export default function SettingsPage({
                   >
                     <option value="always_ask">Always ask (show confirmation modal)</option>
                     <option value="list_only">Remove from list only (always keep files on disk)</option>
-                    <option value="delete_file">Move file to Recycle Bin and remove from list</option>
+                    <option value="delete_file">Delete file and remove from list (Recycle Bin / fallback)</option>
                   </select>
                 </div>
               </div>

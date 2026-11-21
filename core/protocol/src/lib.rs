@@ -96,6 +96,8 @@ pub enum ExtensionMessage {
     },
     RemoveDownloadHistory {
         id: Uuid,
+        #[serde(default)]
+        delete_file: Option<bool>,
     },
     #[serde(alias = "token")]
     GetToken,

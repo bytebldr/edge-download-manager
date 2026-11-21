@@ -330,8 +330,13 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
             }
         }
 
-        ExtensionMessage::RemoveDownloadHistory { id } => {
-            let _ = state.store.delete_download(id);
+        ExtensionMessage::RemoveDownloadHistory { id, delete_file } => {
+            let _ = crate::services::download_manager::remove_download_task(
+                state,
+                &id.to_string(),
+                delete_file.unwrap_or(false),
+            )
+            .await;
             AppReply::Success {
                 action: "remove_history".into(),
                 id: Some(id),

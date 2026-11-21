@@ -1341,9 +1341,31 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
             }
         }
 
-        ExtensionMessage::RemoveDownloadHistory { id } => {
-            let s = store.lock().unwrap();
-            let _ = s.delete_download(id);
+        ExtensionMessage::RemoveDownloadHistory { id, delete_file } => {
+            let delete_on_disk = delete_file.unwrap_or(false);
+            let maybe_record = {
+                let s = store.lock().unwrap();
+                s.list_all_downloads()
+                    .ok()
+                    .and_then(|recs| recs.into_iter().find(|d| d.id == id))
+            };
+            {
+                let s = store.lock().unwrap();
+                let _ = s.delete_download(id);
+            }
+            if delete_on_disk {
+                if let Some(r) = maybe_record {
+                    let base_dir = std::path::PathBuf::from(r.save_dir);
+                    let target_file = base_dir.join(&r.filename);
+                    let part_file = base_dir.join(format!("{}.edmpart", r.filename));
+                    if target_file.exists() {
+                        let _ = std::fs::remove_file(&target_file);
+                    }
+                    if part_file.exists() {
+                        let _ = std::fs::remove_file(&part_file);
+                    }
+                }
+            }
             AppReply::Success {
                 action: "remove_history".into(),
                 id: Some(id),

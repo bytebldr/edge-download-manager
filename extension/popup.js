@@ -959,7 +959,7 @@
         </div>
         <div class="modal-buttons" style="display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin-top: 4px;">
           <button id="modalRemoveListBtn" class="btn-3d" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500;">Remove from list only</button>
-          <button id="modalRecycleFileBtn" class="btn-3d btn-danger" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500; background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #f59e0b; color: #ffffff;">Move File to Recycle Bin &amp; Remove</button>
+          <button id="modalRecycleFileBtn" class="btn-3d btn-danger" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500; background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #f59e0b; color: #ffffff;">Delete File &amp; Remove</button>
           <button id="modalCancelBtn" class="btn-3d" style="padding: 7px 12px; font-size: 11px; opacity: 0.85; margin-top: 2px;">Cancel</button>
         </div>
       </div>
@@ -1106,7 +1106,7 @@
             <select id="deletePrefSelect" style="background: #040914; border: 1px solid #1a2a44; border-radius: 8px; color: #FFFFFF; font-size: 11.5px; padding: 6px 10px;">
               <option value="always_ask" ${this.deletePreference === "always_ask" ? "selected" : ""}>Always ask (Show confirmation)</option>
               <option value="list_only" ${this.deletePreference === "list_only" ? "selected" : ""}>Remove from list only</option>
-              <option value="delete_file" ${this.deletePreference === "delete_file" ? "selected" : ""}>Move file to Recycle Bin &amp; remove</option>
+              <option value="delete_file" ${this.deletePreference === "delete_file" ? "selected" : ""}>Delete file &amp; remove (Recycle Bin / fallback)</option>
             </select>
           </div>
         </div>

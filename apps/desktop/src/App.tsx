@@ -2555,7 +2555,7 @@ export default function App() {
                     </div>
                   </button>
 
-                  {/* Choice 2: Move File to Recycle Bin & Remove */}
+                  {/* Choice 2: Delete File & Remove */}
                   <button
                     type="button"
                     onClick={() => handleConfirmDelete(true)}
@@ -2566,10 +2566,10 @@ export default function App() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-semibold text-rose-300 block">
-                        Move File to Recycle Bin & Remove
+                        Delete File &amp; Remove from List
                       </span>
                       <span className="text-[11px] text-[var(--text-muted)] block mt-0.5">
-                        Safely moves to Windows Recycle Bin
+                        Safely moves to Recycle Bin (permanent delete fallback)
                       </span>
                     </div>
                   </button>

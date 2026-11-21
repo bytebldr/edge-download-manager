@@ -813,7 +813,7 @@ pub async fn remove_download_task(
     }
 
     // Yield control briefly to allow any closing file handles on Windows to release
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // 2. Lookup record in store for file paths if delete_file requested
     let id_uuid = Uuid::parse_str(id_str).map_err(|e| format!("Invalid UUID: {}", e))?;
@@ -829,25 +829,85 @@ pub async fn remove_download_task(
     // 4. Remove from ws_manager live memory and broadcast task_removed immediately
     state.ws_manager.broadcast_task_removed(id_str).await;
 
-    // 5. If delete_file, send target file and .edmpart to Recycle Bin with retry
+    // 5. If delete_file, safely send target file and .edmpart to Recycle Bin with guaranteed fallback
     if delete_file {
         if let Some(r) = maybe_record {
             let base_dir = PathBuf::from(r.save_dir);
             let target_file = base_dir.join(&r.filename);
             let part_file = base_dir.join(format!("{}.edmpart", r.filename));
+
+            // Target file deletion: Recycle Bin first, then permanent unlink fallback
             if target_file.exists() {
-                let _ = crate::ws_server::send_to_recycle_bin(&target_file);
+                let mut target_removed = false;
+                for attempt in 1..=3 {
+                    if !target_file.exists() {
+                        target_removed = true;
+                        break;
+                    }
+                    match crate::ws_server::send_to_recycle_bin(&target_file) {
+                        Ok(()) => {
+                            tracing::info!(
+                                "Moved target file {:?} to Recycle Bin on attempt {}",
+                                target_file,
+                                attempt
+                            );
+                            target_removed = true;
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Attempt {} send_to_recycle_bin failed for {:?}: {}. Retrying...",
+                                attempt,
+                                target_file,
+                                e
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                    }
+                }
+
+                // Fallback: If Recycle Bin failed (drive policy, network volume, or permissions), permanently delete
+                if !target_removed && target_file.exists() {
+                    tracing::warn!(
+                        "Recycle Bin failed for {:?}. Falling back to permanent std::fs::remove_file",
+                        target_file
+                    );
+                    for attempt in 1..=3 {
+                        if !target_file.exists() {
+                            break;
+                        }
+                        if let Err(e) = std::fs::remove_file(&target_file) {
+                            tracing::warn!(
+                                "Permanent remove_file attempt {} failed for {:?}: {}",
+                                attempt,
+                                target_file,
+                                e
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        } else {
+                            tracing::info!("Permanently unlinked target file {:?}", target_file);
+                            break;
+                        }
+                    }
+                }
             }
+
+            // Incomplete part file (.edmpart) deletion: Recycle Bin first, then permanent unlink
             if part_file.exists() {
-                // Retry sending to recycle bin up to 3 times in case file handle was releasing
+                let mut part_removed = false;
                 for _ in 0..3 {
                     if !part_file.exists() {
+                        part_removed = true;
                         break;
                     }
                     if crate::ws_server::send_to_recycle_bin(&part_file).is_ok() {
+                        part_removed = true;
                         break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                if !part_removed && part_file.exists() {
+                    let _ = std::fs::remove_file(&part_file);
                 }
             }
         }

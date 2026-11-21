@@ -178,12 +178,36 @@ pub fn secure_open_folder(save_dir: &std::path::Path, filename: &str) -> Result<
 /// Send file or directory to OS Recycle Bin safely instead of permanent unlink
 #[cfg(windows)]
 pub fn send_to_recycle_bin(path: &std::path::Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
-    wide.push(0);
-    wide.push(0);
+    // Normalize path to absolute and ensure backslashes
+    let path_buf = if path.is_relative() {
+        std::env::current_dir()?.join(path)
+    } else {
+        path.to_path_buf()
+    };
+    let clean_str = path_buf.to_string_lossy().replace('/', "\\");
+    // Strip verbatim prefix \\?\ if present because SHFileOperation rejects it
+    let clean_str = clean_str.strip_prefix(r"\\?\").unwrap_or(&clean_str);
 
-    #[repr(C, packed(2))]
+    let mut wide: Vec<u16> = clean_str.encode_utf16().collect();
+    wide.push(0);
+    wide.push(0); // Double null termination required by SHFileOperationW
+
+    #[cfg(target_pointer_width = "32")]
+    #[repr(C, packed(1))]
+    #[allow(clippy::upper_case_acronyms)]
+    struct SHFILEOPSTRUCTW {
+        hwnd: *mut std::ffi::c_void,
+        w_func: u32,
+        p_from: *const u16,
+        p_to: *const u16,
+        f_flags: u16,
+        f_any_operations_aborted: i32,
+        h_name_mappings: *mut std::ffi::c_void,
+        lpsz_progress_title: *const u16,
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[repr(C)]
     #[allow(clippy::upper_case_acronyms)]
     struct SHFILEOPSTRUCTW {
         hwnd: *mut std::ffi::c_void,
@@ -200,6 +224,7 @@ pub fn send_to_recycle_bin(path: &std::path::Path) -> std::io::Result<()> {
     const FOF_ALLOWUNDO: u16 = 0x0040;
     const FOF_NOCONFIRMATION: u16 = 0x0010;
     const FOF_SILENT: u16 = 0x0004;
+    const FOF_NOERRORUI: u16 = 0x0400;
 
     extern "system" {
         fn SHFileOperationW(lpFileOp: *mut SHFILEOPSTRUCTW) -> i32;
@@ -210,14 +235,14 @@ pub fn send_to_recycle_bin(path: &std::path::Path) -> std::io::Result<()> {
         w_func: FO_DELETE,
         p_from: wide.as_ptr(),
         p_to: std::ptr::null(),
-        f_flags: FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
+        f_flags: FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI,
         f_any_operations_aborted: 0,
         h_name_mappings: std::ptr::null_mut(),
         lpsz_progress_title: std::ptr::null(),
     };
 
     let ret = unsafe { SHFileOperationW(&mut op) };
-    if ret == 0 {
+    if ret == 0 && op.f_any_operations_aborted == 0 {
         Ok(())
     } else {
         Err(std::io::Error::from_raw_os_error(ret))
@@ -471,5 +496,20 @@ mod tests {
         );
         assert!(dirs.videos.ends_with("Videos\\EDM") || dirs.videos.ends_with("Videos/EDM"));
         assert!(dirs.temp.ends_with("edm_chunks"));
+    }
+
+    #[test]
+    fn test_recycle_bin() {
+        let temp = std::env::temp_dir().join("test_edm_recycle_file.txt");
+        let _ = std::fs::write(&temp, "recycle me");
+        assert!(temp.exists());
+        let res = send_to_recycle_bin(&temp);
+        println!("===> send_to_recycle_bin result: {:?}", res);
+        let still_exists = temp.exists();
+        if still_exists {
+            let _ = std::fs::remove_file(&temp);
+        }
+        assert!(res.is_ok(), "Expected Ok but got: {:?}", res);
+        assert!(!still_exists, "File should have been moved to recycle bin");
     }
 }
