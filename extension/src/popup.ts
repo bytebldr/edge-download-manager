@@ -202,14 +202,15 @@ class PopupController {
               this.renderTasksListOnly();
             }
           }
-          if (this.activeTab === "settings") {
-            this.render();
-          }
         } else if (msg.type === "diagnostics_report") {
           if (msg.report) {
             this.diagnosticsReport = msg.report;
             if (this.activeTab === "settings") {
-              this.render();
+              const diagCard = document.getElementById("settings-diagnostics-card");
+              if (diagCard) {
+                diagCard.innerHTML = this.renderDiagnosticsTab();
+                this.attachDiagnosticsEvents();
+              }
             }
           }
         } else if (msg.type === "repair_result") {
@@ -218,7 +219,11 @@ class PopupController {
             this.diagnosticsReport = msg.report;
           }
           if (this.activeTab === "settings") {
-            this.render();
+            const diagCard = document.getElementById("settings-diagnostics-card");
+            if (diagCard) {
+              diagCard.innerHTML = this.renderDiagnosticsTab();
+              this.attachDiagnosticsEvents();
+            }
           }
         }
       });
@@ -484,6 +489,8 @@ class PopupController {
     const app = document.getElementById("app");
     if (!app) return;
 
+    const savedScrollTop = app.scrollTop;
+
     if (this.activeTab === "tasks") {
       app.innerHTML = this.renderTasksTab();
       this.attachTasksEvents();
@@ -494,6 +501,10 @@ class PopupController {
       app.innerHTML = this.renderSettingsTab();
       this.attachSettingsEvents();
       this.attachDiagnosticsEvents();
+    }
+
+    if (savedScrollTop > 0) {
+      app.scrollTop = savedScrollTop;
     }
   }
 
@@ -661,27 +672,239 @@ class PopupController {
     `;
   }
 
-  private renderTasksListHtml(): string {
+  private getFilteredDownloads(): DownloadItem[] {
     const sorted = this.downloads
       .slice()
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-    const filtered = sorted.filter((d) => {
+    return sorted.filter((d) => {
       const matchesSearch =
         d.filename.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
         d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
       const isDone =
         d.state === "completed" ||
-        (d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
+        (d.size_total > 0 &&
+          d.size_done >= d.size_total &&
+          d.speed_bytes_per_sec === 0 &&
+          d.state !== "paused" &&
+          d.state !== "failed" &&
+          d.state !== "queued");
       const matchesFilter =
         this.taskFilter === "all" ||
-        (this.taskFilter === "active" && (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone) ||
+        (this.taskFilter === "active" &&
+          (d.state === "downloading" ||
+            d.state === "queued" ||
+            d.state === "connecting") &&
+          !isDone) ||
         (this.taskFilter === "completed" && isDone) ||
-        (this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled"));
+        (this.taskFilter === "failed" &&
+          (d.state === "failed" || d.state === "cancelled"));
       return matchesSearch && matchesFilter;
     });
+  }
+
+  private getCardMetaHtml(
+    item: DownloadItem,
+    isDownloading: boolean,
+    isCompleted: boolean,
+    isPaused: boolean,
+    isQueued: boolean,
+    total: number,
+    done: number,
+    pct: number
+  ): string {
+    if (isDownloading) {
+      return `
+        <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
+        <span>•</span>
+        <span style="color: var(--accent); font-weight: 600;">${formatSpeed(item.speed_bytes_per_sec)}</span>
+        <span>•</span>
+        <span>${formatEta(total - done, item.speed_bytes_per_sec)}</span>
+      `;
+    } else if (isCompleted) {
+      return `
+        <span>${formatBytes(done || total)}</span>
+        <span>•</span>
+        <span>${escapeHtml(item.category || "General")}</span>
+        <span>•</span>
+        <span style="color: #34D399; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;">
+          <span style="display: inline-block; width: 11px; height: 11px;">${SVG_ICONS.check}</span> Finished
+        </span>
+      `;
+    } else if (isPaused) {
+      return `
+        <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
+        <span>•</span>
+        <span style="color: #FBBF24; font-weight: 600;">Paused</span>
+      `;
+    } else if (item.state === "needs_fresh_link" || item.state === "link_expired") {
+      return `
+        <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
+        <span>•</span>
+        <span style="color: #F59E0B; font-weight: 600;">Link Expired</span>
+      `;
+    } else if (isQueued) {
+      return `
+        <span>${formatBytes(total || done)}</span>
+        <span>•</span>
+        <span style="color: #60A5FA; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;">
+          <span style="display: inline-block; width: 11px; height: 11px;">${SVG_ICONS.clock}</span> Queued
+        </span>
+      `;
+    } else {
+      const failReason = item.error_msg
+        ? escapeHtml(item.error_msg)
+        : "Download failed or link expired";
+      return `
+        <span>${formatBytes(done)}</span>
+        <span>•</span>
+        <span style="color: #F87171; font-weight: 600;" title="${failReason}">
+          Failed${item.error_msg ? `: ${failReason}` : ""}
+        </span>
+      `;
+    }
+  }
+
+  private getCardActionsHtml(
+    item: DownloadItem,
+    isDownloading: boolean,
+    isPaused: boolean,
+    isQueued: boolean,
+    isCompleted: boolean,
+    isFailed: boolean
+  ): string {
+    const isSyncable = this.connectionState === "connected";
+    const disAttr = isSyncable ? "" : "disabled";
+    const disStyle = isSyncable
+      ? ""
+      : 'style="opacity: 0.35; pointer-events: none; cursor: not-allowed;"';
+
+    let actionsHtml = "";
+    if (isDownloading) {
+      actionsHtml = `
+        <button class="btn-icon-3d act-pause" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Pause Download">${SVG_ICONS.pause}</button>
+        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
+      `;
+    } else if (isPaused) {
+      actionsHtml = `
+        <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Resume Download">${SVG_ICONS.play}</button>
+        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
+      `;
+    } else if (isQueued) {
+      actionsHtml = `
+        <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Start Download Now">${SVG_ICONS.play}</button>
+        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
+      `;
+    } else if (isCompleted) {
+      actionsHtml = `
+        <button class="btn-icon-3d act-open-file" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open File">${SVG_ICONS.openFile}</button>
+        <button class="btn-icon-3d act-open-folder" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open Folder">${SVG_ICONS.openFolder}</button>
+      `;
+    } else if (isFailed) {
+      actionsHtml = `
+        <button class="btn-icon-3d btn-icon-primary act-retry" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Retry Download">${SVG_ICONS.retry}</button>
+      `;
+    } else if (item.state === "needs_fresh_link" || item.state === "link_expired") {
+      actionsHtml = `
+        <button class="btn-icon-3d act-refresh-link" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Refresh Expired Link">🔄</button>
+      `;
+    }
+
+    actionsHtml += `
+      <button class="btn-icon-3d act-copy" ${disAttr} ${disStyle} data-url="${escapeHtml(item.url || item.filename)}" title="Copy URL">${SVG_ICONS.copy}</button>
+      <button class="btn-icon-3d btn-icon-danger act-delete" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" data-name="${escapeHtml(item.filename)}" title="Remove">${SVG_ICONS.trash}</button>
+    `;
+
+    return actionsHtml;
+  }
+
+  private patchDownloadCard(card: HTMLElement, item: DownloadItem) {
+    const total = item.size_total || 0;
+    const done = item.size_done || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    const isCompleted =
+      item.state === "completed" ||
+      (total > 0 &&
+        done >= total &&
+        item.speed_bytes_per_sec === 0 &&
+        item.state !== "paused" &&
+        item.state !== "failed" &&
+        item.state !== "queued");
+    const isDownloading = item.state === "downloading" && !isCompleted;
+    const isPaused = item.state === "paused";
+    const isQueued = item.state === "queued" || item.state === "connecting";
+    const isFailed = item.state === "failed" || item.state === "cancelled";
+
+    // 1. Update State Class & Actions if state transitioned
+    const expectedClass = isCompleted
+      ? "card-completed"
+      : isQueued
+      ? "card-queued"
+      : isDownloading
+      ? "card-downloading"
+      : "";
+
+    const hasStateClass = expectedClass ? card.classList.contains(expectedClass) : true;
+    if (!hasStateClass) {
+      card.classList.remove("card-completed", "card-queued", "card-downloading");
+      if (expectedClass) card.classList.add(expectedClass);
+
+      const actionsEl = card.querySelector(".card-actions-cluster");
+      if (actionsEl) {
+        actionsEl.innerHTML = this.getCardActionsHtml(
+          item,
+          isDownloading,
+          isPaused,
+          isQueued,
+          isCompleted,
+          isFailed
+        );
+        this.attachCardActions();
+      }
+    }
+
+    // 2. Update Telemetry text in .card-meta-row
+    const metaEl = card.querySelector(".card-meta-row");
+    if (metaEl) {
+      const newMeta = this.getCardMetaHtml(
+        item,
+        isDownloading,
+        isCompleted,
+        isPaused,
+        isQueued,
+        total,
+        done,
+        pct
+      );
+      if (metaEl.innerHTML !== newMeta) {
+        metaEl.innerHTML = newMeta;
+      }
+    }
+
+    // 3. Update Progress Border
+    let progressEl = card.querySelector<HTMLElement>(".card-progress-border");
+    if (isDownloading) {
+      if (!progressEl) {
+        progressEl = document.createElement("div");
+        progressEl.className = "card-progress-border";
+        card.appendChild(progressEl);
+      }
+      const newWidth = `${pct}%`;
+      if (progressEl.style.width !== newWidth) {
+        progressEl.style.width = newWidth;
+      }
+    } else if (progressEl) {
+      progressEl.remove();
+    }
+  }
+
+  private renderTasksListHtml(): string {
+    const filtered = this.getFilteredDownloads();
 
     if (filtered.length === 0) {
-      if (this.connectionState === "connection_failed" || this.connectionState === "application_not_running") {
+      if (
+        this.connectionState === "connection_failed" ||
+        this.connectionState === "application_not_running"
+      ) {
         return `
           <div class="empty-state">
             <div class="empty-icon">🔌</div>
@@ -715,160 +938,150 @@ class PopupController {
       staleBanner +
       filtered
         .map((item) => {
-        const total = item.size_total || 0;
-        const done = item.size_done || 0;
-        const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-        const isCompleted =
-          item.state === "completed" ||
-          (total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed" && item.state !== "queued");
-        const isDownloading = item.state === "downloading" && !isCompleted;
-        const isPaused = item.state === "paused";
-        const isQueued = item.state === "queued" || item.state === "connecting";
-        const isFailed = item.state === "failed" || item.state === "cancelled";
+          const total = item.size_total || 0;
+          const done = item.size_done || 0;
+          const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+          const isCompleted =
+            item.state === "completed" ||
+            (total > 0 &&
+              done >= total &&
+              item.speed_bytes_per_sec === 0 &&
+              item.state !== "paused" &&
+              item.state !== "failed" &&
+              item.state !== "queued");
+          const isDownloading = item.state === "downloading" && !isCompleted;
+          const isPaused = item.state === "paused";
+          const isQueued = item.state === "queued" || item.state === "connecting";
+          const isFailed = item.state === "failed" || item.state === "cancelled";
 
-        let catClass = "tile-programs";
-        let catSvg = CATEGORY_SVGS.programs;
-        const ext = item.filename.split(".").pop()?.toLowerCase() || "";
-        if (["mp4", "mkv", "webm", "avi", "mov", "flv", "m4v", "ts", "mts", "m2ts", "vob", "ogv", "3gp", "3g2", "rm", "rmvb", "divx", "asf"].includes(ext)) {
-          catClass = "tile-video";
-          catSvg = CATEGORY_SVGS.video;
-        } else if (["mp3", "flac", "wav", "m4a", "aac", "ogg", "wma", "opus", "aiff", "alac", "mid", "midi", "ape", "ac3", "dts", "amr"].includes(ext)) {
-          catClass = "tile-music";
-          catSvg = CATEGORY_SVGS.music;
-        } else if (["zip", "rar", "7z", "tar", "gz", "iso", "bin", "7zip", "bz2", "xz", "dmg", "img", "vhd", "vhdx", "tgz", "tbz2", "cab", "cpio", "z", "lzma", "pkg", "deb", "rpm"].includes(ext)) {
-          catClass = "tile-compressed";
-          catSvg = CATEGORY_SVGS.compressed;
-        } else if (["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif", "psd", "ai", "raw", "cr2", "nef", "heic", "heif", "dng"].includes(ext)) {
-          catClass = "tile-pictures";
-          catSvg = CATEGORY_SVGS.pictures;
-        } else if (["pdf", "doc", "docx", "txt", "xlsx", "pptx", "epub", "csv", "rtf", "odt", "ods", "odp", "tsv", "md", "mobi", "azw3", "djvu", "pages", "numbers", "key"].includes(ext)) {
-          catClass = "tile-document";
-          catSvg = CATEGORY_SVGS.document;
-        }
+          let catClass = "tile-programs";
+          let catSvg = CATEGORY_SVGS.programs;
+          const ext = item.filename.split(".").pop()?.toLowerCase() || "";
+          if (
+            [
+              "mp4", "mkv", "webm", "avi", "mov", "flv", "m4v", "ts", "mts", "m2ts",
+              "vob", "ogv", "3gp", "3g2", "rm", "rmvb", "divx", "asf"
+            ].includes(ext)
+          ) {
+            catClass = "tile-video";
+            catSvg = CATEGORY_SVGS.video;
+          } else if (
+            [
+              "mp3", "flac", "wav", "m4a", "aac", "ogg", "wma", "opus", "aiff", "alac",
+              "mid", "midi", "ape", "ac3", "dts", "amr"
+            ].includes(ext)
+          ) {
+            catClass = "tile-music";
+            catSvg = CATEGORY_SVGS.music;
+          } else if (
+            [
+              "zip", "rar", "7z", "tar", "gz", "iso", "bin", "7zip", "bz2", "xz",
+              "dmg", "img", "vhd", "vhdx", "tgz", "tbz2", "cab", "cpio", "z", "lzma",
+              "pkg", "deb", "rpm"
+            ].includes(ext)
+          ) {
+            catClass = "tile-compressed";
+            catSvg = CATEGORY_SVGS.compressed;
+          } else if (
+            [
+              "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff",
+              "tif", "psd", "ai", "raw", "cr2", "nef", "heic", "heif", "dng"
+            ].includes(ext)
+          ) {
+            catClass = "tile-pictures";
+            catSvg = CATEGORY_SVGS.pictures;
+          } else if (
+            [
+              "pdf", "doc", "docx", "txt", "xlsx", "pptx", "epub", "csv", "rtf", "odt",
+              "ods", "odp", "tsv", "md", "mobi", "azw3", "djvu", "pages", "numbers", "key"
+            ].includes(ext)
+          ) {
+            catClass = "tile-document";
+            catSvg = CATEGORY_SVGS.document;
+          }
 
-        let metaHtml = "";
-        if (isDownloading) {
-          metaHtml = `
-            <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
-            <span>•</span>
-            <span style="color: var(--accent); font-weight: 600;">${formatSpeed(item.speed_bytes_per_sec)}</span>
-            <span>•</span>
-            <span>${formatEta(total - done, item.speed_bytes_per_sec)}</span>
-          `;
-        } else if (isCompleted) {
-          metaHtml = `
-            <span>${formatBytes(done || total)}</span>
-            <span>•</span>
-            <span>${escapeHtml(item.category || "General")}</span>
-            <span>•</span>
-            <span style="color: #34D399; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;">
-              <span style="display: inline-block; width: 11px; height: 11px;">${SVG_ICONS.check}</span> Finished
-            </span>
-          `;
-        } else if (isPaused) {
-          metaHtml = `
-            <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
-            <span>•</span>
-            <span style="color: #FBBF24; font-weight: 600;">Paused</span>
-          `;
-        } else if (item.state === "needs_fresh_link" || item.state === "link_expired") {
-          metaHtml = `
-            <span>${total > 0 ? `${formatBytes(done)} / ${formatBytes(total)} (${pct}%)` : `${formatBytes(done)}`}</span>
-            <span>•</span>
-            <span style="color: #F59E0B; font-weight: 600;">Link Expired</span>
-          `;
-        } else if (isQueued) {
-          metaHtml = `
-            <span>${formatBytes(total || done)}</span>
-            <span>•</span>
-            <span style="color: #60A5FA; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;">
-              <span style="display: inline-block; width: 11px; height: 11px;">${SVG_ICONS.clock}</span> Queued
-            </span>
-          `;
-        } else {
-          const failReason = item.error_msg
-            ? escapeHtml(item.error_msg)
-            : "Download failed or link expired";
-          metaHtml = `
-            <span>${formatBytes(done)}</span>
-            <span>•</span>
-            <span style="color: #F87171; font-weight: 600;" title="${failReason}">
-              Failed${item.error_msg ? `: ${failReason}` : ""}
-            </span>
-          `;
-        }
+          const metaHtml = this.getCardMetaHtml(
+            item,
+            isDownloading,
+            isCompleted,
+            isPaused,
+            isQueued,
+            total,
+            done,
+            pct
+          );
 
-        const isSyncable = this.connectionState === "connected";
-        const disAttr = isSyncable ? "" : "disabled";
-        const disStyle = isSyncable ? "" : 'style="opacity: 0.35; pointer-events: none; cursor: not-allowed;"';
+          const actionsHtml = this.getCardActionsHtml(
+            item,
+            isDownloading,
+            isPaused,
+            isQueued,
+            isCompleted,
+            isFailed
+          );
 
-        let actionsHtml = "";
-        if (isDownloading) {
-          actionsHtml = `
-            <button class="btn-icon-3d act-pause" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Pause Download">${SVG_ICONS.pause}</button>
-            <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-          `;
-        } else if (isPaused) {
-          actionsHtml = `
-            <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Resume Download">${SVG_ICONS.play}</button>
-            <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-          `;
-        } else if (isQueued) {
-          actionsHtml = `
-            <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Start Download Now">${SVG_ICONS.play}</button>
-            <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-          `;
-        } else if (isCompleted) {
-          actionsHtml = `
-            <button class="btn-icon-3d act-open-file" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open File">${SVG_ICONS.openFile}</button>
-            <button class="btn-icon-3d act-open-folder" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open Folder">${SVG_ICONS.openFolder}</button>
-          `;
-        } else if (isFailed) {
-          actionsHtml = `
-            <button class="btn-icon-3d btn-icon-primary act-retry" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Retry Download">${SVG_ICONS.retry}</button>
-          `;
-        } else if (item.state === "needs_fresh_link" || item.state === "link_expired") {
-          actionsHtml = `
-            <button class="btn-icon-3d act-refresh-link" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Refresh Expired Link">🔄</button>
-          `;
-        }
-
-        actionsHtml += `
-          <button class="btn-icon-3d act-copy" ${disAttr} ${disStyle} data-url="${escapeHtml(item.url || item.filename)}" title="Copy URL">${SVG_ICONS.copy}</button>
-          <button class="btn-icon-3d btn-icon-danger act-delete" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" data-name="${escapeHtml(item.filename)}" title="Remove">${SVG_ICONS.trash}</button>
-        `;
-
-        return `
-          <div class="download-card ${isCompleted ? 'card-completed' : isQueued ? 'card-queued' : 'card-downloading'}" data-id="${escapeHtml(item.id)}">
-            <div class="card-inner">
-              <div class="card-icon-tile ${catClass}">
-                ${catSvg}
-              </div>
-              <div class="card-content">
-                <div class="card-title-row">
-                  <div class="file-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div>
+          return `
+            <div class="download-card ${isCompleted ? "card-completed" : isQueued ? "card-queued" : "card-downloading"}" data-id="${escapeHtml(item.id)}">
+              <div class="card-inner">
+                <div class="card-icon-tile ${catClass}">
+                  ${catSvg}
                 </div>
-                <div class="card-meta-row">
-                  ${metaHtml}
+                <div class="card-content">
+                  <div class="card-title-row">
+                    <div class="file-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div>
+                  </div>
+                  <div class="card-meta-row">
+                    ${metaHtml}
+                  </div>
+                </div>
+                <div class="card-actions-cluster">
+                  ${actionsHtml}
                 </div>
               </div>
-              <div class="card-actions-cluster">
-                ${actionsHtml}
-              </div>
+              ${isDownloading ? `<div class="card-progress-border" style="width: ${pct}%;"></div>` : ""}
             </div>
-            ${isDownloading ? `<div class="card-progress-border" style="width: ${pct}%;"></div>` : ''}
-          </div>
-        `;
-      })
-      .join("")
+          `;
+        })
+        .join("")
     );
   }
 
   private renderTasksListOnly() {
+    const app = document.getElementById("app");
     const container = document.getElementById("tasksListContainer");
     if (!container) return;
+
+    const filtered = this.getFilteredDownloads();
+    const existingCards = container.querySelectorAll<HTMLElement>(".download-card");
+
+    // Fast In-Place Reconciliation:
+    // If the list of visible cards in DOM matches the filtered tasks in order,
+    // patch telemetry and progress without touching container.innerHTML or unmounting DOM.
+    let canPatch = existingCards.length === filtered.length && filtered.length > 0;
+    if (canPatch) {
+      for (let i = 0; i < filtered.length; i++) {
+        if (existingCards[i].getAttribute("data-id") !== filtered[i].id) {
+          canPatch = false;
+          break;
+        }
+      }
+    }
+
+    if (canPatch) {
+      for (let i = 0; i < filtered.length; i++) {
+        this.patchDownloadCard(existingCards[i], filtered[i]);
+      }
+      return;
+    }
+
+    // Structural mutation (tasks added/removed or filter/search changed):
+    // Synchronously preserve and restore scroll position.
+    const savedScrollTop = app ? app.scrollTop : 0;
     container.innerHTML = this.renderTasksListHtml();
     this.attachCardActions();
+    if (app && savedScrollTop > 0) {
+      app.scrollTop = savedScrollTop;
+    }
   }
 
   private attachTasksEvents() {
@@ -1141,7 +1354,7 @@ class PopupController {
   // ─────────────────────────────────────────────────────────────
   private renderSettingsTab(): string {
     return `
-      <div class="settings-pane" style="padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%;">
+      <div class="settings-pane" style="padding: 12px; display: flex; flex-direction: column; gap: 12px;">
         <!-- WebSocket Authentication Token Card (matches user design) -->
         <div class="settings-group" style="padding: 14px; background: #070e1b; border: 1px solid #1a273e; border-radius: 10px;">
           <div class="settings-group-title" style="font-size: 13.5px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px;">WebSocket Authentication Token</div>
