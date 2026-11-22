@@ -28,23 +28,7 @@ Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates fi
 
 ---
 
-## 🎬 30-Second Cinematic Showcase
-
-Experience EDM's 32-stream concurrent acceleration, pure native Rust velocity, and zero-click resilience in our 60 FPS interactive motion graphic:
-
-<p align="center">
-  <a href="./promo/index.html">
-    <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="Watch EDM 30s Motion Graphic Demo" width="900" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="./promo/index.html"><strong>▶ Launch 30s Interactive Cinematic Demo (60 FPS WebGL)</strong></a>
-  <br>
-  <sub>Double-click <code>promo/index.html</code> in any browser · Space to Pause · R to Restart · Add <code>?debug=1</code> for scrubber</sub>
-</p>
-
----
+## 📸 Application Showcase
 
 ### Modern Desktop Dashboard
 Organize, manage, and monitor all your downloads in a distraction-free, high-density interface with instant filtering by videos, music, archives, documents, and programs.
