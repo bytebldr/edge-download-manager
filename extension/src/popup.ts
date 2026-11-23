@@ -55,8 +55,10 @@ function formatSpeed(bytesPerSec: number): string {
   return formatBytes(bytesPerSec) + "/s";
 }
 
-function formatEta(remainingBytes: number, speedBps: number): string {
-  if (remainingBytes <= 0) return "Finishing...";
+function formatEta(total: number, done: number, speedBps: number): string {
+  if (total <= 0 || (done === 0 && speedBps === 0)) return "Probing...";
+  if (total > 0 && done >= total) return "Finishing...";
+  const remainingBytes = total - done;
   if (speedBps <= 0) return "Connecting...";
   const secs = Math.ceil(remainingBytes / speedBps);
   if (secs < 60) return `${secs}s remaining`;
@@ -126,7 +128,6 @@ class PopupController {
   private refreshRateMs: number = 500;
   private port: chrome.runtime.Port | null = null;
   private deletePreference: "always_ask" | "list_only" | "delete_file" = "always_ask";
-  private deleteModalTarget: { id: string; filename: string } | null = null;
 
   constructor() {
     try {
@@ -172,6 +173,11 @@ class PopupController {
           }
           if (msg.browser) {
             this.detectedBrowser = msg.browser;
+          }
+          if (msg.delete_preference) {
+            this.deletePreference = msg.delete_preference;
+          } else if (msg.deletePreference) {
+            this.deletePreference = msg.deletePreference;
           }
           this.updateConnectionPill();
           if (msg.palette) {
@@ -242,7 +248,14 @@ class PopupController {
       d.state === "completed" ||
       (d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
     const activeDownloads = this.downloads.filter(
-      (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
+      (d) =>
+        (d.state === "downloading" ||
+          d.state === "probing" ||
+          d.state === "connecting" ||
+          d.state === "allocating" ||
+          d.state === "queued" ||
+          d.state === "finishing") &&
+        !isDone(d)
     );
     const completedCount = this.downloads.filter((d) => isDone(d)).length;
     const failedCount = this.downloads.filter((d) => d.state === "failed" || d.state === "cancelled").length;
@@ -623,7 +636,14 @@ class PopupController {
       d.state === "completed" ||
       (d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
     const activeDownloads = this.downloads.filter(
-      (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
+      (d) =>
+        (d.state === "downloading" ||
+          d.state === "probing" ||
+          d.state === "connecting" ||
+          d.state === "allocating" ||
+          d.state === "queued" ||
+          d.state === "finishing") &&
+        !isDone(d)
     );
     const aggSpeed = activeDownloads.reduce((sum, d) => sum + (d.speed_bytes_per_sec || 0), 0);
     const completedCount = this.downloads.filter((d) => isDone(d)).length;
@@ -692,8 +712,11 @@ class PopupController {
         this.taskFilter === "all" ||
         (this.taskFilter === "active" &&
           (d.state === "downloading" ||
+            d.state === "probing" ||
+            d.state === "connecting" ||
+            d.state === "allocating" ||
             d.state === "queued" ||
-            d.state === "connecting") &&
+            d.state === "finishing") &&
           !isDone) ||
         (this.taskFilter === "completed" && isDone) ||
         (this.taskFilter === "failed" &&
@@ -718,7 +741,7 @@ class PopupController {
         <span>•</span>
         <span style="color: var(--accent); font-weight: 600;">${formatSpeed(item.speed_bytes_per_sec)}</span>
         <span>•</span>
-        <span>${formatEta(total - done, item.speed_bytes_per_sec)}</span>
+        <span>${formatEta(total, done, item.speed_bytes_per_sec)}</span>
       `;
     } else if (isCompleted) {
       return `
@@ -829,7 +852,12 @@ class PopupController {
         item.state !== "paused" &&
         item.state !== "failed" &&
         item.state !== "queued");
-    const isDownloading = item.state === "downloading" && !isCompleted;
+    const isDownloading =
+      (item.state === "downloading" ||
+        item.state === "probing" ||
+        item.state === "allocating" ||
+        item.state === "finishing") &&
+      !isCompleted;
     const isPaused = item.state === "paused";
     const isQueued = item.state === "queued" || item.state === "connecting";
     const isFailed = item.state === "failed" || item.state === "cancelled";
@@ -949,7 +977,12 @@ class PopupController {
               item.state !== "paused" &&
               item.state !== "failed" &&
               item.state !== "queued");
-          const isDownloading = item.state === "downloading" && !isCompleted;
+          const isDownloading =
+      (item.state === "downloading" ||
+        item.state === "probing" ||
+        item.state === "allocating" ||
+        item.state === "finishing") &&
+      !isCompleted;
           const isPaused = item.state === "paused";
           const isQueued = item.state === "queued" || item.state === "connecting";
           const isFailed = item.state === "failed" || item.state === "cancelled";
@@ -1263,90 +1296,11 @@ class PopupController {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-id");
-        const filename = btn.getAttribute("data-name") || "Download";
         if (!id) return;
 
-        if (this.deletePreference === "list_only") {
-          this.sendTaskAction(id, "remove", false);
-        } else if (this.deletePreference === "delete_file") {
-          this.sendTaskAction(id, "remove", true);
-        } else {
-          this.openDeleteModal(id, filename);
-        }
+        this.sendTaskAction(id, "remove", this.deletePreference === "delete_file");
       });
     });
-  }
-
-  private openDeleteModal(id: string, filename: string) {
-    this.deleteModalTarget = { id, filename };
-    let modal = document.getElementById("deleteConfirmModal");
-    if (!modal) {
-      modal = document.createElement("div");
-      modal.id = "deleteConfirmModal";
-      modal.className = "modal-overlay";
-      document.body.appendChild(modal);
-    }
-    modal.style.display = "flex";
-    modal.innerHTML = `
-      <div class="modal-dialog">
-        <div class="modal-title">Remove Download</div>
-        <div class="modal-desc">
-          Are you sure you want to remove <strong>${escapeHtml(filename)}</strong>?
-        </div>
-        <div style="margin: 6px 0 8px 0; display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-muted);">
-          <input type="checkbox" id="modalDontAskAgain" style="cursor: pointer; margin: 0; width: 14px; height: 14px; accent-color: var(--accent);" />
-          <label for="modalDontAskAgain" style="cursor: pointer; user-select: none; color: #8fa0be;">Don't ask again (You can change this anytime in Settings)</label>
-        </div>
-        <div class="modal-buttons" style="display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin-top: 4px;">
-          <button id="modalRemoveListBtn" class="btn-3d" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500;">Remove from list only</button>
-          <button id="modalRecycleFileBtn" class="btn-3d btn-danger" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500; background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #f59e0b; color: #ffffff;">Delete File &amp; Remove</button>
-          <button id="modalCancelBtn" class="btn-3d" style="padding: 7px 12px; font-size: 11px; opacity: 0.85; margin-top: 2px;">Cancel</button>
-        </div>
-      </div>
-    `;
-
-    document.getElementById("modalCancelBtn")?.addEventListener("click", () => {
-      this.closeDeleteModal();
-    });
-
-    document.getElementById("modalRemoveListBtn")?.addEventListener("click", async () => {
-      const dontAsk = (document.getElementById("modalDontAskAgain") as HTMLInputElement)?.checked;
-      if (dontAsk) {
-        this.deletePreference = "list_only";
-        await chrome.storage.local.set({
-          deletePreference: "list_only",
-          edm_delete_preference: "list_only",
-        });
-      }
-      if (this.deleteModalTarget) {
-        this.sendTaskAction(this.deleteModalTarget.id, "remove", false);
-      }
-      this.closeDeleteModal();
-    });
-
-    document.getElementById("modalRecycleFileBtn")?.addEventListener("click", async () => {
-      const dontAsk = (document.getElementById("modalDontAskAgain") as HTMLInputElement)?.checked;
-      if (dontAsk) {
-        this.deletePreference = "delete_file";
-        await chrome.storage.local.set({
-          deletePreference: "delete_file",
-          edm_delete_preference: "delete_file",
-        });
-      }
-      if (this.deleteModalTarget) {
-        this.sendTaskAction(this.deleteModalTarget.id, "remove", true);
-      }
-      this.closeDeleteModal();
-    });
-  }
-
-  private closeDeleteModal() {
-    this.deleteModalTarget = null;
-    const modal = document.getElementById("deleteConfirmModal");
-    if (modal) {
-      modal.style.display = "none";
-      modal.innerHTML = "";
-    }
   }
 
   // ─────────────────────────────────────────────────────────────

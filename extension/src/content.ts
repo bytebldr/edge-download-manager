@@ -728,11 +728,6 @@ function injectYoutubePillIfNeeded() {
     titleEl.title = rawTitle; // Tooltip shows full unabbreviated title on hover
     header.appendChild(titleEl);
 
-    const subEl = document.createElement("div");
-    subEl.className = "edm-yt-subtitle";
-    subEl.textContent = "EDM Adaptive Engine";
-    header.appendChild(subEl);
-
     menu.appendChild(header);
 
     // Section 1: Video Qualities
@@ -845,11 +840,8 @@ function injectYoutubePillIfNeeded() {
             return curLen >= prevLen ? cur : prev;
           }, matched[0]);
 
-          const sizeStr = formatBytes(best.contentLength);
           const fpsStr = best.fps && best.fps > 30 ? ` • ${best.fps}fps` : "";
-          const sub = sizeStr
-            ? `${tier.tag} MP4 (${sizeStr}${fpsStr})`
-            : `${tier.defaultSub}${fpsStr}`;
+          const sub = `${tier.defaultSub}${fpsStr}`;
 
           menu.appendChild(
             createMenuItem(videoIcon, tier.title, sub, () => {
@@ -884,16 +876,12 @@ function injectYoutubePillIfNeeded() {
 
     const audioStreams = allFormats.filter((f) => f.mimeType && f.mimeType.startsWith("audio/"));
     const m4aStream = audioStreams.find((f) => f.mimeType && f.mimeType.includes("mp4a"));
-    const bestAudio = audioStreams[0];
-
-    const mp3Size = formatBytes(bestAudio?.contentLength);
-    const m4aSize = formatBytes(m4aStream?.contentLength || bestAudio?.contentLength);
 
     menu.appendChild(
       createMenuItem(
         audioIcon,
         "Extract Audio (MP3)",
-        mp3Size ? `Universal MP3 stream (${mp3Size})` : "Universal MP3 at highest bitrate",
+        "Universal MP3 at highest bitrate",
         () => {
           triggerDownload("audio", "", true);
         }
@@ -904,7 +892,7 @@ function injectYoutubePillIfNeeded() {
       createMenuItem(
         audioIcon,
         "Extract Audio (M4A)",
-        m4aSize ? `Original AAC sound stream (${m4aSize})` : "Original AAC/M4A sound stream",
+        "Original AAC/M4A sound stream",
         () => {
           triggerDownload("audio#m4a", "", true);
         }

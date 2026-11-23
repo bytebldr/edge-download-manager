@@ -65,8 +65,10 @@
     if (!bytesPerSec || bytesPerSec <= 0) return "0 B/s";
     return formatBytes(bytesPerSec) + "/s";
   }
-  function formatEta(remainingBytes, speedBps) {
-    if (remainingBytes <= 0) return "Finishing...";
+  function formatEta(total, done, speedBps) {
+    if (total <= 0 || done === 0 && speedBps === 0) return "Probing...";
+    if (total > 0 && done >= total) return "Finishing...";
+    const remainingBytes = total - done;
     if (speedBps <= 0) return "Connecting...";
     const secs = Math.ceil(remainingBytes / speedBps);
     if (secs < 60) return `${secs}s remaining`;
@@ -109,7 +111,6 @@
       __publicField(this, "refreshRateMs", 500);
       __publicField(this, "port", null);
       __publicField(this, "deletePreference", "always_ask");
-      __publicField(this, "deleteModalTarget", null);
       try {
         this.currentVersion = chrome.runtime.getManifest().version;
       } catch {
@@ -152,6 +153,11 @@
             }
             if (msg.browser) {
               this.detectedBrowser = msg.browser;
+            }
+            if (msg.delete_preference) {
+              this.deletePreference = msg.delete_preference;
+            } else if (msg.deletePreference) {
+              this.deletePreference = msg.deletePreference;
             }
             this.updateConnectionPill();
             if (msg.palette) {
@@ -219,7 +225,7 @@
     updateAllCounters() {
       const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
       const activeDownloads = this.downloads.filter(
-        (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
+        (d) => (d.state === "downloading" || d.state === "probing" || d.state === "connecting" || d.state === "allocating" || d.state === "queued" || d.state === "finishing") && !isDone(d)
       );
       const completedCount = this.downloads.filter((d) => isDone(d)).length;
       const failedCount = this.downloads.filter((d) => d.state === "failed" || d.state === "cancelled").length;
@@ -566,7 +572,7 @@
     renderTasksTab() {
       const isDone = (d) => d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
       const activeDownloads = this.downloads.filter(
-        (d) => (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone(d)
+        (d) => (d.state === "downloading" || d.state === "probing" || d.state === "connecting" || d.state === "allocating" || d.state === "queued" || d.state === "finishing") && !isDone(d)
       );
       const aggSpeed = activeDownloads.reduce((sum, d) => sum + (d.speed_bytes_per_sec || 0), 0);
       const completedCount = this.downloads.filter((d) => isDone(d)).length;
@@ -614,7 +620,7 @@
       return sorted.filter((d) => {
         const matchesSearch = d.filename.toLowerCase().includes(this.searchQuery.toLowerCase()) || d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
         const isDone = d.state === "completed" || d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued";
-        const matchesFilter = this.taskFilter === "all" || this.taskFilter === "active" && (d.state === "downloading" || d.state === "queued" || d.state === "connecting") && !isDone || this.taskFilter === "completed" && isDone || this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled");
+        const matchesFilter = this.taskFilter === "all" || this.taskFilter === "active" && (d.state === "downloading" || d.state === "probing" || d.state === "connecting" || d.state === "allocating" || d.state === "queued" || d.state === "finishing") && !isDone || this.taskFilter === "completed" && isDone || this.taskFilter === "failed" && (d.state === "failed" || d.state === "cancelled");
         return matchesSearch && matchesFilter;
       });
     }
@@ -625,7 +631,7 @@
         <span>\u2022</span>
         <span style="color: var(--accent); font-weight: 600;">${formatSpeed(item.speed_bytes_per_sec)}</span>
         <span>\u2022</span>
-        <span>${formatEta(total - done, item.speed_bytes_per_sec)}</span>
+        <span>${formatEta(total, done, item.speed_bytes_per_sec)}</span>
       `;
       } else if (isCompleted) {
         return `
@@ -713,7 +719,7 @@
       const done = item.size_done || 0;
       const pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
       const isCompleted = item.state === "completed" || total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed" && item.state !== "queued";
-      const isDownloading = item.state === "downloading" && !isCompleted;
+      const isDownloading = (item.state === "downloading" || item.state === "probing" || item.state === "allocating" || item.state === "finishing") && !isCompleted;
       const isPaused = item.state === "paused";
       const isQueued = item.state === "queued" || item.state === "connecting";
       const isFailed = item.state === "failed" || item.state === "cancelled";
@@ -798,7 +804,7 @@
         const done = item.size_done || 0;
         const pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
         const isCompleted = item.state === "completed" || total > 0 && done >= total && item.speed_bytes_per_sec === 0 && item.state !== "paused" && item.state !== "failed" && item.state !== "queued";
-        const isDownloading = item.state === "downloading" && !isCompleted;
+        const isDownloading = (item.state === "downloading" || item.state === "probing" || item.state === "allocating" || item.state === "finishing") && !isCompleted;
         const isPaused = item.state === "paused";
         const isQueued = item.state === "queued" || item.state === "connecting";
         const isFailed = item.state === "failed" || item.state === "cancelled";
@@ -1140,84 +1146,10 @@
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const id = btn.getAttribute("data-id");
-          const filename = btn.getAttribute("data-name") || "Download";
           if (!id) return;
-          if (this.deletePreference === "list_only") {
-            this.sendTaskAction(id, "remove", false);
-          } else if (this.deletePreference === "delete_file") {
-            this.sendTaskAction(id, "remove", true);
-          } else {
-            this.openDeleteModal(id, filename);
-          }
+          this.sendTaskAction(id, "remove", this.deletePreference === "delete_file");
         });
       });
-    }
-    openDeleteModal(id, filename) {
-      this.deleteModalTarget = { id, filename };
-      let modal = document.getElementById("deleteConfirmModal");
-      if (!modal) {
-        modal = document.createElement("div");
-        modal.id = "deleteConfirmModal";
-        modal.className = "modal-overlay";
-        document.body.appendChild(modal);
-      }
-      modal.style.display = "flex";
-      modal.innerHTML = `
-      <div class="modal-dialog">
-        <div class="modal-title">Remove Download</div>
-        <div class="modal-desc">
-          Are you sure you want to remove <strong>${escapeHtml(filename)}</strong>?
-        </div>
-        <div style="margin: 6px 0 8px 0; display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-muted);">
-          <input type="checkbox" id="modalDontAskAgain" style="cursor: pointer; margin: 0; width: 14px; height: 14px; accent-color: var(--accent);" />
-          <label for="modalDontAskAgain" style="cursor: pointer; user-select: none; color: #8fa0be;">Don't ask again (You can change this anytime in Settings)</label>
-        </div>
-        <div class="modal-buttons" style="display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin-top: 4px;">
-          <button id="modalRemoveListBtn" class="btn-3d" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500;">Remove from list only</button>
-          <button id="modalRecycleFileBtn" class="btn-3d btn-danger" style="padding: 8px 12px; font-size: 11.5px; font-weight: 500; background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #f59e0b; color: #ffffff;">Delete File &amp; Remove</button>
-          <button id="modalCancelBtn" class="btn-3d" style="padding: 7px 12px; font-size: 11px; opacity: 0.85; margin-top: 2px;">Cancel</button>
-        </div>
-      </div>
-    `;
-      document.getElementById("modalCancelBtn")?.addEventListener("click", () => {
-        this.closeDeleteModal();
-      });
-      document.getElementById("modalRemoveListBtn")?.addEventListener("click", async () => {
-        const dontAsk = document.getElementById("modalDontAskAgain")?.checked;
-        if (dontAsk) {
-          this.deletePreference = "list_only";
-          await chrome.storage.local.set({
-            deletePreference: "list_only",
-            edm_delete_preference: "list_only"
-          });
-        }
-        if (this.deleteModalTarget) {
-          this.sendTaskAction(this.deleteModalTarget.id, "remove", false);
-        }
-        this.closeDeleteModal();
-      });
-      document.getElementById("modalRecycleFileBtn")?.addEventListener("click", async () => {
-        const dontAsk = document.getElementById("modalDontAskAgain")?.checked;
-        if (dontAsk) {
-          this.deletePreference = "delete_file";
-          await chrome.storage.local.set({
-            deletePreference: "delete_file",
-            edm_delete_preference: "delete_file"
-          });
-        }
-        if (this.deleteModalTarget) {
-          this.sendTaskAction(this.deleteModalTarget.id, "remove", true);
-        }
-        this.closeDeleteModal();
-      });
-    }
-    closeDeleteModal() {
-      this.deleteModalTarget = null;
-      const modal = document.getElementById("deleteConfirmModal");
-      if (modal) {
-        modal.style.display = "none";
-        modal.innerHTML = "";
-      }
     }
     // ─────────────────────────────────────────────────────────────
     // 2. UNIFIED SETTINGS TAB

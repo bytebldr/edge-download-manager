@@ -358,6 +358,21 @@ pub fn execute_download(
 
     let effective_size = size_total.or(pack_target.estimated_size);
 
+    // Save session cookies before queue check so queued tasks retain cookies,
+    // and decrypt stored cookies if none were passed directly (e.g. resume or queued execution).
+    let mut cookies = cookies;
+    if let Some(ref c) = cookies {
+        if let Ok(enc) = edm_core::security::encrypt_dpapi(c.as_bytes()) {
+            let _ = state.store.save_encrypted_cookies(id, &enc);
+        }
+    } else if let Ok(Some(enc)) = state.store.get_encrypted_cookies(id) {
+        if let Ok(dec) = edm_core::security::decrypt_dpapi(&enc) {
+            if let Ok(s) = String::from_utf8(dec) {
+                cookies = Some(s);
+            }
+        }
+    }
+
     let max_active = settings_val
         .as_ref()
         .and_then(|v| v.get("downloads"))
@@ -441,12 +456,6 @@ pub fn execute_download(
     if let Some(sz) = effective_size {
         if let Err(e) = edm_core::security::check_disk_space(&save_path, sz) {
             tracing::warn!("[DISK SPACE] {}", e);
-        }
-    }
-
-    if let Some(ref c) = cookies {
-        if let Ok(enc) = edm_core::security::encrypt_dpapi(c.as_bytes()) {
-            let _ = state.store.save_encrypted_cookies(id, &enc);
         }
     }
 
@@ -781,6 +790,14 @@ pub fn try_start_next_queued(state: &AppState) {
 
         for queued in queued_items.into_iter().take(slots_available) {
             let state_clone = state.clone();
+            let decrypted_cookies = state
+                .store
+                .get_encrypted_cookies(queued.id)
+                .ok()
+                .flatten()
+                .and_then(|enc| edm_core::security::decrypt_dpapi(&enc).ok())
+                .and_then(|dec| String::from_utf8(dec).ok());
+
             state.rt_handle.spawn(async move {
                 let _ = execute_download(
                     &state_clone,
@@ -790,7 +807,7 @@ pub fn try_start_next_queued(state: &AppState) {
                     Some(std::path::PathBuf::from(queued.save_dir)),
                     Some(queued.connections),
                     queued.size_total,
-                    None,
+                    decrypted_cookies,
                     queued.referer,
                     queued.user_agent,
                 );

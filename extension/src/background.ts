@@ -216,7 +216,13 @@ function notifyPopupPorts() {
   }
 
   // Update extension badge
-  const activeCount = latestTasks.filter((t) => t.status === "downloading").length;
+  const activeStatuses = new Set(["downloading", "probing", "connecting", "allocating", "queued", "finishing"]);
+  const activeCount = latestTasks.filter((t) => activeStatuses.has(t.status)).length;
+  for (const tabId of detectedMediaByTab.keys()) {
+    try {
+      chrome.action.setBadgeText({ text: null as any, tabId });
+    } catch {}
+  }
   if (connectionStatus === "waking") {
     chrome.action.setBadgeText({ text: "..." });
     chrome.action.setBadgeBackgroundColor({ color: "#F59E0B" });
@@ -928,6 +934,58 @@ chrome.runtime.onConnect.addListener((port) => {
 // Track handled download IDs to prevent duplicate interceptions
 const handledDownloadIds = new Set<number>();
 
+function safeDownloadCancel(downloadId: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      chrome.downloads.cancel(downloadId, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function safeDownloadErase(query: chrome.downloads.DownloadQuery): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      chrome.downloads.erase(query, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function safeDownloadPause(downloadId: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      chrome.downloads.pause(downloadId, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function safeDownloadResume(downloadId: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      chrome.downloads.resume(downloadId, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    } catch {
+      resolve();
+    }
+  });
+}
+
 // 7. Download Interception Engine (MV3 downloads.onDeterminingFilename)
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   let suggested = false;
@@ -1080,16 +1138,12 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
     // 4b. If desktop is offline / asleep, pause download and wake via NMH
     if (!socket || socket.readyState !== WebSocket.OPEN || connectionStatus !== "connected") {
       console.log("[EDM Extension] EDM is not connected. Pausing browser download and waking EDM...");
-      try {
-        await chrome.downloads.pause(item.id);
-      } catch {}
+      await safeDownloadPause(item.id);
 
       const wakeRes = await wakeDesktop(false);
       if (!wakeRes.ok) {
         console.warn("[EDM Extension] NMH wake failed or timed out:", wakeRes.error);
-        try {
-          await chrome.downloads.resume(item.id);
-        } catch {}
+        await safeDownloadResume(item.id);
         safeSuggest();
         try {
           chrome.notifications.create("edm-wake-fail", {
@@ -1120,25 +1174,17 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
 
       if (ack && ack.ok) {
         // Cancel and erase browser download, then call suggest so browser never opens Save-As dialog
-        try {
-          await chrome.downloads.cancel(item.id);
-        } catch {}
-        try {
-          await chrome.downloads.erase({ id: item.id });
-        } catch {}
+        await safeDownloadCancel(item.id);
+        await safeDownloadErase({ id: item.id });
         safeSuggest();
       } else {
         console.warn("[EDM Extension] App rejected task or ack timeout. Calling suggest for normal browser download.");
-        try {
-          await chrome.downloads.resume(item.id);
-        } catch {}
+        await safeDownloadResume(item.id);
         safeSuggest();
       }
     } catch (err) {
       console.warn("[EDM Extension] create_task failed, falling back to browser download:", err);
-      try {
-        await chrome.downloads.resume(item.id);
-      } catch {}
+      await safeDownloadResume(item.id);
       safeSuggest();
     }
   })();

@@ -153,6 +153,8 @@ pub enum OutboundWsMessage {
         lifecycle_state: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         extension_version: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        delete_preference: Option<String>,
     },
     TaskRemoved {
         id: String,

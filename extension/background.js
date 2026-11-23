@@ -177,7 +177,14 @@
         popupPorts.delete(port);
       }
     }
-    const activeCount = latestTasks.filter((t) => t.status === "downloading").length;
+    const activeStatuses = /* @__PURE__ */ new Set(["downloading", "probing", "connecting", "allocating", "queued", "finishing"]);
+    const activeCount = latestTasks.filter((t) => activeStatuses.has(t.status)).length;
+    for (const tabId of detectedMediaByTab.keys()) {
+      try {
+        chrome.action.setBadgeText({ text: null, tabId });
+      } catch {
+      }
+    }
     if (connectionStatus === "waking") {
       chrome.action.setBadgeText({ text: "..." });
       chrome.action.setBadgeBackgroundColor({ color: "#F59E0B" });
@@ -798,6 +805,54 @@
     }
   });
   var handledDownloadIds = /* @__PURE__ */ new Set();
+  function safeDownloadCancel(downloadId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.downloads.cancel(downloadId, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch {
+        resolve();
+      }
+    });
+  }
+  function safeDownloadErase(query) {
+    return new Promise((resolve) => {
+      try {
+        chrome.downloads.erase(query, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch {
+        resolve();
+      }
+    });
+  }
+  function safeDownloadPause(downloadId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.downloads.pause(downloadId, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch {
+        resolve();
+      }
+    });
+  }
+  function safeDownloadResume(downloadId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.downloads.resume(downloadId, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch {
+        resolve();
+      }
+    });
+  }
   chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
     let suggested = false;
     const safeSuggest = (options) => {
@@ -912,17 +967,11 @@
       const req_id = crypto.randomUUID();
       if (!socket || socket.readyState !== WebSocket.OPEN || connectionStatus !== "connected") {
         console.log("[EDM Extension] EDM is not connected. Pausing browser download and waking EDM...");
-        try {
-          await chrome.downloads.pause(item.id);
-        } catch {
-        }
+        await safeDownloadPause(item.id);
         const wakeRes = await wakeDesktop(false);
         if (!wakeRes.ok) {
           console.warn("[EDM Extension] NMH wake failed or timed out:", wakeRes.error);
-          try {
-            await chrome.downloads.resume(item.id);
-          } catch {
-          }
+          await safeDownloadResume(item.id);
           safeSuggest();
           try {
             chrome.notifications.create("edm-wake-fail", {
@@ -951,29 +1000,17 @@
           5e3
         );
         if (ack && ack.ok) {
-          try {
-            await chrome.downloads.cancel(item.id);
-          } catch {
-          }
-          try {
-            await chrome.downloads.erase({ id: item.id });
-          } catch {
-          }
+          await safeDownloadCancel(item.id);
+          await safeDownloadErase({ id: item.id });
           safeSuggest();
         } else {
           console.warn("[EDM Extension] App rejected task or ack timeout. Calling suggest for normal browser download.");
-          try {
-            await chrome.downloads.resume(item.id);
-          } catch {
-          }
+          await safeDownloadResume(item.id);
           safeSuggest();
         }
       } catch (err) {
         console.warn("[EDM Extension] create_task failed, falling back to browser download:", err);
-        try {
-          await chrome.downloads.resume(item.id);
-        } catch {
-        }
+        await safeDownloadResume(item.id);
         safeSuggest();
       }
     })();

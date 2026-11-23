@@ -110,6 +110,19 @@ impl WsManager {
         let theme = self.theme.read().await.clone();
         let palette = self.palette.read().await.clone();
         let lifecycle_state = self.lifecycle_state.read().await.clone();
+        let delete_preference = self
+            .store
+            .get_setting("app_settings")
+            .ok()
+            .flatten()
+            .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+            .and_then(|v| {
+                v.get("general")
+                    .and_then(|g| g.get("deletePreference"))
+                    .or_else(|| v.get("deletePreference"))
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+            });
         OutboundWsMessage::Snapshot {
             tasks,
             epoch: self.epoch.clone(),
@@ -118,6 +131,7 @@ impl WsManager {
             palette,
             lifecycle_state,
             extension_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            delete_preference,
         }
     }
 

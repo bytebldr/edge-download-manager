@@ -359,18 +359,6 @@
   `;
     (document.head || document.documentElement).appendChild(style);
   }
-  function formatBytes(bytes) {
-    if (!bytes) return "";
-    const n = typeof bytes === "string" ? parseInt(bytes, 10) : bytes;
-    if (!n || isNaN(n) || n <= 0) return "";
-    if (n >= 1024 * 1024 * 1024) {
-      return `~${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-    }
-    if (n >= 1024 * 1024) {
-      return `~${Math.round(n / (1024 * 1024))} MB`;
-    }
-    return `~${Math.round(n / 1024)} KB`;
-  }
   var cachedStreamData = null;
   function injectYoutubePillIfNeeded() {
     if (!isYoutubePillEnabled) return;
@@ -617,10 +605,6 @@
       titleEl.textContent = rawTitle;
       titleEl.title = rawTitle;
       header.appendChild(titleEl);
-      const subEl = document.createElement("div");
-      subEl.className = "edm-yt-subtitle";
-      subEl.textContent = "EDM Adaptive Engine";
-      header.appendChild(subEl);
       menu.appendChild(header);
       const videoSecTitle = document.createElement("div");
       videoSecTitle.className = "edm-yt-sec-header";
@@ -722,9 +706,8 @@
               const curLen = parseInt(cur.contentLength || "0", 10);
               return curLen >= prevLen ? cur : prev;
             }, matched[0]);
-            const sizeStr = formatBytes(best.contentLength);
             const fpsStr = best.fps && best.fps > 30 ? ` \u2022 ${best.fps}fps` : "";
-            const sub = sizeStr ? `${tier.tag} MP4 (${sizeStr}${fpsStr})` : `${tier.defaultSub}${fpsStr}`;
+            const sub = `${tier.defaultSub}${fpsStr}`;
             menu.appendChild(
               createMenuItem(videoIcon, tier.title, sub, () => {
                 triggerDownload(tier.tag, tier.suffix);
@@ -753,14 +736,11 @@
       const audioIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`;
       const audioStreams = allFormats.filter((f) => f.mimeType && f.mimeType.startsWith("audio/"));
       const m4aStream = audioStreams.find((f) => f.mimeType && f.mimeType.includes("mp4a"));
-      const bestAudio = audioStreams[0];
-      const mp3Size = formatBytes(bestAudio?.contentLength);
-      const m4aSize = formatBytes(m4aStream?.contentLength || bestAudio?.contentLength);
       menu.appendChild(
         createMenuItem(
           audioIcon,
           "Extract Audio (MP3)",
-          mp3Size ? `Universal MP3 stream (${mp3Size})` : "Universal MP3 at highest bitrate",
+          "Universal MP3 at highest bitrate",
           () => {
             triggerDownload("audio", "", true);
           }
@@ -770,7 +750,7 @@
         createMenuItem(
           audioIcon,
           "Extract Audio (M4A)",
-          m4aSize ? `Original AAC sound stream (${m4aSize})` : "Original AAC/M4A sound stream",
+          "Original AAC/M4A sound stream",
           () => {
             triggerDownload("audio#m4a", "", true);
           }
