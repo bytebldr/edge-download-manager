@@ -113,8 +113,11 @@ $cargoToml = Get-Content "$RootDir/Cargo.toml" -Raw
 $cargoMatch = [regex]::Match($cargoToml, '\[workspace\.package\][\s\S]*?version\s*=\s*"([^"]+)"')
 $cargoVer = if ($cargoMatch.Success) { $cargoMatch.Groups[1].Value } else { "" }
 
+$desktopCargoToml = Get-Content "$RootDir/apps/desktop/src-tauri/Cargo.toml" -Raw
+
 $mismatches = @()
 if ($cargoVer -ne $expectedVersion) { $mismatches += "Cargo.toml ($cargoVer)" }
+if ($desktopCargoToml -notmatch 'version\.workspace\s*=\s*true') { $mismatches += "apps/desktop/src-tauri/Cargo.toml (must inherit version.workspace = true)" }
 if ($desktopPkg.version -ne $expectedVersion) { $mismatches += "apps/desktop/package.json ($($desktopPkg.version))" }
 if ($extPkg.version -ne $expectedVersion) { $mismatches += "extension/package.json ($($extPkg.version))" }
 if ($extManifest.version -ne $expectedVersion) { $mismatches += "extension/manifest.json ($($extManifest.version))" }

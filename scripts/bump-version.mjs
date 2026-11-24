@@ -27,6 +27,15 @@ if (argVersion === "--check") {
     console.log(`  ✓ Cargo.toml matches (${version})`);
   }
 
+  const desktopCargoPath = path.join(rootDir, "apps", "desktop", "src-tauri", "Cargo.toml");
+  const desktopCargo = fs.readFileSync(desktopCargoPath, "utf-8");
+  if (!desktopCargo.includes("version.workspace = true")) {
+    console.error(`  ✗ apps/desktop/src-tauri/Cargo.toml must have version.workspace = true`);
+    hasMismatch = true;
+  } else {
+    console.log(`  ✓ apps/desktop/src-tauri/Cargo.toml inherits workspace version`);
+  }
+
   const checkJson = (filePath, name) => {
     if (!fs.existsSync(filePath)) return;
     const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
@@ -79,6 +88,15 @@ cargoToml = cargoToml.replace(
 );
 fs.writeFileSync(cargoTomlPath, cargoToml, "utf-8");
 console.log(`  ✓ Updated Cargo.toml`);
+
+// 3b. apps/desktop/src-tauri/Cargo.toml (must inherit workspace version)
+const desktopCargoPath = path.join(rootDir, "apps", "desktop", "src-tauri", "Cargo.toml");
+let desktopCargo = fs.readFileSync(desktopCargoPath, "utf-8");
+if (!desktopCargo.includes("version.workspace = true")) {
+  desktopCargo = desktopCargo.replace(/version\s*=\s*"[^"]+"/, "version.workspace = true");
+  fs.writeFileSync(desktopCargoPath, desktopCargo, "utf-8");
+  console.log(`  ✓ Enforced version.workspace = true in apps/desktop/src-tauri/Cargo.toml`);
+}
 
 // 4. apps/desktop/package.json
 const desktopPkgPath = path.join(rootDir, "apps", "desktop", "package.json");
