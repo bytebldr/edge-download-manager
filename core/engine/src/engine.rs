@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+pub use crate::adaptive::AdaptiveTelemetry;
 use crate::planner::Planner;
 use crate::probe::Probe;
 use crate::worker::{SegmentWorker, WorkerEvent};

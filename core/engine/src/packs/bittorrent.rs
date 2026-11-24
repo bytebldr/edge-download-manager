@@ -216,6 +216,7 @@ impl BitTorrentPack {
                             instant_throughput_bps: 0,
                             rolling_throughput_bps: 0,
                             upload_throughput_bps: 0,
+                            uploaded_bytes: 0,
                             active_connections: 1,
                             target_connections: task.config.max_connections,
                             live_workers: 1,
@@ -240,9 +241,11 @@ impl BitTorrentPack {
         let mut target_file_path = task.save_dir.join(&task.filename);
         let mut disk_space_checked = false;
         let mut prev_downloaded = 0u64;
+        let mut prev_uploaded_bytes = 0u64;
         let mut rolling_bps = 0u64;
         let mut prev_instant_bps = 0u64;
         let mut last_tick_time = std::time::Instant::now();
+        let mut last_upload_sample = std::time::Instant::now();
         let mut was_initializing = true;
         let mut smoothed_eta_sec: Option<u64> = None;
         let mut eta_sample_count: u32 = 0;
@@ -270,11 +273,14 @@ impl BitTorrentPack {
             // Handle transition out of piece verification
             if is_initializing {
                 prev_downloaded = stats.progress_bytes;
+                prev_uploaded_bytes = stats.uploaded_bytes;
                 was_initializing = true;
             } else if was_initializing {
                 was_initializing = false;
                 prev_downloaded = stats.progress_bytes;
-                last_tick_time = std::time::Instant::now();
+                prev_uploaded_bytes = stats.uploaded_bytes;
+                last_tick_time = now;
+                last_upload_sample = now;
             }
 
             // 1. Adaptive Engine Token Bucket Speed Limiter Enforcement (Network bytes only)
@@ -322,6 +328,21 @@ impl BitTorrentPack {
             } else {
                 (0, 0, 0)
             };
+
+            let upload_delta = if is_initializing {
+                0
+            } else {
+                stats.uploaded_bytes.saturating_sub(prev_uploaded_bytes)
+            };
+            prev_uploaded_bytes = stats.uploaded_bytes;
+            let elapsed_ul_sec = now.saturating_duration_since(last_upload_sample).as_secs_f64();
+            last_upload_sample = now;
+            let measured_ul_bps = if elapsed_ul_sec > 0.0 {
+                ((upload_delta as f64 / elapsed_ul_sec) * 8.0) as u64
+            } else {
+                0
+            };
+            let upload_throughput_bps = measured_ul_bps.max(ul_speed * 8);
 
             if let Some(name) = handle.name() {
                 let safe_name = crate::sanitizer::Sanitizer::sanitize_filename(&name);
@@ -501,7 +522,8 @@ impl BitTorrentPack {
                     progress_pct,
                     instant_throughput_bps: instant_bps,
                     rolling_throughput_bps: rolling_bps,
-                    upload_throughput_bps: ul_speed * 8,
+                    upload_throughput_bps,
+                    uploaded_bytes: stats.uploaded_bytes,
                     active_connections: if is_initializing { 0 } else { live_conns },
                     target_connections: task.config.max_connections,
                     live_workers: num_workers,

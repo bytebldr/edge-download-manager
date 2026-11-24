@@ -91,6 +91,7 @@ export interface DownloadItem {
   name: string;
   category: "Video" | "Music" | "Documents" | "Compressed" | "Programs" | "Pictures" | "Other";
   sizeTotal: number;
+  totalBytes?: number;
   sizeDone: number;
   speed: string;
   eta: string;
@@ -106,6 +107,7 @@ export interface DownloadItem {
   uploadHistory?: number[];
   peakSpeedBps?: number;
   elapsedSeconds?: number;
+  uploadedBytes?: number;
   error_msg?: string | null;
 }
 
@@ -673,6 +675,7 @@ export default function App() {
             name: b.filename,
             category,
             sizeTotal: finalTotal,
+            totalBytes: finalTotal,
             sizeDone: finalDone,
             error_msg: b.error_msg || existing?.error_msg || null,
             speed: isDownloading ? (existing?.speed || formatSpeed(speedVal)) : "0 B/s",
@@ -686,7 +689,10 @@ export default function App() {
             dateAdded: b.created_at ? new Date(b.created_at).toLocaleDateString() : (existing?.dateAdded || "Today"),
             workers: finalWorkers,
             speedHistory: history,
+            uploadHistory: existing?.uploadHistory || [],
+            uploadedBytes: (b as any).uploaded_bytes || existing?.uploadedBytes || 0,
             peakSpeedBps: Math.max(existing?.peakSpeedBps || 0, speedVal),
+            elapsedSeconds: existing?.elapsedSeconds || 0,
           };
         });
 
@@ -869,7 +875,10 @@ export default function App() {
       dateAdded: "Just now",
       workers: initialWorkers,
       speedHistory: [0],
+      uploadHistory: [],
+      uploadedBytes: 0,
       peakSpeedBps: 0,
+      elapsedSeconds: 0,
     };
     setDownloads([newItem, ...downloads]);
     setSelectedDownload(newItem);
@@ -914,7 +923,7 @@ export default function App() {
               lastValidEta: task.eta || "Calculating...",
               lastProgressTime: Date.now(),
               speedSamples: [],
-              elapsedSeconds: 0,
+              elapsedSeconds: task.elapsedSeconds || 0,
               lastUiUpdate: 0,
               displayedEta: task.eta || "Calculating...",
               displayedSpeed: task.speed || "0 B/s",
@@ -942,7 +951,11 @@ export default function App() {
             const progress = isFinished ? 100 : (phase === "Merging" ? 95 : (phase === "Resolving" ? 0 : rawProgress));
             const now = Date.now();
 
-            smooth.elapsedSeconds += 0.25;
+            if (!isFinished) {
+              smooth.elapsedSeconds += 0.25;
+            } else if (smooth.elapsedSeconds === 0 && (task.elapsedSeconds || 0) > 0) {
+              smooth.elapsedSeconds = task.elapsedSeconds || 0;
+            }
 
             // Speed smoothing EMA (8s window = 32 samples @ 250ms)
             const instantSpeed = Math.floor((telem.instant_throughput_bps || telem.rolling_throughput_bps) / 8);
@@ -1081,16 +1094,22 @@ export default function App() {
             const peak = Math.max(task.peakSpeedBps || 0, actualBps);
             const uploadBps = Math.floor((telem.upload_throughput_bps || 0) / 8);
             const ulHistory = [...(task.uploadHistory || []).slice(-59), uploadBps];
+            const uploadedBytes = (telem as any).uploaded_bytes ?? (task as any).uploadedBytes ?? 0;
 
             // Trigger alert notification immediately upon reaching completion
             if (isFinished && !notifiedCompletedIdsRef.current.has(task.id)) {
               triggerCompletionNotification(task.name, task.id);
             }
 
+            const finalElapsedSeconds = isFinished
+              ? (task.elapsedSeconds && task.elapsedSeconds > 0 ? task.elapsedSeconds : Math.floor(smooth.elapsedSeconds))
+              : Math.floor(smooth.elapsedSeconds);
+
             return {
               id: task.id,
               sizeDone,
               sizeTotal,
+              totalBytes: sizeTotal,
               progress,
               speed: smooth.displayedSpeed,
               eta: smooth.displayedEta,
@@ -1100,12 +1119,16 @@ export default function App() {
               speedHistory: history,
               uploadHistory: ulHistory,
               peakSpeedBps: peak,
-              elapsedSeconds: Math.floor(smooth.elapsedSeconds),
+              elapsedSeconds: finalElapsedSeconds || task.elapsedSeconds || 0,
+              uploadedBytes,
             };
           } else {
-            smooth.elapsedSeconds += 0.25;
+            if (task.state === "downloading") {
+              smooth.elapsedSeconds += 0.25;
+            }
             return {
               id: task.id,
+              elapsedSeconds: Math.floor(smooth.elapsedSeconds) || task.elapsedSeconds || 0,
             };
           }
         })

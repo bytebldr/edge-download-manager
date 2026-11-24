@@ -82,6 +82,24 @@ pub fn execute_download(
         .unwrap_or("")
         .to_lowercase();
 
+    let category = if pack_target.is_p2p || ext == "torrent" {
+        "Compressed"
+    } else if pack_target.is_stream || ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext.as_str()) {
+        "Video"
+    } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext.as_str()) {
+        "Music"
+    } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico"].contains(&ext.as_str()) {
+        "Pictures"
+    } else if ["pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv"].contains(&ext.as_str()) {
+        "Documents"
+    } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"].contains(&ext.as_str()) {
+        "Compressed"
+    } else {
+        "Programs"
+    };
+
+    let is_p2p_or_archive = pack_target.is_p2p || category.eq_ignore_ascii_case("Compressed") || ext == "torrent";
+
     if save_dir.is_none() || save_path == default_downloads_path {
         let mut routed_path: Option<PathBuf> = None;
 
@@ -95,29 +113,73 @@ pub fn execute_download(
                     .unwrap_or(true);
 
                 if is_auto {
-                    if let Some(cats) = settings.get("categories").and_then(|c| c.as_array()) {
-                        for cat in cats {
-                            let enabled = cat.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
-                            if !enabled {
-                                continue;
-                            }
-                            let matches = cat
-                                .get("extensions")
-                                .and_then(|exts| exts.as_array())
-                                .map(|arr| {
-                                    arr.iter().any(|e| {
-                                        e.as_str()
-                                            .map(|s| s.trim_start_matches('.').eq_ignore_ascii_case(&ext))
-                                            .unwrap_or(false)
-                                    })
-                                })
-                                .unwrap_or(false);
-
-                            if matches {
-                                if let Some(dest) = cat.get("destinationDirectory").and_then(|d| d.as_str()) {
+                    if is_p2p_or_archive {
+                        // Resolve destination directory from settings.categories.get("archives") or "compressed"
+                        if let Some(cats_obj) = settings.get("categories").and_then(|c| c.as_object()) {
+                            if let Some(val) = cats_obj.get("archives").or_else(|| cats_obj.get("compressed")) {
+                                if let Some(s) = val.as_str() {
+                                    if !s.trim().is_empty() {
+                                        routed_path = Some(PathBuf::from(s.trim()));
+                                    }
+                                } else if let Some(dest) = val.get("destinationDirectory").and_then(|d| d.as_str()) {
                                     if !dest.trim().is_empty() {
                                         routed_path = Some(PathBuf::from(dest.trim()));
-                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if routed_path.is_none() {
+                            if let Some(cats) = settings.get("categories").and_then(|c| c.as_array()) {
+                                for cat in cats {
+                                    let enabled = cat.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                                    if !enabled {
+                                        continue;
+                                    }
+                                    let id = cat.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                                    let name = cat.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                    if id.eq_ignore_ascii_case("archives")
+                                        || id.eq_ignore_ascii_case("compressed")
+                                        || name.eq_ignore_ascii_case("archives")
+                                        || name.eq_ignore_ascii_case("compressed")
+                                    {
+                                        if let Some(dest) = cat.get("destinationDirectory").and_then(|d| d.as_str()) {
+                                            if !dest.trim().is_empty() {
+                                                routed_path = Some(PathBuf::from(dest.trim()));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if routed_path.is_none() {
+                        if let Some(cats) = settings.get("categories").and_then(|c| c.as_array()) {
+                            for cat in cats {
+                                let enabled = cat.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                                if !enabled {
+                                    continue;
+                                }
+                                let matches = cat
+                                    .get("extensions")
+                                    .and_then(|exts| exts.as_array())
+                                    .map(|arr| {
+                                        arr.iter().any(|e| {
+                                            e.as_str()
+                                                .map(|s| s.trim_start_matches('.').eq_ignore_ascii_case(&ext))
+                                                .unwrap_or(false)
+                                        })
+                                    })
+                                    .unwrap_or(false);
+
+                                if matches {
+                                    if let Some(dest) = cat.get("destinationDirectory").and_then(|d| d.as_str()) {
+                                        if !dest.trim().is_empty() {
+                                            routed_path = Some(PathBuf::from(dest.trim()));
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -130,7 +192,9 @@ pub fn execute_download(
         // Fallback to standard user directories if app_settings did not specify a category path
         if routed_path.is_none() {
             let dirs = crate::os::get_system_user_dirs_internal();
-            if ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext.as_str()) {
+            if is_p2p_or_archive {
+                routed_path = Some(PathBuf::from(dirs.downloads).join("Archives"));
+            } else if ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext.as_str()) {
                 routed_path = Some(PathBuf::from(dirs.videos));
             } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext.as_str()) {
                 routed_path = Some(PathBuf::from(dirs.music));
@@ -150,6 +214,9 @@ pub fn execute_download(
             save_path = target;
         }
     }
+
+    // Ensure destination directory exists on disk before librqbit or workers start
+    let _ = std::fs::create_dir_all(&save_path);
 
     // Security Guard: Prevent writing to sensitive system directories or Startup folders
     let path_str = save_path.to_string_lossy().to_lowercase();
@@ -341,17 +408,19 @@ pub fn execute_download(
         .next_back()
         .unwrap_or("")
         .to_lowercase();
-    let category = if pack_target.is_p2p {
+    let category = if pack_target.is_p2p || ext == "torrent" || category.eq_ignore_ascii_case("Compressed") {
         "Compressed"
-    } else if pack_target.is_stream || ["mp4", "mkv", "webm", "avi", "mov"].contains(&ext.as_str())
+    } else if pack_target.is_stream || ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext.as_str())
     {
         "Video"
-    } else if ["mp3", "flac", "wav", "aac"].contains(&ext.as_str()) {
+    } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext.as_str()) {
         "Music"
-    } else if ["zip", "rar", "7z", "tar", "gz", "iso"].contains(&ext.as_str()) {
-        "Compressed"
-    } else if ["pdf", "doc", "docx", "txt"].contains(&ext.as_str()) {
+    } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico"].contains(&ext.as_str()) {
+        "Pictures"
+    } else if ["pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv"].contains(&ext.as_str()) {
         "Documents"
+    } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"].contains(&ext.as_str()) {
+        "Compressed"
     } else {
         "Programs"
     };

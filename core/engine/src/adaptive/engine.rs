@@ -688,6 +688,7 @@ impl AdaptiveEngine {
                                 (smoothed_speed_bytes as u64) * 8
                             },
                             upload_throughput_bps: 0,
+                            uploaded_bytes: 0,
                             active_connections: stable_conns,
                             target_connections: stable_conns,
                             live_workers: scheduler.active_count(),

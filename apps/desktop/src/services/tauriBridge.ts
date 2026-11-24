@@ -27,6 +27,7 @@ export interface BackendTelemetry {
   instant_throughput_bps: number;
   rolling_throughput_bps: number;
   upload_throughput_bps?: number;
+  uploaded_bytes?: number;
   active_connections: number;
   target_connections?: number;
   live_workers?: number;

@@ -301,7 +301,7 @@ export const SpeedChartInteractive: React.FC<SpeedChartInteractiveProps> = ({
             <span className="font-mono font-semibold text-sky-400 tabular-nums min-w-[70px] inline-block text-right">
               {eta && eta !== "Calculating..." && eta !== "Connecting..." && eta !== "—" && eta !== "-"
                 ? eta
-                : (isDownloading ? "Calculating..." : "—")}
+                : (!isDownloading ? "Finished" : "Calculating...")}
             </span>
           </div>
         </div>

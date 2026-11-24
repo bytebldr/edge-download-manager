@@ -35,6 +35,7 @@ export interface InspectorDownloadItem {
   uploadHistory?: number[];
   peakSpeedBps?: number;
   elapsedSeconds?: number;
+  uploadedBytes?: number;
 }
 
 interface DetailsInspectorDrawerProps {
@@ -71,11 +72,12 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
       ? download.uploadHistory[download.uploadHistory.length - 1]
       : 0;
   const totalUploadedBytes =
-    download.uploadHistory && download.uploadHistory.length > 0
+    download.uploadedBytes ??
+    (download.uploadHistory && download.uploadHistory.length > 0
       ? download.uploadHistory.reduce((a, b) => a + b, 0)
-      : 0;
-  const shareRatio =
-    download.sizeDone > 0 ? (totalUploadedBytes / download.sizeDone).toFixed(2) : "0.00";
+      : 0);
+  const shareBase = download.sizeDone > 0 ? download.sizeDone : Math.max(1, download.sizeTotal);
+  const shareRatio = (totalUploadedBytes / shareBase).toFixed(2);
 
   const totalBytes = Math.max(1, download.sizeTotal);
   const workersList =
