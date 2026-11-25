@@ -275,8 +275,15 @@ pub fn execute_download_with_selected_files(
         .and_then(|p| p.as_str())
         .unwrap_or("ask");
 
+    let existing_record = state
+        .store
+        .list_all_downloads()
+        .ok()
+        .and_then(|records| records.into_iter().find(|r| r.id == id));
+    let is_resuming = existing_record.is_some();
+
     let target_file_path = save_path.join(&clean_name);
-    let final_clean_name = if target_file_path.exists() {
+    let final_clean_name = if !is_resuming && target_file_path.exists() {
         match conflict_policy {
             "overwrite" => clean_name,
             "skip" => {
@@ -376,7 +383,7 @@ pub fn execute_download_with_selected_files(
 
     let mut config = AdaptiveConfig::default();
     if let Some(conns) = max_connections {
-        config.max_connections = conns;
+        config.max_connections = conns.clamp(1, 64);
     }
 
     // UI-01: Apply persistent settings from store (connections, segmentation, retries, proxy)
@@ -431,6 +438,8 @@ pub fn execute_download_with_selected_files(
             }
         }
     }
+
+    config.max_connections_per_host = config.max_connections;
 
     let ext = final_clean_name
         .split('.')
@@ -557,24 +566,41 @@ pub fn execute_download_with_selected_files(
         }
     }
 
+    if let Some(ref existing) = existing_record {
+        let seg_count = state
+            .store
+            .get_segments(id)
+            .map(|s| s.len())
+            .unwrap_or(0);
+        tracing::info!(
+            "[RESUME] Resuming download {} ({}) with {} saved segment(s), size_done={}, etag={:?}, last_modified={:?}",
+            id,
+            final_clean_name,
+            seg_count,
+            existing.size_done,
+            existing.etag,
+            existing.last_modified
+        );
+    }
+
     let record = DownloadRecord {
         id,
         url: url.clone(),
-        final_url: None,
+        final_url: existing_record.as_ref().and_then(|r| r.final_url.clone()),
         filename: final_clean_name.clone(),
         save_dir: save_path.to_string_lossy().to_string(),
         category: category.into(),
         state: DownloadState::Downloading,
-        size_total: effective_size,
-        size_done: 0,
-        resumable: true,
-        etag: None,
-        last_modified: None,
-        content_type: None,
+        size_total: effective_size.or_else(|| existing_record.as_ref().and_then(|r| r.size_total)),
+        size_done: existing_record.as_ref().map(|r| r.size_done).unwrap_or(0),
+        resumable: existing_record.as_ref().map(|r| r.resumable).unwrap_or(true),
+        etag: existing_record.as_ref().and_then(|r| r.etag.clone()),
+        last_modified: existing_record.as_ref().and_then(|r| r.last_modified.clone()),
+        content_type: existing_record.as_ref().and_then(|r| r.content_type.clone()),
         referer: referer.clone(),
         user_agent: user_agent.clone(),
         connections: config.max_connections,
-        created_at: Utc::now(),
+        created_at: existing_record.as_ref().map(|r| r.created_at).unwrap_or_else(Utc::now),
         error_msg: None,
     };
     let _ = state.store.insert_download(&record);
