@@ -9,6 +9,81 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
+struct ConnectionGuard;
+
+impl ConnectionGuard {
+    fn try_acquire() -> Option<Self> {
+        ACTIVE_CONNECTIONS
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                if current < MAX_CONCURRENT_CONNECTIONS {
+                    Some(current + 1)
+                } else {
+                    None
+                }
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn spawn_accept_loop(listener: TcpListener, manager: Arc<WsManager>) {
+    tokio::spawn(async move {
+        loop {
+            let (stream, peer_addr) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    warn!("WebSocket listener accept error: {}. Retrying in 50ms...", e);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
+            };
+
+            let Some(guard) = ConnectionGuard::try_acquire() else {
+                warn!(
+                    "Rejecting connection from {}: max concurrent connections reached ({})",
+                    peer_addr, MAX_CONCURRENT_CONNECTIONS
+                );
+                drop(stream);
+                continue;
+            };
+
+            let mgr = manager.clone();
+            tokio::spawn(async move {
+                let _conn_guard = guard;
+                let mut peek_buf = [0u8; 1024];
+                let mut peek_len = 0;
+                for _ in 0..20 {
+                    peek_len = stream.peek(&mut peek_buf).await.unwrap_or(0);
+                    if peek_len > 0 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                if peek_len == 0 {
+                    return;
+                }
+
+                let peek_str = String::from_utf8_lossy(&peek_buf[..peek_len]);
+
+                if peek_str.starts_with("GET /token")
+                    || peek_str.starts_with("OPTIONS /token")
+                    || peek_str.starts_with("GET /firefox.xpi")
+                {
+                    handle_http_token_request(stream, peer_addr, mgr).await;
+                } else {
+                    handle_ws_connection(stream, peer_addr, mgr).await;
+                }
+            });
+        }
+    });
+}
+
 pub async fn start_ws_server(manager: Arc<WsManager>) {
     let addr = WS_BIND_ADDR;
     let mut retry_count = 0;
@@ -50,119 +125,16 @@ pub async fn start_ws_server(manager: Arc<WsManager>) {
         }
     });
 
-    let srv_mgr = manager.clone();
-    tokio::spawn(async move {
-        loop {
-            let (stream, peer_addr) = match listener.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    warn!("WebSocket listener accept error: {}. Retrying in 50ms...", e);
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-
-            let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
-            if active >= MAX_CONCURRENT_CONNECTIONS {
-                warn!(
-                    "Rejecting connection from {}: max concurrent connections reached ({})",
-                    peer_addr, active
-                );
-                drop(stream);
-                continue;
-            }
-
-            let mgr = srv_mgr.clone();
-            tokio::spawn(async move {
-                ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
-                let mut peek_buf = [0u8; 1024];
-                let mut peek_len = 0;
-                for _ in 0..20 {
-                    peek_len = stream.peek(&mut peek_buf).await.unwrap_or(0);
-                    if peek_len > 0 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-                if peek_len == 0 {
-                    // Empty probe or client disconnected during peek; release connection counter and drop cleanly
-                    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
-                    return;
-                }
-
-                let peek_str = String::from_utf8_lossy(&peek_buf[..peek_len]);
-
-                if peek_str.starts_with("GET /token")
-                    || peek_str.starts_with("OPTIONS /token")
-                    || peek_str.starts_with("GET /firefox.xpi")
-                {
-                    handle_http_token_request(stream, peer_addr, mgr).await;
-                } else {
-                    handle_ws_connection(stream, peer_addr, mgr).await;
-                }
-                ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
-            });
-        }
-    });
+    spawn_accept_loop(listener, manager);
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn start_ws_server_on(
     bind_addr: &str,
     manager: Arc<WsManager>,
 ) -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(bind_addr).await?;
     let local_addr = listener.local_addr()?;
-    let srv_mgr = manager.clone();
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, peer_addr) = match listener.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    warn!("WebSocket listener accept error on test server: {}. Retrying in 50ms...", e);
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-
-            let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
-            if active >= MAX_CONCURRENT_CONNECTIONS {
-                drop(stream);
-                continue;
-            }
-            let mgr = srv_mgr.clone();
-            tokio::spawn(async move {
-                ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
-                let mut peek_buf = [0u8; 1024];
-                let mut peek_len = 0;
-                for _ in 0..20 {
-                    peek_len = stream.peek(&mut peek_buf).await.unwrap_or(0);
-                    if peek_len > 0 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-                if peek_len == 0 {
-                    // Empty probe or client disconnected during peek; release connection counter and drop cleanly
-                    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
-                    return;
-                }
-
-                let peek_str = String::from_utf8_lossy(&peek_buf[..peek_len]);
-
-                if peek_str.starts_with("GET /token")
-                    || peek_str.starts_with("OPTIONS /token")
-                    || peek_str.starts_with("GET /firefox.xpi")
-                {
-                    handle_http_token_request(stream, peer_addr, mgr).await;
-                } else {
-                    handle_ws_connection(stream, peer_addr, mgr).await;
-                }
-                ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
-            });
-        }
-    });
-
+    spawn_accept_loop(listener, manager);
     Ok(local_addr)
 }

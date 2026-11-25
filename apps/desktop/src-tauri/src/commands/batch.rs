@@ -18,6 +18,7 @@ pub async fn add_batch_downloads(
     category: Option<String>,
     save_dir: Option<String>,
 ) -> Result<usize, String> {
+    let _ = &category;
     let mut added = 0;
     for url in urls {
         let u = url.trim();
@@ -36,7 +37,7 @@ pub async fn add_batch_downloads(
             None,
             None,
             None,
-            category.clone(),
+            None,
         )
         .is_ok()
         {
@@ -75,5 +76,21 @@ pub fn verify_file_checksum(
     expected_hash: String,
     algo: String,
 ) -> Result<features::ChecksumResult, String> {
-    features::verify_file_checksum(Path::new(&file_path), &expected_hash, &algo)
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("File path cannot be empty".into());
+    }
+    let path = Path::new(trimmed);
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("Invalid file path: parent directory traversal not allowed".into());
+    }
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|e| format!("Failed to resolve file path: {}", e))?;
+    if !canonical.is_file() {
+        return Err("Target path is not a regular file".into());
+    }
+    features::verify_file_checksum(&canonical, &expected_hash, &algo)
 }

@@ -77,6 +77,7 @@ interface SettingsPageProps {
   onSpeedLimitChange?: (val: string) => void;
   selectedDownload?: DownloadItem | null;
   totalSpeed?: string;
+  totalUploadSpeed?: string;
   activeThreads?: number;
   totalSessionBytes?: number;
 }
@@ -99,18 +100,6 @@ const paletteOptions = [
   { id: "titanium", label: "Titanium Slate", color: "#64748B" },
 ] as const;
 
-const languageOptions = [
-  { code: "en-US", label: "English (United States)", flag: "🇺🇸" },
-  { code: "es-ES", label: "Español (Spanish)", flag: "🇪🇸" },
-  { code: "de-DE", label: "Deutsch (German)", flag: "🇩🇪" },
-  { code: "fr-FR", label: "Français (French)", flag: "🇫🇷" },
-  { code: "ja-JP", label: "日本語 (Japanese)", flag: "🇯🇵" },
-  { code: "zh-CN", label: "简体中文 (Chinese)", flag: "🇨🇳" },
-  { code: "pt-BR", label: "Português (Brazil)", flag: "🇧🇷" },
-  { code: "ru-RU", label: "Русский (Russian)", flag: "🇷🇺" },
-  { code: "hi-IN", label: "हिन्दी (Hindi)", flag: "🇮🇳" },
-];
-
 export default function SettingsPage({
   settings,
   onUpdateSettings,
@@ -119,6 +108,7 @@ export default function SettingsPage({
   onSpeedLimitChange,
   selectedDownload,
   totalSpeed = "0 B/s",
+  totalUploadSpeed = "0 B/s",
   activeThreads = 0,
   totalSessionBytes = 0,
 }: SettingsPageProps) {
@@ -127,8 +117,8 @@ export default function SettingsPage({
   const [customCatName, setCustomCatName] = useState("");
   const [customCatExt, setCustomCatExt] = useState("");
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
-  const [showTranslatorNotice, setShowTranslatorNotice] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>("0.0.6");
+  const [importStatus, setImportStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("0.1.0");
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "checking" | "up-to-date" | "update-available" | "downloading" | "ready" | "error"
   >("idle");
@@ -476,13 +466,14 @@ export default function SettingsPage({
         if (parsed.schemaVersion) {
           onUpdateSettings(parsed);
           saveSettings(parsed);
-          alert("Settings imported successfully!");
+          setImportStatus({ type: "success", message: "Settings imported successfully." });
         } else {
-          alert("Invalid EDM settings file format.");
+          setImportStatus({ type: "error", message: "Invalid EDM settings file format." });
         }
       } catch (err) {
-        alert("Failed to parse settings JSON file.");
+        setImportStatus({ type: "error", message: "Failed to parse settings JSON file." });
       }
+      setTimeout(() => setImportStatus(null), 4000);
     };
     reader.readAsText(file);
   };
@@ -828,43 +819,6 @@ export default function SettingsPage({
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-
-              {/* Language & Localization Card */}
-              <div className="card-3d p-5 rounded-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-primary)] block">Display Language</label>
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      Select your primary interface language and regional date/numeric formatting.
-                    </span>
-                  </div>
-                  <div className="w-full sm:w-64 shrink-0">
-                    <select
-                      value={settings.general.language}
-                      onChange={(e) => update("general", { language: e.target.value })}
-                      className="w-full h-8 px-3 rounded-xl bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
-                    >
-                      {languageOptions.map((lang) => (
-                        <option key={lang.code} value={lang.code} className="bg-[var(--bg-card)]">
-                          {lang.flag} {lang.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs">
-                  <span className="text-[var(--text-secondary)] text-[11px]">
-                    Your language is not listed or the translation is incomplete?
-                  </span>
-                  <button
-                    onClick={() => setShowTranslatorNotice(true)}
-                    className="text-[var(--accent)] hover:underline font-semibold text-[11px] cursor-pointer whitespace-nowrap ml-2"
-                  >
-                    Help Translate
-                  </button>
                 </div>
               </div>
 
@@ -1888,7 +1842,7 @@ export default function SettingsPage({
                   <img src="/logo.png" alt="EDM Logo" className="w-10 h-10 object-contain drop-shadow" />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-[var(--text-primary)]">Edge Download Manager</span>
+                      <span className="font-bold text-sm text-[var(--text-primary)]">Evo Download Manager</span>
                       <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-[var(--accent-badge-bg)] text-[var(--accent-badge-text)] border border-[var(--accent-badge-border)]">
                         v{appVersion}
                       </span>
@@ -2109,6 +2063,11 @@ export default function SettingsPage({
                     <input type="file" accept=".json" onChange={handleImport} className="hidden" />
                   </label>
                 </div>
+                {importStatus && (
+                  <p className={`text-xs font-medium ${importStatus.type === "success" ? "text-emerald-400" : "text-rose-400"}`}>
+                    {importStatus.message}
+                  </p>
+                )}
               </div>
 
               {/* Danger Zone: Factory Reset */}
@@ -2137,36 +2096,6 @@ export default function SettingsPage({
           </div>
         </main>
       </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. TRANSLATOR COMMUNITY MODAL
-      ────────────────────────────────────────────────────────────── */}
-      {showTranslatorNotice && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="panel-3d w-full max-w-md p-5 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2">
-              <Globe className="w-5 h-5 text-[var(--accent)]" />
-              <h3 className="font-bold text-sm text-[var(--text-primary)]">Contribute Translation</h3>
-            </div>
-            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-              EDM locale strings are stored in open JSON files. You can add a new language or improve existing locale
-              packs by creating a translation file in{" "}
-              <code className="text-emerald-400 font-mono text-[11px]">crates/edm-locales/</code>.
-            </p>
-            <div className="p-2.5 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)] font-mono">
-              Locale Template: en-US.json → es-ES.json, hi-IN.json
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowTranslatorNotice(false)}
-                className="btn-primary-3d h-7 px-4 rounded-lg text-xs font-semibold cursor-pointer"
-              >
-                Got It
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ─────────────────────────────────────────────────────────────
           4. PINNED FOOTER TELEMETRY STATUS BAR (PERMANENTLY VISIBLE)
@@ -2268,9 +2197,9 @@ export default function SettingsPage({
             <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>{totalSpeed || "0 B/s"}</span>
           </div>
-          <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] whitespace-nowrap">
+          <div className={`hidden sm:flex items-center gap-1 whitespace-nowrap ${totalUploadSpeed !== "0 B/s" ? "text-[#818CF8] font-semibold" : "text-[var(--text-muted)]"}`}>
             <ArrowUp className="w-3.5 h-3.5" />
-            <span>0 B/s</span>
+            <span>{totalUploadSpeed || "0 B/s"}</span>
           </div>
           <div className="hidden md:block text-[var(--text-muted)]">|</div>
           <div className="hidden md:flex text-[var(--text-secondary)] items-center gap-1 whitespace-nowrap">

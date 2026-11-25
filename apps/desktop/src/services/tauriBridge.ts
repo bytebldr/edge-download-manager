@@ -411,7 +411,7 @@ export async function tauriGetExtensionToken(): Promise<string> {
       console.warn("Tauri get_extension_token:", err);
     }
   }
-  return "ed00000000000000000000000000000000000000000000000000000000000000";
+  return "";
 }
 
 export interface UpdateCheckResult {
@@ -443,7 +443,7 @@ export async function tauriGetAppVersion(): Promise<string> {
       console.warn("Tauri get_app_version failed:", err);
     }
   }
-  return "0.0.5";
+  return "0.1.0";
 }
 
 function isSemverNewer(latest: string, current: string): boolean {
@@ -468,11 +468,11 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
     }
   }
 
-  const currentVersion = "0.0.9";
+  const currentVersion = "0.1.0";
 
   // Web fallback: query GitHub releases API directly
   try {
-    const res = await fetch("https://api.github.com/repos/bytebldr/edge-download-manager/releases/latest", {
+    const res = await fetch("https://api.github.com/repos/bytebldr/evo-download-manager/releases/latest", {
       headers: {
         Accept: "application/vnd.github.v3+json",
       },
@@ -495,7 +495,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
         download_url: setupAsset?.browser_download_url || null,
         asset_name: setupAsset?.name || null,
         asset_size: setupAsset?.size || 0,
-        html_url: release.html_url || "https://github.com/bytebldr/edge-download-manager/releases",
+        html_url: release.html_url || "https://github.com/bytebldr/evo-download-manager/releases",
       };
     }
   } catch {
@@ -512,7 +512,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
     download_url: null,
     asset_name: null,
     asset_size: 0,
-    html_url: "https://github.com/bytebldr/edge-download-manager/releases",
+    html_url: "https://github.com/bytebldr/evo-download-manager/releases",
   };
 }
 
@@ -597,7 +597,7 @@ export async function tauriGetBrowserDiagnostics(extId?: string): Promise<Diagno
     }
   }
   return {
-    app_version: "0.0.6",
+    app_version: "0.1.0",
     os: "Windows",
     helper_path: "C:\\Program Files\\EDM\\edm-nmh.exe",
     app_exe_path: "C:\\Program Files\\EDM\\EDM.exe",

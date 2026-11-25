@@ -70,7 +70,7 @@ pub fn trigger_graceful_quit(app_handle: tauri::AppHandle, state: AppState) {
     });
 
     let task_handles = {
-        let tasks = state.tasks.lock().unwrap();
+        let tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
         tasks.values().cloned().collect::<Vec<_>>()
     };
     for h in task_handles {

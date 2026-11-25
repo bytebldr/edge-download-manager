@@ -135,8 +135,8 @@ impl FeaturePackManager {
                 id: "ed2k_pack".to_string(),
                 name: "eDonkey2000 (eD2k) Pack (Experimental)".to_string(),
                 version: "0.2.0 (Experimental)".to_string(),
-                active: true,
-                installed: true,
+                active: false,
+                installed: false,
                 description: "eD2k link parsing and chunk hash verification (Experimental)"
                     .to_string(),
                 capabilities: vec![

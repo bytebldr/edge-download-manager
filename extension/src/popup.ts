@@ -1,6 +1,7 @@
 // EDM Live Download Dashboard - Main Popup Controller
 
 import { compareVersions } from "./utils/version";
+import { autoDetectToken } from "./utils/token";
 
 interface DownloadItem {
   id: string;
@@ -375,54 +376,30 @@ class PopupController {
     });
   }
 
-  private async detectTokenSilently() {
-    // 1. Try native messaging first
-    try {
-      const nmhToken = await new Promise<string | null>((resolve) => {
-        chrome.runtime.sendNativeMessage("com.edm.nmh", { type: "get_token" }, (resp) => {
-          if (chrome.runtime.lastError || !resp || !resp.token) return resolve(null);
-          resolve(resp.token);
-        });
-      });
-      if (nmhToken && nmhToken.length >= 32) {
-        this.token = nmhToken;
-        await chrome.storage.local.set({ edm_ws_token: nmhToken });
-        chrome.runtime.sendMessage({ action: "update_token", token: nmhToken });
-        const input = document.getElementById("popupWsTokenInput") as HTMLInputElement;
-        if (input) input.value = nmhToken;
-        return;
-      }
-    } catch {}
-
-    // 2. Try HTTP loopback
-    for (const url of ["http://127.0.0.1:14370/token", "http://localhost:14370/token"]) {
-      try {
-        const resp = await fetch(url, {
-          method: "GET",
-          headers: { "X-EDM-Client": "extension" },
-          cache: "no-store",
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.token && typeof data.token === "string" && data.token.length >= 32) {
-            this.token = data.token;
-            await chrome.storage.local.set({ edm_ws_token: data.token });
-            chrome.runtime.sendMessage({ action: "update_token", token: data.token });
-            const input = document.getElementById("popupWsTokenInput") as HTMLInputElement;
-            if (input) input.value = data.token;
-            return;
-          }
-        }
-      } catch {}
+  private async resolveAutoDetectedToken(): Promise<{ token: string | null; error?: string }> {
+    const detected = await autoDetectToken();
+    if (detected) {
+      chrome.runtime.sendMessage({ action: "update_token", token: detected });
+      return { token: detected };
     }
-
-    chrome.runtime.sendMessage({ action: "auto_detect_token" }, (resp) => {
-      if (resp && resp.ok && resp.token) {
-        this.token = resp.token;
-        const input = document.getElementById("popupWsTokenInput") as HTMLInputElement;
-        if (input) input.value = resp.token;
-      }
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: "auto_detect_token" }, (resp) => {
+        if (resp && resp.ok && resp.token) {
+          resolve({ token: resp.token });
+        } else {
+          resolve({ token: null, error: resp?.error });
+        }
+      });
     });
+  }
+
+  private async detectTokenSilently() {
+    const { token } = await this.resolveAutoDetectedToken();
+    if (token) {
+      this.token = token;
+      const input = document.getElementById("popupWsTokenInput") as HTMLInputElement;
+      if (input) input.value = token;
+    }
   }
 
   private bindHeaderNav() {
@@ -1221,14 +1198,33 @@ class PopupController {
       });
     });
 
-    // Cancel
+    // Cancel (inline confirmation)
     document.querySelectorAll(".act-cancel").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-id");
-        if (id && confirm("Are you sure you want to cancel this download?")) {
+        const card = btn.closest(".download-card") as HTMLElement | null;
+        if (!id || !card) return;
+
+        document.querySelectorAll(".inline-action-bar").forEach((el) => el.remove());
+        const bar = document.createElement("div");
+        bar.className = "inline-action-bar";
+        bar.innerHTML = `
+          <span class="inline-action-label">Cancel this download?</span>
+          <div class="inline-action-btns">
+            <button type="button" class="inline-btn inline-btn-danger" data-inline="confirm">Confirm</button>
+            <button type="button" class="inline-btn" data-inline="dismiss">Keep</button>
+          </div>
+        `;
+        bar.addEventListener("click", (ev) => ev.stopPropagation());
+        bar.querySelector('[data-inline="confirm"]')?.addEventListener("click", () => {
+          bar.remove();
           this.sendTaskAction(id, "cancel");
-        }
+        });
+        bar.querySelector('[data-inline="dismiss"]')?.addEventListener("click", () => {
+          bar.remove();
+        });
+        card.appendChild(bar);
       });
     });
 
@@ -1275,19 +1271,48 @@ class PopupController {
       });
     });
 
-    // Refresh Expired Link
+    // Refresh Expired Link (inline URL input)
     document.querySelectorAll(".act-refresh-link").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-id");
-        const freshUrl = prompt("Enter new/refreshed download URL for this file:");
-        if (id && freshUrl && freshUrl.trim().startsWith("http")) {
+        const card = btn.closest(".download-card") as HTMLElement | null;
+        if (!id || !card) return;
+
+        document.querySelectorAll(".inline-action-bar").forEach((el) => el.remove());
+        const bar = document.createElement("div");
+        bar.className = "inline-action-bar inline-action-refresh";
+        bar.innerHTML = `
+          <input type="url" class="inline-url-input" placeholder="https://... (new download URL)" />
+          <div class="inline-action-btns">
+            <button type="button" class="inline-btn inline-btn-primary" data-inline="submit">Update</button>
+            <button type="button" class="inline-btn" data-inline="dismiss">Cancel</button>
+          </div>
+        `;
+        bar.addEventListener("click", (ev) => ev.stopPropagation());
+        const urlInput = bar.querySelector(".inline-url-input") as HTMLInputElement;
+        const submitRefresh = () => {
+          const freshUrl = urlInput.value.trim();
+          if (!/^https?:\/\//i.test(freshUrl)) {
+            urlInput.style.borderColor = "#EF4444";
+            urlInput.focus();
+            return;
+          }
           chrome.runtime.sendMessage({
             action: "refresh_task",
             task_id: id,
-            new_url: freshUrl.trim(),
+            new_url: freshUrl,
           });
-        }
+          bar.remove();
+        };
+        bar.querySelector('[data-inline="submit"]')?.addEventListener("click", submitRefresh);
+        bar.querySelector('[data-inline="dismiss"]')?.addEventListener("click", () => bar.remove());
+        urlInput.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") submitRefresh();
+          if (ev.key === "Escape") bar.remove();
+        });
+        card.appendChild(bar);
+        urlInput.focus();
       });
     });
 
@@ -1596,43 +1621,12 @@ class PopupController {
         }
         btnAutoDetect.disabled = true;
 
-        // 1. Try Native Messaging Host com.edm.nmh first
-        let detected: string | null = null;
-        try {
-          detected = await new Promise<string | null>((resolve) => {
-            chrome.runtime.sendNativeMessage("com.edm.nmh", { type: "get_token" }, (resp) => {
-              if (chrome.runtime.lastError || !resp || !resp.token) return resolve(null);
-              resolve(resp.token);
-            });
-          });
-        } catch {}
+        const { token, error } = await this.resolveAutoDetectedToken();
+        btnAutoDetect.disabled = false;
 
-        // 2. Try direct loopback fetch from popup context
-        if (!detected) {
-          for (const url of ["http://127.0.0.1:14370/token", "http://localhost:14370/token"]) {
-            try {
-              const resp = await fetch(url, {
-                method: "GET",
-                headers: { "X-EDM-Client": "extension" },
-                cache: "no-store",
-              });
-              if (resp.ok) {
-                const data = await resp.json();
-                if (data && data.token && typeof data.token === "string" && data.token.length >= 32) {
-                  detected = data.token;
-                  break;
-                }
-              }
-            } catch {}
-          }
-        }
-
-        if (detected) {
-          this.token = detected;
-          tokenInput.value = detected;
-          await chrome.storage.local.set({ edm_ws_token: detected });
-          chrome.runtime.sendMessage({ action: "update_token", token: detected });
-          btnAutoDetect.disabled = false;
+        if (token) {
+          this.token = token;
+          tokenInput.value = token;
           if (tokenFeedback) {
             tokenFeedback.style.color = "#10B981";
             tokenFeedback.textContent = "Token auto-detected and synchronized successfully!";
@@ -1640,26 +1634,10 @@ class PopupController {
               if (tokenFeedback) tokenFeedback.textContent = "";
             }, 3000);
           }
-          return;
+        } else if (tokenFeedback) {
+          tokenFeedback.style.color = "#EF4444";
+          tokenFeedback.textContent = error || "Could not auto-detect token. Ensure EDM Desktop is running.";
         }
-
-        chrome.runtime.sendMessage({ action: "auto_detect_token" }, (resp) => {
-          btnAutoDetect.disabled = false;
-          if (resp && resp.ok && resp.token) {
-            this.token = resp.token;
-            tokenInput.value = resp.token;
-            if (tokenFeedback) {
-              tokenFeedback.style.color = "#10B981";
-              tokenFeedback.textContent = "Token auto-detected and synchronized successfully!";
-              setTimeout(() => {
-                if (tokenFeedback) tokenFeedback.textContent = "";
-              }, 3000);
-            }
-          } else if (tokenFeedback) {
-            tokenFeedback.style.color = "#EF4444";
-            tokenFeedback.textContent = resp?.error || "Could not auto-detect token. Ensure EDM Desktop is running.";
-          }
-        });
       });
     }
 

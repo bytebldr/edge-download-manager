@@ -1,5 +1,4 @@
 use super::manager::{is_valid_loopback_host, WsManager};
-use super::types::WS_PORT;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -33,7 +32,7 @@ pub async fn handle_http_token_request(
     }
 
     // Guard 1: DNS rebinding defense on Host header
-    let port = stream.local_addr().map(|a| a.port()).unwrap_or(WS_PORT);
+    let port = stream.local_addr().map(|a| a.port()).unwrap_or(14370);
     if !is_valid_loopback_host(host.as_deref(), port) {
         warn!(
             "Invalid Host header on /token from {}: {:?}",
@@ -68,7 +67,7 @@ pub async fn handle_http_token_request(
             }
         }
         let redirect_url =
-            "https://github.com/bytebldr/edge-download-manager/releases/latest/download/edm-firefox.xpi";
+            "https://github.com/bytebldr/evo-download-manager/releases/latest/download/edm-firefox.xpi";
         let resp = format!(
             "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRedirecting to Firefox XPI",
             redirect_url
@@ -78,25 +77,22 @@ pub async fn handle_http_token_request(
     }
 
     // Guard 2: Strict Origin & Extension Identity Requirement
-    // Only verified extension callers or direct loopback service workers are allowed to read the authentication token.
+    // Only verified extension callers are allowed to read the authentication token.
     let is_forbidden = if let Some(ref o) = origin {
         let trimmed = o.trim().trim_end_matches('/');
         if let Some(rest) = trimmed.strip_prefix("chrome-extension://") {
             let ext_id = rest.split('/').next().unwrap_or(rest);
             !edm_ipc::extensions::CHROMIUM_ALLOWED_IDS.contains(&ext_id)
         } else if trimmed.starts_with("moz-extension://") {
-            // For Firefox moz-extension, if X-EDM-Extension-Id header is provided, verify it matches
-            if let Some(ref id) = ext_id_hdr {
-                id != edm_ipc::extensions::FIREFOX_GECKO_ID
-            } else {
-                false
+            match ext_id_hdr.as_deref() {
+                Some(id) => id != edm_ipc::extensions::FIREFOX_GECKO_ID,
+                None => true,
             }
         } else {
             true
         }
     } else {
-        // Direct loopback or extension background service worker without origin header
-        false
+        true
     };
 
     let ac_origin = if let Some(ref o) = origin {

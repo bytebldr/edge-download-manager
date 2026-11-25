@@ -40,7 +40,6 @@ import SetupWizard from "./components/SetupWizard";
 import { RefreshLinkModal } from "./components/RefreshLinkModal";
 import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
-import { MediaModal } from "./components/MediaModal";
 import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
 import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
@@ -112,8 +111,6 @@ export interface DownloadItem {
 }
 
 export type DownloadTask = DownloadItem;
-
-export const INITIAL_NETPULSE_PROFILE: number[] = [];
 
 export const generateSpeedSvgPath = (history: number[] = [], peakBps: number = 0) => {
   const VIEW_WIDTH = 100;
@@ -223,7 +220,6 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
-  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteModalDontAsk, setDeleteModalDontAsk] = useState<boolean>(false);
@@ -1348,7 +1344,6 @@ export default function App() {
         }
         setIsAddModalOpen(false);
         setIsInspectorOpen(false);
-        setIsVideoModalOpen(false);
         setIsLimiterOpen(false);
         setSelectedDownload(null);
         setSelectedIds([]);
@@ -1563,6 +1558,7 @@ export default function App() {
               onSpeedLimitChange={handleSpeedLimitChange}
               selectedDownload={activeSelectedDownload}
               totalSpeed={totalSpeedDisplay}
+              totalUploadSpeed={totalUploadSpeedDisplay}
               activeThreads={totalActiveThreads}
               totalSessionBytes={totalSessionBytes}
             />
@@ -1604,7 +1600,7 @@ export default function App() {
                 <div className="shrink-0 flex flex-col justify-center">
                   <span className="font-bold tracking-tight text-xs sm:text-sm">EDM</span>
                   <div className="text-[10px] text-[var(--text-muted)] whitespace-nowrap font-medium leading-tight mt-0.5 hidden xs:block">
-                    Edge Download Manager
+                    Evo Download Manager
                   </div>
                 </div>
               </div>
@@ -2471,13 +2467,6 @@ export default function App() {
         }}
         settings={settings}
       />
-
-      <MediaModal
-        isOpen={isVideoModalOpen}
-        onClose={() => setIsVideoModalOpen(false)}
-        onGrab={() => alert("Started HLS stream segment pipeline!")}
-      />
-
 
       <SetupWizard
         isOpen={isWizardOpen}

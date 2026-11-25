@@ -1,7 +1,8 @@
 {
   "name": "edm-extension",
   "version": "0.0.28",
-  "description": "EDM (Edge Download Manager) Browser Extension",
+  "description": "EDM (Evo Download Manager) Browser Extension",
+  "license": "GPL-3.0-only",
   "private": true,
   "scripts": {
     "build": "node build.js"

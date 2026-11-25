@@ -80,7 +80,7 @@ impl BitTorrentPack {
         let session_opts = SessionOptions {
             peer_limit: Some(peer_limit),
             client_name_and_version: Some(format!(
-                "EDM/{} (Edge Download Manager)",
+                "EDM/{} (Evo Download Manager)",
                 env!("CARGO_PKG_VERSION")
             )),
             listen: Some(listener_opts),

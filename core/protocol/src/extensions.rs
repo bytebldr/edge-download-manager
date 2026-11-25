@@ -22,9 +22,9 @@ pub const FIREFOX_ALLOWED_IDS: &[&str] = &[FIREFOX_GECKO_ID];
 
 /// Default store URLs for one-click installation
 pub const DEFAULT_CHROME_STORE_URL: &str =
-    "https://chromewebstore.google.com/detail/edm-edge-download-manager/ebdcbpghekpbgjiclaclbgmdnimeheci";
+    "https://chromewebstore.google.com/detail/edm-evo-download-manager/ebdcbpghekpbgjiclaclbgmdnimeheci";
 pub const DEFAULT_EDGE_STORE_URL: &str =
-    "https://microsoftedge.microsoft.com/addons/detail/edm-edge-download-manager/knldjmfmopnpolahpmmgbagdohdnhkik";
+    "https://microsoftedge.microsoft.com/addons/detail/edm-evo-download-manager/knldjmfmopnpolahpmmgbagdohdnhkik";
 pub const DEFAULT_FIREFOX_XPI_URL: &str = "http://127.0.0.1:14370/firefox.xpi";
 
 /// Returns the slice of allowed Chromium extension IDs.

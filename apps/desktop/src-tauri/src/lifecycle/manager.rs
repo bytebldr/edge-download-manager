@@ -80,11 +80,11 @@ impl LifecycleManager {
     }
 
     pub fn set_app_handle(&self, handle: AppHandle) {
-        *self.app_handle.lock().unwrap() = Some(handle);
+        *self.app_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
 
     pub fn get_app_handle(&self) -> Option<AppHandle> {
-        self.app_handle.lock().unwrap().clone()
+        self.app_handle.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     #[allow(dead_code)]
@@ -148,7 +148,7 @@ impl LifecycleManager {
                 info!("Recreating main webview window on-demand...");
                 let builder =
                     WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
-                        .title("EDM — Edge Download Manager")
+                        .title("EDM — Evo Download Manager")
                         .inner_size(950.0, 660.0)
                         .min_inner_size(950.0, 660.0)
                         .center()

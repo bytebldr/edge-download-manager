@@ -49,7 +49,7 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
   updateInfo: initialUpdateInfo,
 }) => {
   const [phase, setPhase] = useState<UpdatePhase>("checking");
-  const [currentVersion, setCurrentVersion] = useState("0.0.9");
+  const [currentVersion, setCurrentVersion] = useState("0.1.0");
   const [targetVersion, setTargetVersion] = useState("0.0.19");
   const [releaseInfo, setReleaseInfo] = useState<UpdateCheckResult | null>(
     initialUpdateInfo || null

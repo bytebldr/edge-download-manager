@@ -2,6 +2,8 @@
 name = "edm-desktop-app"
 version.workspace = true
 edition = "2021"
+license.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "EDM"

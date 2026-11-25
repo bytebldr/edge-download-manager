@@ -3,12 +3,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 
-#[allow(dead_code)]
-pub const WS_PORT: u16 = 14370;
 pub const WS_BIND_ADDR: &str = "127.0.0.1:14370";
 pub const EXTENSION_ID: &str = "ginpdimhcdbojbhemgjedghkeolbcmgj";
-#[allow(dead_code)]
-pub const FIREFOX_EXTENSION_ID: &str = "edm@suvesh.dev";
 
 // Security invariants
 pub const MAX_WS_MESSAGE_SIZE: usize = 64 * 1024; // 64 KiB
@@ -109,7 +105,7 @@ impl InboundWsMessage {
             token: token.into(),
             browser: None,
             version: None,
-            extension_id: None,
+            extension_id: Some(EXTENSION_ID.to_string()),
         }
     }
 }

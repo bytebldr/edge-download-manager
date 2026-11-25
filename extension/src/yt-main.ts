@@ -58,7 +58,7 @@
           payload: res.streamData,
           qualityLevels: res.qualityLevels,
         },
-        "*"
+        window.location.origin
       );
     }
     return res;
@@ -77,7 +77,7 @@
           payload: res.streamData,
           qualityLevels: res.qualityLevels,
         },
-        "*"
+        window.location.origin
       );
     }
   });

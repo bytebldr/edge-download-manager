@@ -189,7 +189,7 @@ struct GhRelease {
 
 pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
     let current_version = env!("CARGO_PKG_VERSION");
-    let api_url = "https://api.github.com/repos/bytebldr/edge-download-manager/releases/latest";
+    let api_url = "https://api.github.com/repos/bytebldr/evo-download-manager/releases/latest";
 
     let client = reqwest::Client::builder()
         .user_agent(format!("EDM/{} (Windows; x86_64)", current_version))
@@ -250,7 +250,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         .map_err(|e| format!("Failed to create fallback client: {}", e))?;
 
     let redirect_res = redirect_client
-        .get("https://github.com/bytebldr/edge-download-manager/releases/latest")
+        .get("https://github.com/bytebldr/evo-download-manager/releases/latest")
         .send()
         .await
         .map_err(|e| format!("Failed to reach update server: {}", e))?;
@@ -262,7 +262,7 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         let update_available = is_newer_version(latest_version, current_version);
         let exe_name = format!("EDM_{}_x64-setup.exe", latest_version);
         let download_url = format!(
-            "https://github.com/bytebldr/edge-download-manager/releases/download/{}/{}",
+            "https://github.com/bytebldr/evo-download-manager/releases/download/{}/{}",
             raw_tag, exe_name
         );
 
@@ -291,8 +291,91 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
         download_url: None,
         asset_name: None,
         asset_size: 0,
-        html_url: "https://github.com/bytebldr/edge-download-manager/releases".to_string(),
+        html_url: "https://github.com/bytebldr/evo-download-manager/releases".to_string(),
     })
+}
+
+async fn verify_release_sha256(
+    client: &reqwest::Client,
+    download_url: &str,
+    actual_sha256: &str,
+) -> Result<(), String> {
+    let (base_url, asset_name) = match download_url.rsplit_once('/') {
+        Some((b, a)) if !a.is_empty() => (b, a),
+        _ => return Ok(()),
+    };
+
+    let candidate_urls = [
+        format!("{}.sha256", download_url),
+        format!("{}/SHA256SUMS", base_url),
+        format!("{}/SHA256SUMS.txt", base_url),
+    ];
+
+    for checksum_url in &candidate_urls {
+        let Ok(resp) = client.get(checksum_url).send().await else {
+            continue;
+        };
+        if !resp.status().is_success() {
+            continue;
+        }
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read release checksums from {}: {}", checksum_url, e))?;
+
+        let expected = parse_sha256_for_asset(&body, asset_name).ok_or_else(|| {
+            format!(
+                "Release checksum file {} does not contain a valid SHA-256 entry for {}",
+                checksum_url, asset_name
+            )
+        })?;
+
+        if !expected.eq_ignore_ascii_case(actual_sha256) {
+            return Err(format!(
+                "Security violation: SHA-256 mismatch for {} (expected {}, got {})",
+                asset_name, expected, actual_sha256
+            ));
+        }
+
+        append_update_log(&format!(
+            "SHA-256 verified against {} ({})",
+            checksum_url, actual_sha256
+        ));
+        return Ok(());
+    }
+
+    append_update_log(&format!(
+        "No SHA256SUMS asset published for {}; computed SHA-256: {}",
+        asset_name, actual_sha256
+    ));
+    Ok(())
+}
+
+fn parse_sha256_for_asset(content: &str, asset_name: &str) -> Option<String> {
+    let is_hex64 = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit());
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut parts = trimmed.split_whitespace();
+        let first = parts.next()?;
+        if !is_hex64(first) {
+            continue;
+        }
+        match parts.next() {
+            None => return Some(first.to_ascii_lowercase()),
+            Some(file_part) => {
+                let clean_name = file_part.trim_start_matches('*');
+                if clean_name == asset_name
+                    || clean_name.rsplit('/').next() == Some(asset_name)
+                {
+                    return Some(first.to_ascii_lowercase());
+                }
+            }
+        }
+    }
+    None
 }
 
 pub async fn install_update(
@@ -301,8 +384,8 @@ pub async fn install_update(
     download_url: String,
 ) -> Result<(), String> {
     let trimmed = download_url.trim();
-    if !trimmed.starts_with("https://github.com/bytebldr/edge-download-manager/releases/download/") {
-        return Err("Security violation: Update download URL must originate from official bytebldr/edge-download-manager GitHub releases".into());
+    if !trimmed.starts_with("https://github.com/bytebldr/evo-download-manager/releases/download/") {
+        return Err("Security violation: Update download URL must originate from official bytebldr/evo-download-manager GitHub releases".into());
     }
 
     // Sweep and terminate any lingering zombie update processes before downloading
@@ -344,16 +427,19 @@ pub async fn install_update(
     }
 
     use futures_util::StreamExt;
+    use sha2::{Digest, Sha256};
     let mut stream = res.bytes_stream();
     let mut file = tokio::fs::File::create(&installer_path)
         .await
         .map_err(|e| format!("Failed to create destination file: {}", e))?;
 
     let mut downloaded: u64 = 0;
+    let mut hasher = Sha256::new();
     use tokio::io::AsyncWriteExt;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Download stream error: {}", e))?;
+        hasher.update(&chunk);
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("File write error: {}", e))?;
@@ -383,6 +469,13 @@ pub async fn install_update(
             "Incomplete update download: expected {} bytes but only received {} bytes. Aborting installation.",
             total_bytes, downloaded
         ));
+    }
+
+    let actual_sha256 = hex::encode(hasher.finalize());
+    if let Err(e) = verify_release_sha256(&client, trimmed, &actual_sha256).await {
+        let _ = tokio::fs::remove_file(&installer_path).await;
+        append_update_log(&format!("ERROR: {}", e));
+        return Err(e);
     }
 
     let current_ver = env!("CARGO_PKG_VERSION").to_string();
@@ -443,7 +536,147 @@ pub async fn install_update(
     Ok(())
 }
 
+fn verify_installer_integrity(installer_path: &Path) -> Result<(), String> {
+    use std::io::Read;
+
+    let meta = std::fs::metadata(installer_path)
+        .map_err(|e| format!("Installer metadata error: {}", e))?;
+    if !meta.is_file() || meta.len() < 1_000_000 {
+        return Err(format!("Invalid installer file size: {} bytes", meta.len()));
+    }
+
+    let mut f = std::fs::File::open(installer_path)
+        .map_err(|e| format!("Failed to open installer for integrity check: {}", e))?;
+    let mut magic = [0u8; 2];
+    f.read_exact(&mut magic)
+        .map_err(|e| format!("Failed to read installer header: {}", e))?;
+    if &magic != b"MZ" {
+        return Err("Security violation: Installer is not a valid Windows PE executable".into());
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        #[repr(C)]
+        struct GUID {
+            data1: u32,
+            data2: u16,
+            data3: u16,
+            data4: [u8; 8],
+        }
+
+        #[repr(C)]
+        struct WINTRUST_FILE_INFO {
+            cb_struct: u32,
+            pcwsz_file_path: *const u16,
+            h_file: *mut std::ffi::c_void,
+            pg_known_subject: *mut GUID,
+        }
+
+        #[repr(C)]
+        struct WINTRUST_DATA {
+            cb_struct: u32,
+            p_policy_callback_data: *mut std::ffi::c_void,
+            p_sip_client_data: *mut std::ffi::c_void,
+            dw_ui_choice: u32,
+            fdw_revocation_checks: u32,
+            dw_union_choice: u32,
+            p_file: *mut WINTRUST_FILE_INFO,
+            dw_state_action: u32,
+            h_wv_data: *mut std::ffi::c_void,
+            pwsz_url_reference: *const u16,
+            dw_prov_flags: u32,
+            dw_ui_context: u32,
+            p_signature_settings: *mut std::ffi::c_void,
+        }
+
+        #[link(name = "wintrust")]
+        extern "system" {
+            fn WinVerifyTrust(
+                hwnd: *mut std::ffi::c_void,
+                pgActionID: *mut GUID,
+                pWVTData: *mut WINTRUST_DATA,
+            ) -> i32;
+        }
+
+        const WTD_UI_NONE: u32 = 2;
+        const WTD_REVOKE_NONE: u32 = 0;
+        const WTD_CHOICE_FILE: u32 = 1;
+        const WTD_STATEACTION_VERIFY: u32 = 1;
+        const WTD_STATEACTION_CLOSE: u32 = 2;
+        const TRUST_E_NOSIGNATURE: i32 = 0x800B0100u32 as i32;
+
+        let path_wide: Vec<u16> = installer_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut action_guid = GUID {
+            data1: 0x00AAC56B,
+            data2: 0xCD44,
+            data3: 0x11d0,
+            data4: [0x8C, 0xC2, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE],
+        };
+
+        let mut file_info = WINTRUST_FILE_INFO {
+            cb_struct: std::mem::size_of::<WINTRUST_FILE_INFO>() as u32,
+            pcwsz_file_path: path_wide.as_ptr(),
+            h_file: std::ptr::null_mut(),
+            pg_known_subject: std::ptr::null_mut(),
+        };
+
+        let mut trust_data = WINTRUST_DATA {
+            cb_struct: std::mem::size_of::<WINTRUST_DATA>() as u32,
+            p_policy_callback_data: std::ptr::null_mut(),
+            p_sip_client_data: std::ptr::null_mut(),
+            dw_ui_choice: WTD_UI_NONE,
+            fdw_revocation_checks: WTD_REVOKE_NONE,
+            dw_union_choice: WTD_CHOICE_FILE,
+            p_file: &mut file_info,
+            dw_state_action: WTD_STATEACTION_VERIFY,
+            h_wv_data: std::ptr::null_mut(),
+            pwsz_url_reference: std::ptr::null(),
+            dw_prov_flags: 0,
+            dw_ui_context: 0,
+            p_signature_settings: std::ptr::null_mut(),
+        };
+
+        let status = unsafe {
+            WinVerifyTrust(
+                -1isize as *mut std::ffi::c_void,
+                &mut action_guid,
+                &mut trust_data,
+            )
+        };
+        trust_data.dw_state_action = WTD_STATEACTION_CLOSE;
+        unsafe {
+            WinVerifyTrust(
+                -1isize as *mut std::ffi::c_void,
+                &mut action_guid,
+                &mut trust_data,
+            );
+        }
+
+        if status == 0 {
+            append_update_log("Authenticode signature verified.");
+        } else if status == TRUST_E_NOSIGNATURE {
+            append_update_log("Warning: Installer has no Authenticode signature; PE and SHA-256 checks passed.");
+        } else {
+            return Err(format!(
+                "Security violation: Authenticode verification failed (0x{:08X})",
+                status as u32
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
+    verify_installer_integrity(installer_path)?;
+
     #[cfg(windows)]
     {
         use std::ffi::OsStr;

@@ -82,7 +82,7 @@ pub fn cancel_download(
     id: String,
 ) -> Result<serde_json::Value, String> {
     {
-        let mut tasks = state.tasks.lock().unwrap();
+        let mut tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(task) = tasks.remove(&id) {
             task.cancelled.store(true, Ordering::Relaxed);
         }
@@ -147,7 +147,7 @@ pub fn open_dir_path(state: State<'_, AppState>, id: String) -> Result<serde_jso
 #[command]
 pub fn pause_download(state: State<'_, AppState>, id: String) -> Result<serde_json::Value, String> {
     {
-        let mut tasks = state.tasks.lock().unwrap();
+        let mut tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(task) = tasks.remove(&id) {
             task.cancelled.store(true, Ordering::Relaxed);
         }
@@ -176,9 +176,9 @@ pub fn get_download_telemetry(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    let tasks = state.tasks.lock().unwrap();
+    let tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(task) = tasks.get(&id) {
-        let lock = task.telemetry.lock().unwrap();
+        let lock = task.telemetry.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref telem) = *lock {
             serde_json::to_value(telem).map_err(|e| e.to_string())
         } else {
@@ -191,7 +191,7 @@ pub fn get_download_telemetry(
 
 #[command]
 pub fn get_stats(state: State<'_, AppState>) -> serde_json::Value {
-    let tasks = state.tasks.lock().unwrap();
+    let tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
     let active_count = tasks.len();
     serde_json::json!({
         "status": "ready",

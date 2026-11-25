@@ -21,7 +21,7 @@ pub async fn handle_ws_connection(
 
     let mut origin_valid = false;
     let _expected_origin = format!("chrome-extension://{}", manager.allowed_extension_id);
-    let port = stream.local_addr().map(|a| a.port()).unwrap_or(WS_PORT);
+    let port = stream.local_addr().map(|a| a.port()).unwrap_or(14370);
 
     #[allow(clippy::result_large_err)]
     let callback = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
@@ -89,10 +89,10 @@ pub async fn handle_ws_connection(
             }) = serde_json::from_str::<InboundWsMessage>(&text)
             {
                 let token_ok = manager.verify_token_constant_time(&token);
-                let ext_ok = match extension_id.as_deref() {
-                    Some(id) => edm_ipc::extensions::is_allowed_extension_id(id),
-                    None => true, // backward compatible for legacy extension builds
-                };
+                let ext_ok = matches!(
+                    extension_id.as_deref(),
+                    Some(id) if edm_ipc::extensions::is_allowed_extension_id(id)
+                );
                 let ok = token_ok && ext_ok;
                 (ok, browser, version, extension_id)
             } else {

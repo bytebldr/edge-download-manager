@@ -22,8 +22,8 @@ impl FtpPack {
 
         let is_secure = match parsed.scheme() {
             "ftp" => false,
-            "ftps" => true,
-            _ => return Err("URL scheme is not ftp or ftps".into()),
+            "ftps" => return Err("FTPS is not supported; only plain ftp:// is supported".into()),
+            _ => return Err("URL scheme is not ftp".into()),
         };
 
         let host = parsed

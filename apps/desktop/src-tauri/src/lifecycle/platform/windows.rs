@@ -287,7 +287,7 @@ pub fn register_uninstall_entry(target_dir: &Path, edm_exe: &Path) -> Result<(),
     let key = CURRENT_USER.create(uninstall_key).map_err(|e| e.to_string())?;
 
     let edm_exe_str = edm_exe.to_string_lossy().to_string();
-    let _ = key.set_string("DisplayName", "EDM — Edge Download Manager");
+    let _ = key.set_string("DisplayName", "EDM — Evo Download Manager");
     let _ = key.set_string("DisplayIcon", &edm_exe_str);
     let _ = key.set_string("DisplayVersion", env!("CARGO_PKG_VERSION"));
     let _ = key.set_string("Publisher", "bytebldr");
