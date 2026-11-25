@@ -60,8 +60,14 @@ fn init_logging() {
             format!("{:?}", info)
         };
         tracing::error!("PANIC DETECTED: {} at {:?}", msg, info.location());
-        eprintln!("PANIC DETECTED: {} at {:?}", msg, info.location());
     }));
+}
+
+fn lock_unpoisoned<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| {
+        tracing::warn!("Mutex poisoned; recovering inner state");
+        e.into_inner()
+    })
 }
 
 fn get_db_path() -> PathBuf {
@@ -76,7 +82,126 @@ fn get_db_path() -> PathBuf {
 
 fn open_persistent_store() -> Store {
     let path = get_db_path();
-    Store::open(&path).unwrap_or_else(|_| Store::open_in_memory().unwrap())
+    Store::open(&path).unwrap_or_else(|e| {
+        tracing::error!(
+            "Failed to open persistent store at {:?}: {}; falling back to in-memory store",
+            path,
+            e
+        );
+        Store::open_in_memory().expect("Failed to open fallback in-memory store")
+    })
+}
+
+fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
+    const FLYOUT_W: f64 = 360.0;
+    const FLYOUT_H: f64 = 300.0;
+
+    let win = if let Some(existing) = app.get_webview_window("tray-flyout") {
+        existing
+    } else {
+        let builder = tauri::WebviewWindowBuilder::new(
+            app,
+            "tray-flyout",
+            tauri::WebviewUrl::App("index.html#tray-flyout".into()),
+        )
+        .title("EDM Downloads")
+        .inner_size(FLYOUT_W, FLYOUT_H)
+        .decorations(false)
+        .transparent(true)
+        .resizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false);
+
+        match builder.build() {
+            Ok(w) => {
+                let w_clone = w.clone();
+                w.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        let _ = w_clone.hide();
+                    }
+                });
+                w
+            }
+            Err(e) => {
+                tracing::error!("Failed to build tray-flyout window: {}", e);
+                return;
+            }
+        }
+    };
+
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+        return;
+    }
+
+    let monitors = app.available_monitors().unwrap_or_default();
+    let mut chosen_monitor = app.primary_monitor().ok().flatten();
+
+    let (raw_ix, raw_iy, raw_iw, raw_ih) = match (rect.position, rect.size) {
+        (tauri::Position::Physical(p), tauri::Size::Physical(s)) => {
+            (p.x as f64, p.y as f64, s.width as f64, s.height as f64)
+        }
+        (tauri::Position::Logical(p), tauri::Size::Logical(s)) => (p.x, p.y, s.width, s.height),
+        (tauri::Position::Physical(p), tauri::Size::Logical(s)) => {
+            (p.x as f64, p.y as f64, s.width, s.height)
+        }
+        (tauri::Position::Logical(p), tauri::Size::Physical(s)) => {
+            (p.x, p.y, s.width as f64, s.height as f64)
+        }
+    };
+
+    for m in &monitors {
+        let pos = m.position();
+        let size = m.size();
+        let scale = m.scale_factor();
+        let (cx, cy) = match rect.position {
+            tauri::Position::Logical(_) => ((raw_ix + raw_iw / 2.0) * scale, (raw_iy + raw_ih / 2.0) * scale),
+            tauri::Position::Physical(_) => (raw_ix + raw_iw / 2.0, raw_iy + raw_ih / 2.0),
+        };
+        if cx >= pos.x as f64
+            && cx < (pos.x + size.width as i32) as f64
+            && cy >= pos.y as f64
+            && cy < (pos.y + size.height as i32) as f64
+        {
+            chosen_monitor = Some(m.clone());
+            break;
+        }
+    }
+
+    if let Some(monitor) = chosen_monitor {
+        let scale = monitor.scale_factor();
+        let wa = monitor.work_area();
+        let (ix, iy) = match rect.position {
+            tauri::Position::Physical(p) => (p.x, p.y),
+            tauri::Position::Logical(p) => ((p.x * scale).round() as i32, (p.y * scale).round() as i32),
+        };
+        let (iw, ih) = match rect.size {
+            tauri::Size::Physical(s) => (s.width as i32, s.height as i32),
+            tauri::Size::Logical(s) => ((s.width * scale).round() as i32, (s.height * scale).round() as i32),
+        };
+        let fw = (FLYOUT_W * scale).round() as i32;
+        let fh = (FLYOUT_H * scale).round() as i32;
+        let wa_x = wa.position.x;
+        let wa_y = wa.position.y;
+        let wa_w = wa.size.width as i32;
+        let wa_h = wa.size.height as i32;
+
+        let target_x = (ix + iw / 2 - fw / 2).clamp(wa_x, (wa_x + wa_w - fw).max(wa_x));
+        let preferred_y = if iy - fh - 8 >= wa_y {
+            iy - fh - 8
+        } else {
+            iy + ih + 8
+        };
+        let target_y = preferred_y.clamp(wa_y, (wa_y + wa_h - fh).max(wa_y));
+
+        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            target_x, target_y,
+        )));
+    }
+
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 fn main() {
@@ -264,7 +389,7 @@ fn main() {
                 "pause" => {
                     if let Ok(id_uuid) = Uuid::parse_str(&cmd.id) {
                         {
-                            let mut tasks = action_state.tasks.lock().unwrap();
+                            let mut tasks = lock_unpoisoned(&action_state.tasks);
                             if let Some(t) = tasks.remove(&cmd.id) {
                                 t.cancelled.store(true, Ordering::Relaxed);
                             }
@@ -305,7 +430,7 @@ fn main() {
                 "cancel" => {
                     if let Ok(id_uuid) = Uuid::parse_str(&cmd.id) {
                         {
-                            let mut tasks = action_state.tasks.lock().unwrap();
+                            let mut tasks = lock_unpoisoned(&action_state.tasks);
                             if let Some(t) = tasks.remove(&cmd.id) {
                                 t.cancelled.store(true, Ordering::Relaxed);
                             }
@@ -603,7 +728,7 @@ fn main() {
 
                 let tray = TrayIconBuilder::new()
                     .icon(icon_img)
-                    .tooltip("EDM — Edge Download Manager")
+                    .tooltip("EDM — Evo Download Manager")
                     .menu(&tray_menu)
                     .show_menu_on_left_click(false)
                     .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -616,7 +741,7 @@ fn main() {
                         }
                         "pause_all" => {
                             let state = app.state::<AppState>();
-                            let tasks = state.tasks.lock().unwrap();
+                            let tasks = lock_unpoisoned(&state.tasks);
                             for handle in tasks.values() {
                                 handle.cancelled.store(true, Ordering::SeqCst);
                             }
@@ -649,24 +774,34 @@ fn main() {
                         }
                         _ => {}
                     })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
+                    .on_tray_icon_event(|tray, event| match event {
+                        TrayIconEvent::Click {
                             button: MouseButton::Left,
                             button_state: MouseButtonState::Up,
+                            rect,
                             ..
-                        } = event
-                        {
+                        } => {
+                            toggle_tray_flyout(tray.app_handle(), rect);
+                        }
+                        TrayIconEvent::DoubleClick {
+                            button: MouseButton::Left,
+                            ..
+                        } => {
+                            if let Some(flyout) = tray.app_handle().get_webview_window("tray-flyout") {
+                                let _ = flyout.hide();
+                            }
                             let state = tray.app_handle().state::<AppState>();
                             let lc = state.lifecycle.clone();
                             state.rt_handle.spawn(async move {
                                 lc.record_wake(true).await;
                             });
                         }
+                        _ => {}
                     })
                     .build(app)?;
 
-                *app_state_ref.tray_handle.lock().unwrap() = Some(tray.clone());
-                *app_state_ref.app_handle.lock().unwrap() = Some(app.handle().clone());
+                *lock_unpoisoned(&app_state_ref.tray_handle) = Some(tray.clone());
+                *lock_unpoisoned(&app_state_ref.app_handle) = Some(app.handle().clone());
 
                 // Background dynamic tray tooltip ticker (every 1 second)
                 let ticker_tasks = app_state_ref.tasks.clone();

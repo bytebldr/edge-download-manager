@@ -4,6 +4,8 @@ import App from "./App";
 import { LifecycleApp, resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
 import "./styles/theme.css";
 
+const TrayFlyout = React.lazy(() => import("./components/TrayFlyout"));
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -86,18 +88,30 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 }
 
 function Root() {
+  const [isTrayFlyout, setIsTrayFlyout] = React.useState<boolean>(() => {
+    return typeof window !== "undefined" && window.location.hash === "#tray-flyout";
+  });
   const [lifecycleRoute, setLifecycleRoute] = React.useState<LifecycleRoute | null>(() => {
     return resolveLifecycleRoute();
   });
 
   React.useEffect(() => {
     const handleHashChange = () => {
+      setIsTrayFlyout(window.location.hash === "#tray-flyout");
       const resolved = resolveLifecycleRoute();
       setLifecycleRoute(resolved);
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  if (isTrayFlyout) {
+    return (
+      <React.Suspense fallback={null}>
+        <TrayFlyout />
+      </React.Suspense>
+    );
+  }
 
   if (lifecycleRoute) {
     return (
