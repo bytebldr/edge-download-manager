@@ -252,11 +252,22 @@ impl BitTorrentPack {
         task: crate::adaptive::AdaptiveDownloadTask,
         telemetry_cb: Option<crate::adaptive::TelemetryCallback>,
     ) -> Result<std::path::PathBuf, String> {
+        Self::download_in_process_with_power(task, telemetry_cb, None).await
+    }
+
+    /// Download a torrent or magnet URI in-process with optional TorrentPowerConfig
+    pub async fn download_in_process_with_power(
+        task: crate::adaptive::AdaptiveDownloadTask,
+        telemetry_cb: Option<crate::adaptive::TelemetryCallback>,
+        power: Option<crate::adaptive::types::TorrentPowerConfig>,
+    ) -> Result<std::path::PathBuf, String> {
         use crate::adaptive::{AccelerationMode, AdaptiveTelemetry, WorkerStatus, WorkerTelemetry};
         use chrono::Utc;
         use librqbit::{AddTorrentOptions, ListenerOptions, Session, SessionOptions};
         use std::sync::atomic::Ordering;
         use std::time::Duration;
+
+        let power_cfg = power.unwrap_or_default();
 
         let add_torrent = load_add_torrent(
             &task.url,
@@ -273,24 +284,47 @@ impl BitTorrentPack {
             .parse()
             .unwrap_or_else(|_| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
 
-        let session_opts = SessionOptions {
+        let mut session_opts = SessionOptions {
             peer_limit: Some(peer_limit),
             client_name_and_version: Some(format!(
                 "EDM/{} (Evo Download Manager)",
                 env!("CARGO_PKG_VERSION")
             )),
             listen: Some(listener_opts),
+            disable_local_service_discovery: !power_cfg.enable_pex,
             ..Default::default()
         };
+        if !power_cfg.enable_dht {
+            session_opts.dht = None;
+        }
 
         let session = Session::new_with_opts(task.save_dir.clone(), session_opts)
             .await
             .map_err(|e| format!("Failed to create BitTorrent session: {}", e))?;
 
+        let custom_sub = if power_cfg.create_subfolder {
+            power_cfg
+                .custom_folder_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(crate::sanitizer::Sanitizer::sanitize_filename)
+        } else {
+            None
+        };
+
+        let extra_trackers = if power_cfg.auto_update_trackers {
+            Some(TIER1_TRACKERS.iter().map(|s| (*s).to_string()).collect())
+        } else {
+            None
+        };
+
         let add_opts = AddTorrentOptions {
             paused: false,
             overwrite: true,
             only_files: task.selected_files.clone(),
+            sub_folder: custom_sub.clone(),
+            trackers: extra_trackers,
             ..Default::default()
         };
 
@@ -338,7 +372,11 @@ impl BitTorrentPack {
             .ok_or_else(|| "Torrent already exists or could not create handle".to_string())?;
 
         let mut ticker = tokio::time::interval(Duration::from_millis(500));
-        let mut target_file_path = task.save_dir.join(&task.filename);
+        let mut target_file_path = if let Some(ref sub) = custom_sub {
+            task.save_dir.join(sub)
+        } else {
+            task.save_dir.join(&task.filename)
+        };
         let mut disk_space_checked = false;
         let mut prev_downloaded = 0u64;
         let mut prev_uploaded_bytes = 0u64;
@@ -349,6 +387,7 @@ impl BitTorrentPack {
         let mut was_initializing = true;
         let mut smoothed_eta_sec: Option<u64> = None;
         let mut eta_sample_count: u32 = 0;
+        let mut seeding_started_at: Option<std::time::Instant> = None;
 
         loop {
             ticker.tick().await;
@@ -444,7 +483,9 @@ impl BitTorrentPack {
             };
             let upload_throughput_bps = measured_ul_bps.max(ul_speed * 8);
 
-            if let Some(name) = handle.name() {
+            if let Some(ref sub) = custom_sub {
+                target_file_path = task.save_dir.join(sub);
+            } else if let Some(name) = handle.name() {
                 let safe_name = crate::sanitizer::Sanitizer::sanitize_filename(&name);
                 target_file_path = task.save_dir.join(safe_name);
             }
@@ -583,14 +624,59 @@ impl BitTorrentPack {
             }
 
             let eff_speed = if is_initializing { 0 } else { (instant_bps / 8).max(dl_speed) };
+            let is_download_complete =
+                stats.total_bytes > 0 && (stats.finished || progress_pct >= 100.0);
+            let has_seed_policy = power_cfg.seed_ratio_limit.is_some()
+                || power_cfg.seed_time_limit_mins.is_some();
+
+            if is_download_complete && has_seed_policy && seeding_started_at.is_none() {
+                seeding_started_at = Some(std::time::Instant::now());
+            }
+
+            let seeding_elapsed_secs = seeding_started_at
+                .map(|t| t.elapsed().as_secs())
+                .unwrap_or(0);
+            let current_ratio = if stats.total_bytes > 0 {
+                stats.uploaded_bytes as f64 / stats.total_bytes as f64
+            } else {
+                0.0
+            };
+
+            let should_stop_seed = if is_download_complete && has_seed_policy {
+                let ratio_reached = power_cfg
+                    .seed_ratio_limit
+                    .map(|lim| lim <= 0.0 || current_ratio >= lim)
+                    .unwrap_or(false);
+                let time_reached = power_cfg
+                    .seed_time_limit_mins
+                    .map(|mins| seeding_elapsed_secs >= mins.saturating_mul(60))
+                    .unwrap_or(false);
+                ratio_reached || time_reached
+            } else {
+                false
+            };
+
             let current_phase = if is_initializing {
                 Some("Verifying".to_string())
             } else if stats.total_bytes == 0 {
                 Some("Resolving".to_string())
-            } else if stats.finished || progress_pct >= 100.0 {
+            } else if is_download_complete && has_seed_policy && !should_stop_seed {
+                Some("Seeding".to_string())
+            } else if is_download_complete {
                 Some("Completed".to_string())
             } else {
                 Some("Downloading".to_string())
+            };
+
+            let decision_reason = if is_download_complete && has_seed_policy && !should_stop_seed {
+                format!(
+                    "Seeding Swarm (ratio {:.2}, {}s elapsed)",
+                    current_ratio, seeding_elapsed_secs
+                )
+            } else if power_cfg.sequential && !is_initializing {
+                format!("[Sequential] {}", decision_reason)
+            } else {
+                decision_reason
             };
 
             let eta_seconds = if !is_initializing && eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
@@ -637,8 +723,8 @@ impl BitTorrentPack {
                 });
             }
 
-            // Only complete when metadata is resolved (total_bytes > 0) and finished
-            if stats.total_bytes > 0 && (stats.finished || progress_pct >= 100.0) {
+            // Complete when metadata is resolved, download finished, and any seeding policy is satisfied
+            if is_download_complete && (!has_seed_policy || should_stop_seed) {
                 break;
             }
         }

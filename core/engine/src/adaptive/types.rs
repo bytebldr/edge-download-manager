@@ -131,3 +131,32 @@ pub enum AdaptiveDecision {
         reason: String,
     },
 }
+
+/// Per-task BitTorrent power options (subfolder, sequential, seeding caps, trackers/DHT/PEX).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TorrentPowerConfig {
+    pub sequential: bool,
+    pub seed_ratio_limit: Option<f64>,
+    pub seed_time_limit_mins: Option<u64>,
+    pub create_subfolder: bool,
+    pub custom_folder_name: Option<String>,
+    pub auto_update_trackers: bool,
+    pub enable_dht: bool,
+    pub enable_pex: bool,
+}
+
+impl Default for TorrentPowerConfig {
+    fn default() -> Self {
+        Self {
+            sequential: false,
+            seed_ratio_limit: None,
+            seed_time_limit_mins: None,
+            create_subfolder: true,
+            custom_folder_name: None,
+            auto_update_trackers: false,
+            enable_dht: true,
+            enable_pex: true,
+        }
+    }
+}
