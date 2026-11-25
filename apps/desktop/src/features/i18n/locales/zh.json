@@ -1,0 +1,95 @@
+{
+  "dir": "ltr",
+  "nav": {
+    "allDownloads": "全部下载",
+    "downloading": "下载中",
+    "paused": "已暂停",
+    "queued": "排队中",
+    "completed": "已完成",
+    "failed": "已失败",
+    "scheduler": "队列与计划",
+    "settings": "设置",
+    "categories": {
+      "video": "视频",
+      "music": "音乐",
+      "documents": "文档",
+      "compressed": "压缩包",
+      "programs": "程序",
+      "pictures": "图片",
+      "other": "其他"
+    }
+  },
+  "actions": {
+    "addUrl": "添加链接",
+    "batchImport": "批量导入",
+    "pause": "暂停",
+    "resume": "继续",
+    "pauseAll": "全部暂停",
+    "resumeAll": "全部继续",
+    "cancel": "取消",
+    "delete": "删除",
+    "retry": "重试",
+    "openFile": "打开文件",
+    "openFolder": "打开文件夹",
+    "copyUrl": "复制链接",
+    "speedLimit": "限速",
+    "details": "详情",
+    "searchPlaceholder": "搜索下载..."
+  },
+  "scheduler": {
+    "title": "队列计划程序",
+    "newQueue": "新建队列",
+    "queueName": "队列名称",
+    "maxConcurrent": "最大并发数",
+    "speedCap": "速度上限 (MB/s)",
+    "scheduleWindow": "计划时段",
+    "start": "开始",
+    "stop": "结束",
+    "active": "运行中",
+    "paused": "已暂停",
+    "save": "保存队列",
+    "edit": "编辑",
+    "delete": "删除",
+    "empty": "未配置计划队列"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "languageDesc": "选择界面显示语言",
+    "sections": {
+      "general": "常规与界面",
+      "downloads": "下载与存储",
+      "packs": "功能包",
+      "network": "网络与浏览器",
+      "automation": "提醒与通知",
+      "engine": "安全与引擎",
+      "about": "关于与维护"
+    },
+    "theme": {
+      "label": "主题",
+      "dark": "深色",
+      "light": "浅色",
+      "system": "跟随系统"
+    },
+    "density": {
+      "pro": "专业紧凑",
+      "compact": "紧凑",
+      "comfortable": "舒适"
+    },
+    "save": "保存",
+    "reset": "恢复默认"
+  },
+  "tray": {
+    "title": "正在下载",
+    "closeAria": "关闭托盘浮窗",
+    "emptyTitle": "暂无活动下载",
+    "emptySubtitle": "新的下载将显示在这里",
+    "paused": "已暂停",
+    "queued": "排队中",
+    "queuedPos": "排队 #{pos}",
+    "resume": "继续",
+    "pause": "暂停",
+    "cancel": "取消",
+    "openMain": "打开 EDM"
+  }
+}

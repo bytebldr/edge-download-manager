@@ -1,0 +1,95 @@
+{
+  "dir": "ltr",
+  "nav": {
+    "allDownloads": "सभी डाउनलोड",
+    "downloading": "डाउनलोड हो रहा है",
+    "paused": "रुका हुआ",
+    "queued": "कतार में",
+    "completed": "पूर्ण",
+    "failed": "विफल",
+    "scheduler": "कतार और शेड्यूलर",
+    "settings": "सेटिंग्स",
+    "categories": {
+      "video": "वीडियो",
+      "music": "संगीत",
+      "documents": "दस्तावेज़",
+      "compressed": "संपीड़ित",
+      "programs": "प्रोग्राम",
+      "pictures": "तस्वीरें",
+      "other": "अन्य"
+    }
+  },
+  "actions": {
+    "addUrl": "URL जोड़ें",
+    "batchImport": "बैच आयात",
+    "pause": "रोकें",
+    "resume": "फिर शुरू करें",
+    "pauseAll": "सभी रोकें",
+    "resumeAll": "सभी शुरू करें",
+    "cancel": "रद्द करें",
+    "delete": "हटाएं",
+    "retry": "पुनः प्रयास",
+    "openFile": "फ़ाइल खोलें",
+    "openFolder": "फ़ोल्डर खोलें",
+    "copyUrl": "URL कॉपी करें",
+    "speedLimit": "गति सीमा",
+    "details": "विवरण",
+    "searchPlaceholder": "डाउनलोड खोजें..."
+  },
+  "scheduler": {
+    "title": "कतार शेड्यूलर",
+    "newQueue": "नई कतार",
+    "queueName": "कतार का नाम",
+    "maxConcurrent": "अधिकतम समवर्ती",
+    "speedCap": "गति सीमा (MB/s)",
+    "scheduleWindow": "शेड्यूल विंडो",
+    "start": "प्रारंभ",
+    "stop": "समाप्त",
+    "active": "सक्रिय",
+    "paused": "रुका हुआ",
+    "save": "कतार सहेजें",
+    "edit": "संपादित करें",
+    "delete": "हटाएं",
+    "empty": "कोई शेड्यूल की गई कतार कॉन्फ़िगर नहीं है"
+  },
+  "settings": {
+    "title": "सेटिंग्स",
+    "language": "भाषा",
+    "languageDesc": "इंटरफ़ेस के लिए प्रदर्शन भाषा चुनें",
+    "sections": {
+      "general": "सामान्य और इंटरफ़ेस",
+      "downloads": "डाउनलोड और संग्रहण",
+      "packs": "फ़ीचर पैक",
+      "network": "नेटवर्क और ब्राउज़र",
+      "automation": "अलर्ट और सूचनाएं",
+      "engine": "सुरक्षा और इंजन",
+      "about": "परिचय और रखरखाव"
+    },
+    "theme": {
+      "label": "थीम",
+      "dark": "डार्क",
+      "light": "लाइट",
+      "system": "सिस्टम"
+    },
+    "density": {
+      "pro": "प्रो डेंसिटी",
+      "compact": "कॉम्पैक्ट",
+      "comfortable": "आरामदायक"
+    },
+    "save": "सहेजें",
+    "reset": "डिफ़ॉल्ट रीसेट करें"
+  },
+  "tray": {
+    "title": "चल रहे डाउनलोड",
+    "closeAria": "ट्रे फ़्लाईआउट बंद करें",
+    "emptyTitle": "कोई सक्रिय डाउनलोड नहीं",
+    "emptySubtitle": "नए डाउनलोड यहाँ दिखाई देंगे",
+    "paused": "रुका हुआ",
+    "queued": "कतार में",
+    "queuedPos": "कतार #{pos}",
+    "resume": "फिर शुरू करें",
+    "pause": "रोकें",
+    "cancel": "रद्द करें",
+    "openMain": "EDM खोलें"
+  }
+}

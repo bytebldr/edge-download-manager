@@ -1,0 +1,95 @@
+{
+  "dir": "ltr",
+  "nav": {
+    "allDownloads": "Todas las descargas",
+    "downloading": "Descargando",
+    "paused": "Pausadas",
+    "queued": "En cola",
+    "completed": "Completadas",
+    "failed": "Fallidas",
+    "scheduler": "Cola y programador",
+    "settings": "Configuración",
+    "categories": {
+      "video": "Video",
+      "music": "Música",
+      "documents": "Documentos",
+      "compressed": "Comprimidos",
+      "programs": "Programas",
+      "pictures": "Imágenes",
+      "other": "Otros"
+    }
+  },
+  "actions": {
+    "addUrl": "Añadir URL",
+    "batchImport": "Importación por lotes",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "pauseAll": "Pausar todo",
+    "resumeAll": "Reanudar todo",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "retry": "Reintentar",
+    "openFile": "Abrir archivo",
+    "openFolder": "Abrir carpeta",
+    "copyUrl": "Copiar URL",
+    "speedLimit": "Límite de velocidad",
+    "details": "Detalles",
+    "searchPlaceholder": "Buscar descargas..."
+  },
+  "scheduler": {
+    "title": "Programador de colas",
+    "newQueue": "Nueva cola",
+    "queueName": "Nombre de la cola",
+    "maxConcurrent": "Máximo simultáneo",
+    "speedCap": "Límite de velocidad (MB/s)",
+    "scheduleWindow": "Ventana programada",
+    "start": "Inicio",
+    "stop": "Fin",
+    "active": "Activa",
+    "paused": "Pausada",
+    "save": "Guardar cola",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "empty": "No hay colas programadas configuradas"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": "Idioma",
+    "languageDesc": "Elige el idioma de la interfaz",
+    "sections": {
+      "general": "General e interfaz",
+      "downloads": "Descargas y almacenamiento",
+      "packs": "Paquetes de funciones",
+      "network": "Red y navegador",
+      "automation": "Alertas y notificaciones",
+      "engine": "Seguridad y motor",
+      "about": "Acerca de y mantenimiento"
+    },
+    "theme": {
+      "label": "Tema",
+      "dark": "Oscuro",
+      "light": "Claro",
+      "system": "Sistema"
+    },
+    "density": {
+      "pro": "Densidad Pro",
+      "compact": "Compacto",
+      "comfortable": "Cómodo"
+    },
+    "save": "Guardar",
+    "reset": "Restablecer valores"
+  },
+  "tray": {
+    "title": "Descargas en curso",
+    "closeAria": "Cerrar panel de bandeja",
+    "emptyTitle": "Sin descargas activas",
+    "emptySubtitle": "Las nuevas descargas aparecerán aquí",
+    "paused": "Pausada",
+    "queued": "En cola",
+    "queuedPos": "En cola #{pos}",
+    "resume": "Reanudar",
+    "pause": "Pausar",
+    "cancel": "Cancelar",
+    "openMain": "Abrir EDM"
+  }
+}

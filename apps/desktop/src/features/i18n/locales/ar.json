@@ -1,0 +1,95 @@
+{
+  "dir": "rtl",
+  "nav": {
+    "allDownloads": "كل التنزيلات",
+    "downloading": "جاري التنزيل",
+    "paused": "متوقف مؤقتاً",
+    "queued": "في الانتظار",
+    "completed": "مكتمل",
+    "failed": "فشل",
+    "scheduler": "قائمة الانتظار والجدولة",
+    "settings": "الإعدادات",
+    "categories": {
+      "video": "فيديو",
+      "music": "موسيقى",
+      "documents": "مستندات",
+      "compressed": "مضغوط",
+      "programs": "برامج",
+      "pictures": "صور",
+      "other": "أخرى"
+    }
+  },
+  "actions": {
+    "addUrl": "إضافة رابط",
+    "batchImport": "استيراد دفعة",
+    "pause": "إيقاف مؤقت",
+    "resume": "استئناف",
+    "pauseAll": "إيقاف الكل",
+    "resumeAll": "استئناف الكل",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "retry": "إعادة المحاولة",
+    "openFile": "فتح الملف",
+    "openFolder": "فتح المجلد",
+    "copyUrl": "نسخ الرابط",
+    "speedLimit": "حد السرعة",
+    "details": "التفاصيل",
+    "searchPlaceholder": "البحث في التنزيلات..."
+  },
+  "scheduler": {
+    "title": "مجدول قوائم الانتظار",
+    "newQueue": "قائمة جديدة",
+    "queueName": "اسم القائمة",
+    "maxConcurrent": "الحد الأقصى المتزامن",
+    "speedCap": "حد السرعة (MB/s)",
+    "scheduleWindow": "نافذة الجدولة",
+    "start": "البدء",
+    "stop": "التوقف",
+    "active": "نشط",
+    "paused": "متوقف مؤقتاً",
+    "save": "حفظ القائمة",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "empty": "لا توجد قوائم مجدولة"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "language": "اللغة",
+    "languageDesc": "اختر لغة عرض الواجهة",
+    "sections": {
+      "general": "عام والواجهة",
+      "downloads": "التنزيلات والتخزين",
+      "packs": "حزم الميزات",
+      "network": "الشبكة والمتصفح",
+      "automation": "التنبيهات والإشعارات",
+      "engine": "الأمان والمحرك",
+      "about": "حول والصيانة"
+    },
+    "theme": {
+      "label": "المظهر",
+      "dark": "داكن",
+      "light": "فاتح",
+      "system": "النظام"
+    },
+    "density": {
+      "pro": "كثافة احترافية",
+      "compact": "مضغوط",
+      "comfortable": "مريح"
+    },
+    "save": "حفظ",
+    "reset": "استعادة الافتراضي"
+  },
+  "tray": {
+    "title": "التنزيلات الجارية",
+    "closeAria": "إغلاق نافذة شريط المهام",
+    "emptyTitle": "لا توجد تنزيلات نشطة",
+    "emptySubtitle": "ستظهر التنزيلات الجديدة هنا",
+    "paused": "متوقف مؤقتاً",
+    "queued": "في الانتظار",
+    "queuedPos": "في الانتظار #{pos}",
+    "resume": "استئناف",
+    "pause": "إيقاف مؤقت",
+    "cancel": "إلغاء",
+    "openMain": "فتح EDM"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "dir": "ltr",
+  "nav": {
+    "allDownloads": "All Downloads",
+    "downloading": "Downloading",
+    "paused": "Paused",
+    "queued": "Queued",
+    "completed": "Completed",
+    "failed": "Failed",
+    "scheduler": "Queue & Scheduler",
+    "settings": "Settings",
+    "categories": {
+      "video": "Video",
+      "music": "Music",
+      "documents": "Documents",
+      "compressed": "Compressed",
+      "programs": "Programs",
+      "pictures": "Pictures",
+      "other": "Other"
+    }
+  },
+  "actions": {
+    "addUrl": "Add URL",
+    "batchImport": "Batch Import",
+    "pause": "Pause",
+    "resume": "Resume",
+    "pauseAll": "Pause All",
+    "resumeAll": "Resume All",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "retry": "Retry",
+    "openFile": "Open File",
+    "openFolder": "Open Folder",
+    "copyUrl": "Copy URL",
+    "speedLimit": "Speed Limit",
+    "details": "Details",
+    "searchPlaceholder": "Search downloads..."
+  },
+  "scheduler": {
+    "title": "Queue Scheduler",
+    "newQueue": "New Queue",
+    "queueName": "Queue Name",
+    "maxConcurrent": "Max Concurrent",
+    "speedCap": "Speed Cap (MB/s)",
+    "scheduleWindow": "Schedule Window",
+    "start": "Start",
+    "stop": "Stop",
+    "active": "Active",
+    "paused": "Paused",
+    "save": "Save Queue",
+    "edit": "Edit",
+    "delete": "Delete",
+    "empty": "No scheduled queues configured"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageDesc": "Choose the display language for the interface",
+    "sections": {
+      "general": "General & Interface",
+      "downloads": "Downloads & Storage",
+      "packs": "Feature Packs",
+      "network": "Network & Browser",
+      "automation": "Alerts & Notifications",
+      "engine": "Security & Engine",
+      "about": "About & Maintenance"
+    },
+    "theme": {
+      "label": "Theme",
+      "dark": "Dark",
+      "light": "Light",
+      "system": "System"
+    },
+    "density": {
+      "pro": "Pro Density",
+      "compact": "Compact",
+      "comfortable": "Comfortable"
+    },
+    "save": "Save",
+    "reset": "Reset to Defaults"
+  },
+  "tray": {
+    "title": "Downloads in progress",
+    "closeAria": "Close tray flyout",
+    "emptyTitle": "No active downloads",
+    "emptySubtitle": "New downloads will appear here",
+    "paused": "Paused",
+    "queued": "Queued",
+    "queuedPos": "Queued #{pos}",
+    "resume": "Resume",
+    "pause": "Pause",
+    "cancel": "Cancel",
+    "openMain": "Open EDM"
+  }
+}
