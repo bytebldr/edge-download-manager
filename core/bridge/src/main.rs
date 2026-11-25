@@ -107,23 +107,6 @@ fn verify_caller_origin() -> bool {
             );
             return true;
         }
-        for id in edm_ipc::extensions::CHROMIUM_ALLOWED_IDS {
-            if arg.contains(id) {
-                tracing::info!(
-                    "Origin verified: matched allowed extension id {} (elapsed: {:?})",
-                    id,
-                    start.elapsed()
-                );
-                return true;
-            }
-        }
-        if arg.contains(edm_ipc::extensions::FIREFOX_GECKO_ID) {
-            tracing::info!(
-                "Origin verified: matched allowed firefox gecko id (elapsed: {:?})",
-                start.elapsed()
-            );
-            return true;
-        }
     }
     tracing::warn!(
         "Origin verification rejected: args {:?} not in allowed list (elapsed: {:?})",
@@ -380,7 +363,7 @@ fn find_edm_exe() -> Option<PathBuf> {
     None
 }
 
-fn launch_detached(exe: &PathBuf, show_window: bool) {
+fn launch_detached(exe: &PathBuf, show_window: bool) -> Option<u32> {
     ensure_webview2_loader(exe);
     let dir = exe.parent().unwrap_or(exe.as_path());
     let arg = if show_window {
@@ -411,12 +394,13 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
 
         match cmd.spawn() {
             Ok(child) => {
+                let pid = child.id();
                 tracing::info!(
                     "Successfully spawned EDM desktop detached (PID: {}) at {}",
-                    child.id(),
+                    pid,
                     exe.display()
                 );
-                return;
+                return Some(pid);
             }
             Err(e) => {
                 tracing::warn!(
@@ -440,6 +424,7 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
             ),
             Err(e) => tracing::error!("Cmd start fallback failed for {}: {}", exe.display(), e),
         }
+        None
     }
 
     #[cfg(not(windows))]
@@ -451,26 +436,32 @@ fn launch_detached(exe: &PathBuf, show_window: bool) {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         match cmd.spawn() {
-            Ok(child) => tracing::info!("Spawned EDM desktop (PID: {})", child.id()),
-            Err(e) => tracing::error!("Failed to spawn EDM desktop: {}", e),
+            Ok(child) => {
+                let pid = child.id();
+                tracing::info!("Spawned EDM desktop (PID: {})", pid);
+                Some(pid)
+            }
+            Err(e) => {
+                tracing::error!("Failed to spawn EDM desktop: {}", e);
+                None
+            }
         }
     }
 }
 
-fn terminate_stale_edm_instances() {
+fn terminate_stale_edm_instance(pid: Option<u32>) {
     #[cfg(windows)]
-    {
+    if let Some(target_pid) = pid {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let pid_str = target_pid.to_string();
         let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "EDM.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "edm-desktop-app.exe", "/T"])
+            .args(["/F", "/PID", &pid_str, "/T"])
             .creation_flags(CREATE_NO_WINDOW)
             .status();
     }
+    #[cfg(not(windows))]
+    let _ = pid;
 }
 
 fn is_ws_server_ready() -> bool {
@@ -502,12 +493,52 @@ fn get_db_path() -> PathBuf {
     }
 }
 
-fn open_store() -> Store {
+fn open_store() -> Result<Store, String> {
     let path = get_db_path();
-    Store::open(&path).unwrap_or_else(|_| Store::open_in_memory().unwrap())
+    Store::open(&path).map_err(|e| format!("Failed to open store at {}: {}", path.display(), e))
 }
 
-fn get_ws_token() -> String {
+fn lock_store<'a>(
+    store: &'a Arc<Mutex<Store>>,
+) -> Result<std::sync::MutexGuard<'a, Store>, AppReply> {
+    store.lock().map_err(|e| {
+        tracing::error!("Store mutex poisoned: {}", e);
+        AppReply::Error {
+            message: "Internal state lock error".into(),
+        }
+    })
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    std::hint::black_box(diff) == 0
+}
+
+fn resolve_contained_existing(base_dir: &std::path::Path, rel_name: &str) -> Option<PathBuf> {
+    if rel_name.is_empty()
+        || std::path::Path::new(rel_name)
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let canonical_base = std::fs::canonicalize(base_dir).ok()?;
+    let candidate = canonical_base.join(rel_name);
+    let canonical_target = std::fs::canonicalize(&candidate).ok()?;
+    if canonical_target.starts_with(&canonical_base) {
+        Some(canonical_target)
+    } else {
+        None
+    }
+}
+
+fn get_ws_token() -> Option<String> {
     let config_dir = match env::var("APPDATA") {
         Ok(dir) => PathBuf::from(dir).join("EDM").join("config"),
         Err(_) => match env::var("LOCALAPPDATA") {
@@ -519,10 +550,10 @@ fn get_ws_token() -> String {
     if let Ok(content) = fs::read_to_string(&token_file) {
         let trimmed = content.trim().to_string();
         if trimmed.len() >= 32 {
-            return trimmed;
+            return Some(trimmed);
         }
     }
-    "ed00000000000000000000000000000000000000000000000000000000000000".to_string()
+    None
 }
 
 #[cfg(windows)]
@@ -793,10 +824,7 @@ async fn forward_to_edm_desktop(msg: &ExtensionMessage) -> Option<AppReply> {
     if !is_ws_server_ready() {
         return None;
     }
-    let token = get_ws_token();
-    if token.is_empty() {
-        return None;
-    }
+    let token = get_ws_token()?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -874,7 +902,7 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 return AppReply::WakeResult {
                     ok: true,
                     status: "ready".into(),
-                    token: Some(token),
+                    token,
                     error: None,
                 };
             }
@@ -903,7 +931,7 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
             };
 
             let launch_start = Instant::now();
-            launch_detached(&exe, show_window);
+            let mut child_pid = launch_detached(&exe, show_window);
             tracing::info!(
                 "Launched detached process for {} in {:?}",
                 exe.display(),
@@ -922,10 +950,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 // If port 14370 is not ready after 4s, an unresponsive zombie EDM.exe may be blocking single-instance
                 if !healed && wake_start.elapsed() >= Duration::from_secs(4) {
                     healed = true;
-                    tracing::warn!("Port 14370 not ready after 4s; terminating stale EDM instances and re-launching...");
-                    terminate_stale_edm_instances();
+                    tracing::warn!("Port 14370 not ready after 4s; terminating stale EDM instance (PID {:?}) and re-launching...", child_pid);
+                    terminate_stale_edm_instance(child_pid);
                     std::thread::sleep(Duration::from_millis(400));
-                    launch_detached(&exe, show_window);
+                    child_pid = launch_detached(&exe, show_window);
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -938,7 +966,7 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 AppReply::WakeResult {
                     ok: true,
                     status: "ready".into(),
-                    token: Some(token),
+                    token,
                     error: None,
                 }
             } else {
@@ -982,8 +1010,11 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
             }
         }
 
-        ExtensionMessage::GetToken => AppReply::Token {
-            token: get_ws_token(),
+        ExtensionMessage::GetToken => match get_ws_token() {
+            Some(token) => AppReply::Token { token },
+            None => AppReply::Error {
+                message: "WebSocket auth token not initialized".into(),
+            },
         },
 
         ExtensionMessage::Ping => AppReply::Pong,
@@ -1006,7 +1037,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         },
 
         ExtensionMessage::GetStatus => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let downloads = s.list_all_downloads().unwrap_or_default();
             let active = downloads
                 .iter()
@@ -1024,7 +1058,7 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
 
             let is_running = is_ws_server_ready();
             let token = if is_running {
-                Some(get_ws_token())
+                get_ws_token()
             } else {
                 None
             };
@@ -1048,7 +1082,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::ListDownloads { filter } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let records = s.list_all_downloads().unwrap_or_default();
 
             let filter_lower = filter.unwrap_or_else(|| "all".into()).to_lowercase();
@@ -1119,7 +1156,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::GetDownload { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let records = s.list_all_downloads().unwrap_or_default();
             if let Some(r) = records.into_iter().find(|d| d.id == id) {
                 let is_comp = r.state == DownloadState::Completed;
@@ -1249,7 +1289,7 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 save_dir,
                 category: category.into(),
                 state: DownloadState::Downloading,
-                size_total: size.or(Some(52_428_800)),
+                size_total: size,
                 size_done: 0,
                 resumable: true,
                 etag: None,
@@ -1262,14 +1302,20 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
                 error_msg: None,
             };
 
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let _ = s.insert_download(&record);
 
             AppReply::Accepted { id }
         }
 
         ExtensionMessage::PauseDownload { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let _ = s.update_download_state(id, DownloadState::Paused, None);
             AppReply::Success {
                 action: "pause".into(),
@@ -1278,7 +1324,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::ResumeDownload { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let _ = s.update_download_state(id, DownloadState::Downloading, None);
             AppReply::Success {
                 action: "resume".into(),
@@ -1287,7 +1336,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::CancelDownload { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let _ =
                 s.update_download_state(id, DownloadState::Cancelled, Some("Cancelled by user"));
             AppReply::Success {
@@ -1297,7 +1349,10 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::RetryDownload { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             let _ = s.update_download_state(id, DownloadState::Downloading, None);
             AppReply::Success {
                 action: "retry".into(),
@@ -1306,11 +1361,17 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::OpenDownloadedFile { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             if let Ok(records) = s.list_all_downloads() {
                 if let Some(r) = records.into_iter().find(|d| d.id == id) {
-                    let file_path = PathBuf::from(&r.save_dir).join(&r.filename);
-                    edm_core::security::open_file_safely(&file_path);
+                    if let Some(file_path) =
+                        resolve_contained_existing(std::path::Path::new(&r.save_dir), &r.filename)
+                    {
+                        edm_core::security::open_file_safely(&file_path);
+                    }
                 }
             }
             AppReply::Success {
@@ -1320,17 +1381,20 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         }
 
         ExtensionMessage::OpenDownloadFolder { id } => {
-            let s = store.lock().unwrap();
+            let s = match lock_store(store) {
+                Ok(guard) => guard,
+                Err(reply) => return reply,
+            };
             if let Ok(records) = s.list_all_downloads() {
                 if let Some(r) = records.into_iter().find(|d| d.id == id) {
-                    let file_path = PathBuf::from(&r.save_dir).join(&r.filename);
-                    if file_path.exists() {
+                    let base_dir = std::path::Path::new(&r.save_dir);
+                    if let Some(file_path) = resolve_contained_existing(base_dir, &r.filename) {
                         let _ = std::process::Command::new("explorer.exe")
                             .arg(format!("/select,{}", file_path.to_string_lossy()))
                             .spawn();
-                    } else {
+                    } else if let Ok(canonical_dir) = std::fs::canonicalize(base_dir) {
                         let _ = std::process::Command::new("explorer.exe")
-                            .arg(&r.save_dir)
+                            .arg(canonical_dir)
                             .spawn();
                     }
                 }
@@ -1344,24 +1408,29 @@ async fn handle_message(msg: ExtensionMessage, store: &Arc<Mutex<Store>>) -> App
         ExtensionMessage::RemoveDownloadHistory { id, delete_file } => {
             let delete_on_disk = delete_file.unwrap_or(false);
             let maybe_record = {
-                let s = store.lock().unwrap();
+                let s = match lock_store(store) {
+                    Ok(guard) => guard,
+                    Err(reply) => return reply,
+                };
                 s.list_all_downloads()
                     .ok()
                     .and_then(|recs| recs.into_iter().find(|d| d.id == id))
             };
             {
-                let s = store.lock().unwrap();
+                let s = match lock_store(store) {
+                    Ok(guard) => guard,
+                    Err(reply) => return reply,
+                };
                 let _ = s.delete_download(id);
             }
             if delete_on_disk {
                 if let Some(r) = maybe_record {
-                    let base_dir = std::path::PathBuf::from(r.save_dir);
-                    let target_file = base_dir.join(&r.filename);
-                    let part_file = base_dir.join(format!("{}.edmpart", r.filename));
-                    if target_file.exists() {
+                    let base_dir = std::path::PathBuf::from(&r.save_dir);
+                    if let Some(target_file) = resolve_contained_existing(&base_dir, &r.filename) {
                         let _ = std::fs::remove_file(&target_file);
                     }
-                    if part_file.exists() {
+                    let part_name = format!("{}.edmpart", r.filename);
+                    if let Some(part_file) = resolve_contained_existing(&base_dir, &part_name) {
                         let _ = std::fs::remove_file(&part_file);
                     }
                 }
@@ -1433,7 +1502,20 @@ async fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    let store = Arc::new(Mutex::new(open_store()));
+    let store = match open_store() {
+        Ok(s) => Arc::new(Mutex::new(s)),
+        Err(e) => {
+            tracing::error!("{}", e);
+            let reply = AppReply::Error { message: e };
+            let stdout = io::stdout();
+            let mut writer = stdout.lock();
+            let _ = write_reply(&mut writer, &reply);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Database initialization failed",
+            ));
+        }
+    };
 
     // If --serve argument is provided, start local loopback HTTP API for fallback connectivity
     if args.iter().any(|a| a == "--serve") {
@@ -1451,58 +1533,66 @@ async fn main() -> io::Result<()> {
                     |headers: HeaderMap,
                      State(s): State<Arc<Mutex<Store>>>,
                      Json(msg): Json<ExtensionMessage>| async move {
-                        // Security Guard 1: Loopback Host enforcement
-                        if let Some(host) = headers.get(axum::http::header::HOST) {
-                            if let Ok(h) = host.to_str() {
-                                if !h.starts_with("127.0.0.1") && !h.starts_with("localhost") {
-                                    return Err((
-                                        StatusCode::FORBIDDEN,
-                                        "Forbidden: Host must be loopback",
-                                    ));
-                                }
-                            }
+                        // Security Guard 1: Exact loopback Host enforcement
+                        let host_ok = headers
+                            .get(axum::http::header::HOST)
+                            .and_then(|h| h.to_str().ok())
+                            .is_some_and(|h| {
+                                matches!(
+                                    h.trim(),
+                                    "127.0.0.1:8998" | "localhost:8998" | "127.0.0.1" | "localhost"
+                                )
+                            });
+                        if !host_ok {
+                            return Err((
+                                StatusCode::FORBIDDEN,
+                                "Forbidden: Host must be loopback",
+                            ));
                         }
 
-                        // Security Guard 2: Anti-CSRF Origin check (reject malicious website origins)
+                        // Security Guard 2: Anti-CSRF Origin check (allowlisted extensions only)
                         if let Some(origin) = headers.get(axum::http::header::ORIGIN) {
-                            if let Ok(o) = origin.to_str() {
-                                let is_ext = o.starts_with("chrome-extension://")
-                                    || o.starts_with("moz-extension://");
-                                let is_local = o.starts_with("http://localhost:")
-                                    || o.starts_with("http://127.0.0.1:")
-                                    || o.starts_with("tauri://");
-                                if !is_ext && !is_local {
-                                    return Err((
-                                        StatusCode::FORBIDDEN,
-                                        "Forbidden: Untrusted Origin",
-                                    ));
-                                }
+                            let valid_origin = origin
+                                .to_str()
+                                .is_ok_and(edm_ipc::extensions::is_allowed_origin);
+                            if !valid_origin {
+                                return Err((
+                                    StatusCode::FORBIDDEN,
+                                    "Forbidden: Untrusted Origin",
+                                ));
                             }
                         }
 
                         // Security Guard 3: Block cross-site browser fetches
                         if let Some(sec_site) = headers.get("sec-fetch-site") {
-                            if let Ok(site) = sec_site.to_str() {
-                                if site == "cross-site" {
-                                    if let Some(origin) = headers.get(axum::http::header::ORIGIN) {
-                                        if let Ok(o) = origin.to_str() {
-                                            if !o.starts_with("chrome-extension://")
-                                                && !o.starts_with("moz-extension://")
-                                            {
-                                                return Err((
-                                                    StatusCode::FORBIDDEN,
-                                                    "Forbidden: Cross-site request rejected",
-                                                ));
-                                            }
-                                        }
-                                    } else {
-                                        return Err((
-                                            StatusCode::FORBIDDEN,
-                                            "Forbidden: Cross-site request rejected",
-                                        ));
-                                    }
+                            if sec_site.to_str().ok() == Some("cross-site") {
+                                let is_allowed_ext = headers
+                                    .get(axum::http::header::ORIGIN)
+                                    .and_then(|o| o.to_str().ok())
+                                    .is_some_and(edm_ipc::extensions::is_allowed_origin);
+                                if !is_allowed_ext {
+                                    return Err((
+                                        StatusCode::FORBIDDEN,
+                                        "Forbidden: Cross-site request rejected",
+                                    ));
                                 }
                             }
+                        }
+
+                        // Security Guard 4: Constant-time x-edm-token verification
+                        let expected_token = get_ws_token().ok_or((
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "Service Unavailable: Auth token not initialized",
+                        ))?;
+                        let provided_token = headers
+                            .get("x-edm-token")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("");
+                        if !constant_time_eq(provided_token.as_bytes(), expected_token.as_bytes()) {
+                            return Err((
+                                StatusCode::UNAUTHORIZED,
+                                "Unauthorized: Invalid or missing x-edm-token",
+                            ));
                         }
 
                         let reply = handle_message(msg, &s).await;
@@ -1513,15 +1603,9 @@ async fn main() -> io::Result<()> {
             .layer(
                 CorsLayer::new()
                     .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
-                        if let Ok(s) = origin.to_str() {
-                            s.starts_with("chrome-extension://")
-                                || s.starts_with("moz-extension://")
-                                || s.starts_with("http://localhost:")
-                                || s.starts_with("http://127.0.0.1:")
-                                || s.starts_with("tauri://")
-                        } else {
-                            false
-                        }
+                        origin
+                            .to_str()
+                            .is_ok_and(edm_ipc::extensions::is_allowed_origin)
                     }))
                     .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                     .allow_headers(tower_http::cors::Any),

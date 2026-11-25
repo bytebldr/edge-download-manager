@@ -56,12 +56,6 @@ impl WsManager {
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn get_connected_browsers(&self) -> Vec<String> {
-        let clients = self.connected_clients.read().await;
-        clients.values().map(|c| c.browser.clone()).collect()
-    }
-
     pub async fn is_browser_connected(&self, browser: &str) -> bool {
         let clients = self.connected_clients.read().await;
         clients
@@ -273,14 +267,6 @@ impl WsManager {
             drop(map);
             self.bump_rev();
         }
-    }
-
-    #[allow(dead_code)]
-    pub async fn remove_task(&self, id: &str) {
-        let mut map = self.tasks.write().await;
-        map.remove(id);
-        drop(map);
-        self.bump_rev();
     }
 
     pub async fn update_task_error(&self, id: &str, error_msg: Option<String>) {

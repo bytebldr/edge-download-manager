@@ -184,20 +184,19 @@ async fn test_token_endpoint_security() {
     );
     assert!(resp_str.contains(token));
 
-    // 4. Missing Origin (direct loopback / extension service worker fetch) -> 200 OK
+    // 4. Missing Origin -> 403 Forbidden
     let mut stream = TcpStream::connect(addr).await.unwrap();
     stream
         .write_all(format!("GET /token HTTP/1.1\r\nHost: {}\r\n\r\n", addr).as_bytes())
         .await
         .unwrap();
-    let mut resp = [0u8; 1024];
+    let mut resp = [0u8; 512];
     let n = stream.read(&mut resp).await.unwrap();
     let resp_str = String::from_utf8_lossy(&resp[..n]);
     assert!(
-        resp_str.contains("200 OK"),
-        "Direct loopback without origin must succeed"
+        resp_str.contains("403 Forbidden"),
+        "Missing origin must be rejected with 403 Forbidden"
     );
-    assert!(resp_str.contains(token));
 }
 
 #[tokio::test]
@@ -232,7 +231,7 @@ async fn test_multiple_extension_ids_accepted_and_rejected() {
         assert!(resp_str.contains(token));
     }
 
-    // 2. Verify Firefox moz-extension origin succeeds on /token
+    // 2. Verify Firefox moz-extension origin without X-EDM-Extension-Id is rejected (403)
     {
         let mut stream = TcpStream::connect(addr).await.unwrap();
         let origin = "moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4";
@@ -246,12 +245,35 @@ async fn test_multiple_extension_ids_accepted_and_rejected() {
             )
             .await
             .unwrap();
+        let mut resp = [0u8; 512];
+        let n = stream.read(&mut resp).await.unwrap();
+        let resp_str = String::from_utf8_lossy(&resp[..n]);
+        assert!(
+            resp_str.contains("403 Forbidden"),
+            "Firefox moz-extension without X-EDM-Extension-Id must be rejected"
+        );
+    }
+
+    // 2b. Verify Firefox moz-extension origin WITH valid X-EDM-Extension-Id succeeds on /token
+    {
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let origin = "moz-extension://b4b5e6fc-5231-419b-a010-86b2496a3fc4";
+        stream
+            .write_all(
+                format!(
+                    "GET /token HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nX-EDM-Extension-Id: {}\r\n\r\n",
+                    addr, origin, edm_ipc::extensions::FIREFOX_GECKO_ID
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
         let mut resp = [0u8; 1024];
         let n = stream.read(&mut resp).await.unwrap();
         let resp_str = String::from_utf8_lossy(&resp[..n]);
         assert!(
             resp_str.contains("200 OK"),
-            "Firefox moz-extension origin must succeed"
+            "Firefox moz-extension origin with valid X-EDM-Extension-Id must succeed"
         );
         assert!(resp_str.contains(token));
     }
@@ -433,4 +455,41 @@ async fn test_unknown_task_id_ignored() {
         .unwrap();
     let pong = ws_stream.next().await.unwrap().unwrap();
     assert!(pong.to_text().unwrap().contains("\"type\":\"pong\""));
+}
+
+#[tokio::test]
+async fn test_hello_without_extension_id_rejected() {
+    let token = "test_token_valid_1234567890abcdef123456";
+    let (addr, _mgr, _create_rx, _act_rx) = setup_test_server(token).await;
+
+    let request = tokio_tungstenite::tungstenite::http::Request::builder()
+        .uri(format!("ws://{}", addr))
+        .header("Origin", format!("chrome-extension://{}", EXTENSION_ID))
+        .header("Host", addr.to_string())
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .header("Sec-WebSocket-Version", "13")
+        .body(())
+        .unwrap();
+
+    let (mut ws_stream, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+
+    let hello = serde_json::to_string(&InboundWsMessage::Hello {
+        token: token.to_string(),
+        browser: None,
+        version: None,
+        extension_id: None,
+    })
+    .unwrap();
+    ws_stream.send(Message::Text(hello.into())).await.unwrap();
+
+    let next_msg = ws_stream.next().await;
+    match next_msg {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        other => panic!(
+            "Expected connection closure when extension_id is None, got {:?}",
+            other
+        ),
+    }
 }
