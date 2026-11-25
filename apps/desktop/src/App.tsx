@@ -3,10 +3,8 @@ import {
   Download,
   Pause,
   Play,
-  Square,
   Trash2,
   FolderOpen,
-  Search,
   Plus,
   FileCode,
   Film,
@@ -18,7 +16,6 @@ import {
   Clock,
   CheckCircle2,
   LayoutList,
-  LayoutGrid,
   ChevronDown,
   ChevronUp,
   Cpu,
@@ -29,11 +26,9 @@ import {
   ArrowDown,
   ArrowUp,
   Settings,
-  Minus,
   RotateCcw,
-  Copy,
-  Check,
   Image,
+  CalendarClock,
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
@@ -42,6 +37,28 @@ import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
+import { AppToolbar } from "./components/AppToolbar";
+import { DownloadContextMenu } from "./components/DownloadContextMenu";
+import {
+  DOWNLOADS_STORAGE_KEY,
+  DISMISSED_UPDATE_VERSION_KEY,
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_FALLBACK_SIZE_BYTES,
+  BACKEND_SYNC_INTERVAL_MS,
+  TELEMETRY_TICK_INTERVAL_MS,
+  UI_THROTTLE_MS,
+  STALLED_THRESHOLD_MS,
+  LOCAL_PREVIEW_GRACE_MS,
+  SPEED_LIMIT_BYTES_MAP,
+  VALID_DOWNLOAD_CATEGORIES,
+  BACKEND_STATE_MAP,
+  inferCategoryFromExtension,
+  ensureSingleEdmPath,
+  buildCategoryFolderMap,
+} from "./config/constants";
+import { BatchImportModal, ImportedLink } from "./features/batch-import";
+import { QueueSchedulerPanel } from "./features/scheduler";
+import { EditRequestModal } from "./features/routing";
 import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
 import { motion, AnimatePresence } from "motion/react";
@@ -59,10 +76,6 @@ import {
   tauriSaveSettings,
   tauriLoadSettings,
   tauriGetTelemetry,
-  tauriWindowMinimize,
-  tauriWindowToggleMaximize,
-  tauriWindowClose,
-  tauriStartDragging,
   tauriIsWizardCompleted,
   tauriCheckDuplicateDownload,
   tauriSetSpeedLimit,
@@ -185,6 +198,7 @@ export default function App() {
   const [settings, setSettings] = useState<EdmSettings>(loadSettings);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [refreshModalTask, setRefreshModalTask] = useState<DownloadItem | null>(null);
+  const [editRequestTask, setEditRequestTask] = useState<DownloadItem | null>(null);
 
   useEffect(() => {
     tauriIsWizardCompleted().then((completed) => {
@@ -219,6 +233,8 @@ export default function App() {
   const [selectedDownload, setSelectedDownload] = useState<DownloadItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
+  const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
@@ -233,16 +249,7 @@ export default function App() {
 
   const handleSpeedLimitChange = (val: string) => {
     setSpeedLimit(val);
-    const limitMap: Record<string, number | null> = {
-      "Unlimited": null,
-      "50 MB/s": 50 * 1024 * 1024,
-      "20 MB/s": 20 * 1024 * 1024,
-      "10 MB/s": 10 * 1024 * 1024,
-      "5 MB/s": 5 * 1024 * 1024,
-      "2 MB/s": 2 * 1024 * 1024,
-      "500 KB/s": 500 * 1024,
-    };
-    tauriSetSpeedLimit(limitMap[val] ?? null);
+    tauriSetSpeedLimit(SPEED_LIMIT_BYTES_MAP[val] ?? null);
   };
 
   useEffect(() => {
@@ -250,7 +257,7 @@ export default function App() {
       tauriCheckForUpdates().then((res) => {
         if (res && res.update_available) {
           setUpdateInfo(res);
-          const dismissed = localStorage.getItem("edm_dismissed_update_version");
+          const dismissed = localStorage.getItem(DISMISSED_UPDATE_VERSION_KEY);
           if (dismissed !== res.latest_version) {
             setShowUpdateBanner(true);
           }
@@ -264,7 +271,7 @@ export default function App() {
   const handleDismissUpdateBanner = () => {
     if (updateInfo?.latest_version) {
       try {
-        localStorage.setItem("edm_dismissed_update_version", updateInfo.latest_version);
+        localStorage.setItem(DISMISSED_UPDATE_VERSION_KEY, updateInfo.latest_version);
       } catch {}
     }
     setShowUpdateBanner(false);
@@ -353,7 +360,6 @@ export default function App() {
     y: 0,
     item: null,
   });
-  const [copiedContextMenuId, setCopiedContextMenuId] = useState<string | null>(null);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -455,7 +461,7 @@ export default function App() {
   const [downloads, setDownloads] = useState<DownloadItem[]>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("edm_downloads_v1");
+        const saved = localStorage.getItem(DOWNLOADS_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -497,7 +503,7 @@ export default function App() {
   // Persist download tasks across sessions
   useEffect(() => {
     try {
-      localStorage.setItem("edm_downloads_v1", JSON.stringify(downloads));
+      localStorage.setItem(DOWNLOADS_STORAGE_KEY, JSON.stringify(downloads));
     } catch (e) {
       console.warn("Failed to persist edm_downloads_v1", e);
     }
@@ -519,22 +525,7 @@ export default function App() {
 
     tauriGetSystemUserDirs().then((dirs) => {
       if (!dirs) return;
-      const ensureSingleEdm = (base: string): string => {
-        if (!base) return "";
-        const normalized = base.replace(/\//g, "\\");
-        const stripped = normalized.replace(/(\\EDM)+$/i, "");
-        return `${stripped}\\EDM`;
-      };
-
-      const categoryFolderMap: Record<string, string> = {
-        audio: ensureSingleEdm(dirs.music),
-        music: ensureSingleEdm(dirs.music),
-        video: ensureSingleEdm(dirs.videos),
-        pictures: ensureSingleEdm(dirs.pictures),
-        documents: ensureSingleEdm(dirs.documents),
-        programs: `${dirs.downloads}\\Programs`,
-        archives: `${dirs.downloads}\\Archives`,
-      };
+      const categoryFolderMap = buildCategoryFolderMap(dirs);
 
       setSettings((current) => {
         let changed = false;
@@ -560,7 +551,7 @@ export default function App() {
 
           // 2. Audio in Downloads -> migrate to Music\EDM
           if ((catId === "audio" || catId === "music") && (dest.includes("Downloads\\Audio") || dest.includes("Downloads/Audio") || dest.includes("Downloads\\Music") || dest.includes("Downloads/Music"))) {
-            dest = ensureSingleEdm(dirs.music);
+            dest = ensureSingleEdmPath(dirs.music);
             changed = true;
           }
 
@@ -599,18 +590,6 @@ export default function App() {
 
       setDownloads((prev) => {
         const existingMap = new Map(prev.map((item) => [item.id, item]));
-        const validCategories = ["Video", "Music", "Documents", "Compressed", "Programs", "Pictures", "Other"] as const;
-        const stateMap: Record<string, "downloading" | "paused" | "queued" | "completed" | "failed"> = {
-          downloading: "downloading",
-          verifying: "downloading",
-          paused: "paused",
-          cancelled: "paused",
-          completed: "completed",
-          failed: "failed",
-          queued: "queued",
-          created: "queued",
-          probing: "queued",
-        };
 
         const updated: DownloadItem[] = backendItems.map((b) => {
           const existing = existingMap.get(b.id);
@@ -620,7 +599,7 @@ export default function App() {
           const pct = Math.max(calculatedPct, existing?.progress || 0);
           const speedVal = b.speed_bytes_per_sec || 0;
 
-          const category = validCategories.includes(b.category as any)
+          const category = VALID_DOWNLOAD_CATEGORIES.includes(b.category as any)
             ? (b.category as DownloadItem["category"])
             : "Programs";
 
@@ -632,7 +611,7 @@ export default function App() {
             }
           })();
 
-          const rawState = stateMap[b.state] || (existing?.state || "downloading");
+          const rawState = BACKEND_STATE_MAP[b.state] || (existing?.state || "downloading");
           const isCompleted = b.state === "completed" || (rawState === "completed" && pct >= 100);
           if (existing && existing.state !== "completed" && isCompleted) {
             triggerCompletionNotification(b.filename, b.id, b.save_dir ? `${b.save_dir}\\${b.filename}` : undefined);
@@ -695,7 +674,7 @@ export default function App() {
         // Also keep any local-only preview items that haven't hit backend yet
         const backendIds = new Set(backendItems.map((b) => b.id));
         for (const item of prev) {
-          if (!backendIds.has(item.id) && Date.now() - (item.createdAt || Number(item.id) || 0) < 5000) {
+          if (!backendIds.has(item.id) && Date.now() - (item.createdAt || Number(item.id) || 0) < LOCAL_PREVIEW_GRACE_MS) {
             updated.push(item);
           }
         }
@@ -723,7 +702,7 @@ export default function App() {
     }
 
     // Fast sync interval
-    const interval = setInterval(syncWithBackend, 800);
+    const interval = setInterval(syncWithBackend, BACKEND_SYNC_INTERVAL_MS);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -768,22 +747,7 @@ export default function App() {
     }
     const name = initialName ? initialName.replace(/[\\/:*?"<>|]/g, "_") : (isYouTubeUrl ? "YouTube_Video.mp4" : "download.bin");
     const ext = name.split(".").pop()?.toLowerCase() || "";
-
-    let categoryName: DownloadItem["category"] = "Programs";
-    if (["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv"].includes(ext)) {
-      categoryName = "Video";
-    } else if (["mp3", "flac", "wav", "aac", "ogg", "m4a"].includes(ext)) {
-      categoryName = "Music";
-    } else if (["zip", "rar", "7z", "tar", "gz", "iso", "bin"].includes(ext)) {
-      categoryName = "Compressed";
-    } else if (["pdf", "doc", "docx", "txt", "xlsx", "pptx"].includes(ext)) {
-      categoryName = "Documents";
-    } else if (["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico", "tiff", "tif"].includes(ext)) {
-      categoryName = "Pictures";
-    } else {
-      const matchedCat = settings.categories.find((c) => c.enabled && c.extensions.includes(ext));
-      categoryName = (matchedCat ? matchedCat.name : "Programs") as DownloadItem["category"];
-    }
+    const categoryName = inferCategoryFromExtension(ext, settings.categories);
 
     let hostname = "source.net";
     try {
@@ -804,7 +768,7 @@ export default function App() {
       if (!proceed) return;
     }
 
-    const conns = customConns || settings.downloads.maxConnectionsPerFile || 8;
+    const conns = customConns || settings.downloads.maxConnectionsPerFile || DEFAULT_MAX_CONNECTIONS;
     const finalCategory = (customCategory && customCategory !== "auto") ? (customCategory as DownloadItem["category"]) : categoryName;
 
     // Intelligent Categorization: if user didn't explicitly pick a custom save directory,
@@ -838,7 +802,7 @@ export default function App() {
     });
 
     const isQueued = backendRes?.status === "queued";
-    const realTotal = 100_000_000;
+    const realTotal = DEFAULT_FALLBACK_SIZE_BYTES;
 
     const initialWorkers: WorkerInfo[] = isQueued
       ? []
@@ -1002,9 +966,9 @@ export default function App() {
                 currentEta = telem.decision_reason || "Fetching video info...";
               } else if (phase === "Merging") {
                 currentEta = "Merging...";
-              } else if (stalledMs < 10000 && smooth.lastValidEta && smooth.lastValidEta !== "Calculating...") {
+              } else if (stalledMs < STALLED_THRESHOLD_MS && smooth.lastValidEta && smooth.lastValidEta !== "Calculating...") {
                 currentEta = smooth.lastValidEta;
-              } else if (stalledMs >= 10000 && (phase === "DownloadingVideo" || phase === "DownloadingAudio" || phase === "Downloading" || !phase)) {
+              } else if (stalledMs >= STALLED_THRESHOLD_MS && (phase === "DownloadingVideo" || phase === "DownloadingAudio" || phase === "Downloading" || !phase)) {
                 currentEta = "Stalled";
               }
             }
@@ -1017,7 +981,7 @@ export default function App() {
               : (telem.active_connections !== undefined ? telem.active_connections : (telem.target_connections || 1));
 
             // Throttle UI label updates to at most 1-2 per second (500ms)
-            if (now - smooth.lastUiUpdate >= 500 || isFinished) {
+            if (now - smooth.lastUiUpdate >= UI_THROTTLE_MS || isFinished) {
               smooth.displayedEta = currentEta;
               smooth.displayedSpeed = isFinished ? "0 B/s" : formatSpeed(smoothedSpeedBps);
               smooth.displayedConns = targetConns;
@@ -1144,7 +1108,7 @@ export default function App() {
         const match = updates.find((u) => u.id === prev.id);
         return match ? { ...prev, ...match } : prev;
       });
-    }, 250);
+    }, TELEMETRY_TICK_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [hasDownloadingTasks]);
@@ -1577,181 +1541,18 @@ export default function App() {
             {/* ─────────────────────────────────────────────────────────────
                 1. WINDOW HEADER & TOP COMMAND DECK
             ────────────────────────────────────────────────────────────── */}
-          <header
-            data-tauri-drag-region
-            onMouseDown={(e) => {
-              if (e.button === 0 && !(e.target as HTMLElement).closest("button, input, select, a, textarea")) {
-                tauriStartDragging();
-              }
-            }}
-            onDoubleClick={(e) => {
-              if (!(e.target as HTMLElement).closest("button, input, select, a, textarea")) {
-                tauriWindowToggleMaximize();
-              }
-            }}
-            className="h-14 px-3 sm:px-4 header-3d flex items-center justify-between gap-2 shrink-0 z-20 select-none relative"
-          >
-            {/* Left: Brand Identity with Official 3D Logo & Context Actions */}
-            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 z-10">
-              <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                <img
-                  src="/logo.png"
-                  alt="EDM Logo"
-                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain drop-shadow-md transition-transform hover:scale-105 duration-150 shrink-0 pointer-events-none"
-                />
-                <div className="shrink-0 flex flex-col justify-center">
-                  <span className="font-bold tracking-tight text-xs sm:text-sm">EDM</span>
-                  <div className="text-[10px] text-[var(--text-muted)] whitespace-nowrap font-medium leading-tight mt-0.5 hidden xs:block">
-                    Evo Download Manager
-                  </div>
-                </div>
-              </div>
-
-              {/* Contextual Toolbar (Always visible; grayed out when no task is selected) */}
-              <div className="flex items-center gap-1 shrink-0 pl-2 border-l border-[var(--border-subtle)]">
-                <button
-                  disabled={selectedIds.length === 0}
-                  onClick={resumeSelected}
-                  className={`btn-3d h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                    selectedIds.length > 0
-                      ? "text-[var(--text-secondary)] hover:text-emerald-400 cursor-pointer"
-                      : "opacity-30 cursor-not-allowed text-[var(--text-muted)] pointer-events-none"
-                  }`}
-                  title={selectedIds.length > 0 ? "Resume Selected Tasks" : "Resume (Select task first)"}
-                >
-                  <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20" />
-                </button>
-
-                <button
-                  disabled={selectedIds.length === 0}
-                  onClick={pauseSelected}
-                  className={`btn-3d h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                    selectedIds.length > 0
-                      ? "text-[var(--text-secondary)] hover:text-amber-400 cursor-pointer"
-                      : "opacity-30 cursor-not-allowed text-[var(--text-muted)] pointer-events-none"
-                  }`}
-                  title={selectedIds.length > 0 ? "Pause Selected Tasks" : "Pause (Select task first)"}
-                >
-                  <Pause className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20" />
-                </button>
-
-                <button
-                  disabled={selectedIds.length === 0}
-                  onClick={stopSelected}
-                  className={`btn-3d h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                    selectedIds.length > 0
-                      ? "text-[var(--text-secondary)] hover:text-rose-400 cursor-pointer"
-                      : "opacity-30 cursor-not-allowed text-[var(--text-muted)] pointer-events-none"
-                  }`}
-                  title={selectedIds.length > 0 ? "Stop Selected Downloads" : "Stop (Select task first)"}
-                >
-                  <Square className="w-3 h-3 text-rose-400 fill-rose-400/20" />
-                </button>
-
-                <button
-                  disabled={selectedIds.length === 0}
-                  onClick={deleteSelected}
-                  className={`btn-3d h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                    selectedIds.length > 0
-                      ? "text-[var(--text-secondary)] hover:text-rose-400 cursor-pointer"
-                      : "opacity-30 cursor-not-allowed text-[var(--text-muted)] pointer-events-none"
-                  }`}
-                  title={selectedIds.length > 0 ? "Delete Selected Tasks" : "Delete (Select task first)"}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Center: Command Deck Pinned to Exact Geometric Center */}
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 shrink-0 z-10" data-tauri-drag-region>
-              {/* Primary Action: Add URL */}
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="btn-primary-3d h-8 px-2.5 rounded-lg flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-semibold"
-                title="Add Download URL (Ctrl+N)"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span className="hidden sm:inline">Add URL</span>
-              </button>
-
-              {/* Search Box */}
-              <div className="relative shrink-0">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none icon-3d" />
-                <input
-                  type="text"
-                  placeholder="Filter tasks..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-28 sm:w-44 md:w-56 focus:w-36 sm:focus:w-52 md:focus:w-64 h-8 pl-8 pr-7 rounded-lg text-xs input-3d text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none transition-all truncate"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* View Mode Toggle */}
-              <div className="h-8 flex items-center p-0.5 rounded-lg input-3d shrink-0">
-                <button
-                  onClick={() => setViewMode("table")}
-                  className={`h-full px-2 rounded-md cursor-pointer transition-all inline-flex items-center ${
-                    viewMode === "table" ? "btn-3d text-[var(--accent)] shadow-sm font-semibold" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  }`}
-                  title="Table View"
-                >
-                  <LayoutList className="w-3.5 h-3.5 icon-3d" />
-                </button>
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`h-full px-2 rounded-md cursor-pointer transition-all inline-flex items-center ${
-                    viewMode === "grid" ? "btn-3d text-[var(--accent)] shadow-sm font-semibold" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  }`}
-                  title="Grid View"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5 icon-3d" />
-                </button>
-              </div>
-            </div>
-
-            {/* Right: Unified Integrated Window Controls & Quick Actions */}
-            <div className="flex items-center gap-1 shrink-0 z-10 ml-auto" data-tauri-drag-region="false">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  tauriWindowMinimize();
-                }}
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors cursor-pointer"
-                title="Minimize"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  tauriWindowToggleMaximize();
-                }}
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors cursor-pointer"
-                title="Maximize / Restore"
-              >
-                <Square className="w-3 h-3" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  tauriWindowClose();
-                }}
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-rose-600 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </header>
+            <AppToolbar
+              selectedCount={selectedIds.length}
+              onResumeSelected={resumeSelected}
+              onPauseSelected={pauseSelected}
+              onStopSelected={stopSelected}
+              onDeleteSelected={deleteSelected}
+              onAddUrl={() => setIsAddModalOpen(true)}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
 
       {/* ─────────────────────────────────────────────────────────────
           2. WORKSPACE BODY: SIDEBAR + MAIN CONTENT AREA
@@ -2372,6 +2173,15 @@ export default function App() {
             <span className="hidden xs:inline">Settings</span>
           </button>
 
+          <button
+            onClick={() => setIsSchedulerOpen(true)}
+            className="h-7 px-2.5 rounded-md text-[11px] sm:text-xs font-medium btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            title="Download Queues & Scheduler"
+          >
+            <CalendarClock className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 icon-3d" />
+            <span className="hidden sm:inline">Scheduler</span>
+          </button>
+
           {/* Speed Limiter Dial (Opens upward from status bar) */}
           <div className="relative shrink-0">
             <button
@@ -2467,8 +2277,61 @@ export default function App() {
         onAdd={(url, filename, category, conns, saveDir, selectedFiles) => {
           handleAddDownload(url, filename, category, conns, saveDir, selectedFiles);
         }}
+        onOpenBatchImport={() => setIsBatchImportOpen(true)}
         settings={settings}
       />
+
+      <BatchImportModal
+        isOpen={isBatchImportOpen}
+        onClose={() => setIsBatchImportOpen(false)}
+        onQueueSelected={async (links: ImportedLink[]) => {
+          for (const link of links) {
+            await handleAddDownload(
+              link.url,
+              link.filename_hint ?? undefined,
+              link.category_hint ?? undefined
+            );
+          }
+        }}
+      />
+
+      <AnimatePresence>
+        {isSchedulerOpen && (
+          <motion.div
+            variants={backdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            onClick={() => setIsSchedulerOpen(false)}
+          >
+            <motion.div
+              variants={modalVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="panel-3d w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+                <span className="font-bold tracking-tight text-sm flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-[var(--accent)]" />
+                  Queue Scheduler
+                </span>
+                <button
+                  onClick={() => setIsSchedulerOpen(false)}
+                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto">
+                <QueueSchedulerPanel />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <SetupWizard
         isOpen={isWizardOpen}
@@ -2493,6 +2356,24 @@ export default function App() {
       />
 
       <PowerCountdownModal />
+
+      {editRequestTask && (
+        <EditRequestModal
+          isOpen={Boolean(editRequestTask)}
+          taskId={editRequestTask.id}
+          initialUrl={editRequestTask.url}
+          onClose={() => setEditRequestTask(null)}
+          onSaved={(override) => {
+            if (override.url) {
+              setDownloads((prev) =>
+                prev.map((d) =>
+                  d.id === editRequestTask.id ? { ...d, url: override.url! } : d
+                )
+              );
+            }
+          }}
+        />
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           DELETE CONFIRMATION MODAL (Glassmorphic)
@@ -2624,122 +2505,33 @@ export default function App() {
       </AnimatePresence>
 
       {/* Modern Context Menu */}
-      {contextMenu.visible && contextMenu.item && (
-        <div
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-50 w-56 rounded-xl panel-3d shadow-2xl p-1.5 text-xs border border-[var(--border-subtle)] bg-[var(--bg-card)]/95 backdrop-blur-md select-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-2.5 py-1.5 border-b border-[var(--border-subtle)]/70 text-[10px] font-mono font-medium text-[var(--text-muted)] truncate">
-            {contextMenu.item.name}
-          </div>
-          <div className="py-1 space-y-0.5">
-            {contextMenu.item.state === "completed" || contextMenu.item.progress >= 100 ? (
-              <button
-                onClick={() => {
-                  tauriOpenFile(contextMenu.item!.id);
-                  setContextMenu((p) => ({ ...p, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-[var(--text-primary)] cursor-pointer transition-colors"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Open File</span>
-              </button>
-            ) : contextMenu.item.state === "downloading" ? (
-              <button
-                onClick={() => {
-                  tauriPauseDownload(contextMenu.item!.id);
-                  setDownloads((prev) =>
-                    prev.map((d) => (d.id === contextMenu.item!.id ? { ...d, state: "paused", speed: "0 B/s" } : d))
-                  );
-                  setContextMenu((p) => ({ ...p, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-amber-400 cursor-pointer transition-colors"
-              >
-                <Pause className="w-3.5 h-3.5" />
-                <span>Pause Download</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  tauriResumeDownload(contextMenu.item!.id);
-                  setDownloads((prev) =>
-                    prev.map((d) => (d.id === contextMenu.item!.id ? { ...d, state: "downloading" } : d))
-                  );
-                  setContextMenu((p) => ({ ...p, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-emerald-400 cursor-pointer transition-colors"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>Resume Download</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                tauriOpenFolder(contextMenu.item!.id);
-                setContextMenu((p) => ({ ...p, visible: false }));
-              }}
-              className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
-              <span>Open Folder</span>
-            </button>
-
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(contextMenu.item!.url);
-                setCopiedContextMenuId(contextMenu.item!.id);
-                setTimeout(() => {
-                  setCopiedContextMenuId(null);
-                  setContextMenu((p) => ({ ...p, visible: false }));
-                }, 800);
-              }}
-              className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            >
-              {copiedContextMenuId === contextMenu.item.id ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">Copied URL!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Source URL</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedDownload(contextMenu.item);
-                setIsInspectorOpen(true);
-                setContextMenu((p) => ({ ...p, visible: false }));
-              }}
-              className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            >
-              <Layers className="w-3.5 h-3.5 text-[var(--accent)]" />
-              <span>Inspect Streams</span>
-              <span className="ml-auto text-[10px] text-[var(--text-muted)] font-mono">Enter</span>
-            </button>
-          </div>
-
-          <div className="pt-1 mt-1 border-t border-[var(--border-subtle)]/70">
-            <button
-              onClick={() => {
-                const item = contextMenu.item!;
-                setContextMenu((p) => ({ ...p, visible: false }));
-                handleRequestDelete(item.id, item.name);
-              }}
-              className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete from List</span>
-              <span className="ml-auto text-[10px] text-rose-400/70 font-mono">Del</span>
-            </button>
-          </div>
-        </div>
-      )}
+      <DownloadContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        item={contextMenu.item}
+        onClose={() => setContextMenu((p) => ({ ...p, visible: false }))}
+        onOpenFile={tauriOpenFile}
+        onPause={(id) => {
+          tauriPauseDownload(id);
+          setDownloads((prev) =>
+            prev.map((d) => (d.id === id ? { ...d, state: "paused", speed: "0 B/s" } : d))
+          );
+        }}
+        onResume={(id) => {
+          tauriResumeDownload(id);
+          setDownloads((prev) =>
+            prev.map((d) => (d.id === id ? { ...d, state: "downloading" } : d))
+          );
+        }}
+        onOpenFolder={tauriOpenFolder}
+        onInspect={(item) => {
+          setSelectedDownload(item);
+          setIsInspectorOpen(true);
+        }}
+        onEditRequest={(item) => setEditRequestTask(item)}
+        onDelete={handleRequestDelete}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           FLOATING IN-APP UPDATE BANNER (Astryx Chassis Pill)
