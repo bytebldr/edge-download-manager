@@ -1,4 +1,5 @@
 import type { FeaturePackId } from "./featurePacks";
+import { tauriSaveSettings } from "../services/tauriBridge";
 
 export interface CategoryRule {
   id: string;
@@ -341,9 +342,7 @@ export function saveSettings(settings: EdmSettings): void {
     document.documentElement.setAttribute("data-theme", settings.general.theme === "system" ? "dark" : settings.general.theme);
     // Sync to native backend store
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      import("../services/tauriBridge").then(({ tauriSaveSettings }) => {
-        tauriSaveSettings(settings).catch(() => {});
-      }).catch(() => {});
+      tauriSaveSettings(settings).catch(() => {});
     }
   } catch (err) {
     console.error("Failed to save settings", err);

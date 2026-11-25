@@ -2,6 +2,7 @@
   "name": "edm-desktop",
   "private": true,
   "version": "0.0.28",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,14 +11,11 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "motion": "^12.4.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^3.10.1",
-    "tailwind-merge": "^3.0.2",
-    "zustand": "^5.0.3"
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.9",
