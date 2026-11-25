@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
-use super::{ExtractedFormat, ExtractedMetadata, SiteExtractor};
+use super::types::{ExtractedFormat, ExtractedMetadata, SiteExtractor};
 
 pub struct VimeoExtractor;
 

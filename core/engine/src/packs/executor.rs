@@ -4,7 +4,6 @@
 use super::bittorrent::BitTorrentPack;
 use super::ed2k::Ed2kPack;
 use super::ftp::FtpPack;
-use super::huggingface::HuggingFacePack;
 use super::m3u8::M3u8Pack;
 use crate::adaptive::{
     AccelerationMode, AdaptiveDownloadTask, AdaptiveEngine, AdaptiveTelemetry, TelemetryCallback,
@@ -28,45 +27,6 @@ impl PackExecutor {
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
         crate::adaptive_wrapper::AdaptiveWrapper::execute(task, engine, client, telemetry_cb).await
-    }
-
-    /// GitHub Pack: Accelerated mirror resolution & SHA-256 verification
-    #[allow(dead_code)]
-    async fn execute_github(
-        task: AdaptiveDownloadTask,
-        engine: Arc<AdaptiveEngine>,
-        telemetry_cb: Option<TelemetryCallback>,
-    ) -> Result<PathBuf, String> {
-        engine.download(task, telemetry_cb).await
-    }
-
-    /// Hugging Face Pack: Git-LFS pointer detection and resolution
-    #[allow(dead_code)]
-    async fn execute_huggingface(
-        task: AdaptiveDownloadTask,
-        engine: Arc<AdaptiveEngine>,
-        client: Client,
-        telemetry_cb: Option<TelemetryCallback>,
-    ) -> Result<PathBuf, String> {
-        let mut download_url = task.url.clone();
-        if let Ok(resp) = client
-            .get(&task.url)
-            .header("Range", "bytes=0-1024")
-            .send()
-            .await
-        {
-            if let Ok(text) = resp.text().await {
-                if let Some(_pointer) = HuggingFacePack::parse_git_lfs_pointer(&text) {
-                    if !download_url.contains("/resolve/") && download_url.contains("/raw/") {
-                        download_url = download_url.replace("/raw/", "/resolve/");
-                    }
-                }
-            }
-        }
-
-        let mut actual_task = task;
-        actual_task.url = download_url;
-        engine.download(actual_task, telemetry_cb).await
     }
 
     /// M3U8 Pack: Parse playlist, concurrently download TS segments, and transmux to MP4
@@ -402,35 +362,66 @@ impl PackExecutor {
             .map_err(|e| format!("Failed to connect to FTP server {}: {}", addr, e))?;
 
         let mut buf = [0u8; 1024];
-        let _ = control_stream.read(&mut buf).await;
+
+        async fn read_ftp_reply(
+            stream: &mut tokio::net::TcpStream,
+            buf: &mut [u8],
+            allowed_prefixes: &[char],
+            step: &str,
+        ) -> Result<String, String> {
+            let n = stream
+                .read(buf)
+                .await
+                .map_err(|e| format!("FTP {} read error: {}", step, e))?;
+            if n == 0 {
+                return Err(format!("FTP {} closed connection unexpectedly", step));
+            }
+            let reply = String::from_utf8_lossy(&buf[..n]).to_string();
+            let first = reply.trim_start().chars().next().unwrap_or('\0');
+            if !allowed_prefixes.contains(&first) {
+                return Err(format!("FTP {} failed: {}", step, reply.trim()));
+            }
+            Ok(reply)
+        }
+
+        read_ftp_reply(&mut control_stream, &mut buf, &['2'], "greeting").await?;
 
         control_stream
             .write_all(FtpPack::cmd_user(&target.user).as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        let _ = control_stream.read(&mut buf).await;
+        read_ftp_reply(&mut control_stream, &mut buf, &['2', '3'], "USER").await?;
 
         control_stream
             .write_all(FtpPack::cmd_pass(&target.pass).as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        let _ = control_stream.read(&mut buf).await;
+        read_ftp_reply(&mut control_stream, &mut buf, &['2'], "PASS").await?;
 
         control_stream
             .write_all(FtpPack::cmd_type_binary().as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        let _ = control_stream.read(&mut buf).await;
+        read_ftp_reply(&mut control_stream, &mut buf, &['2'], "TYPE I").await?;
+
+        let total_size: Option<u64> = if control_stream
+            .write_all(FtpPack::cmd_size(&target.path).as_bytes())
+            .await
+            .is_ok()
+        {
+            read_ftp_reply(&mut control_stream, &mut buf, &['2'], "SIZE")
+                .await
+                .ok()
+                .and_then(|r| r.split_whitespace().nth(1)?.parse::<u64>().ok())
+        } else {
+            None
+        };
 
         control_stream
             .write_all(FtpPack::cmd_pasv().as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        let n = control_stream
-            .read(&mut buf)
-            .await
-            .map_err(|e| e.to_string())?;
-        let pasv_resp = String::from_utf8_lossy(&buf[..n]);
+        let pasv_resp = read_ftp_reply(&mut control_stream, &mut buf, &['2'], "PASV").await?;
         let (data_ip, data_port) = FtpPack::parse_pasv_response(&pasv_resp)?;
 
         let data_addr = format!("{}:{}", data_ip, data_port);
@@ -447,6 +438,7 @@ impl PackExecutor {
             .write_all(FtpPack::cmd_retr(&target.path).as_bytes())
             .await
             .map_err(|e| e.to_string())?;
+        read_ftp_reply(&mut control_stream, &mut buf, &['1'], "RETR").await?;
 
         let mut total_downloaded: u64 = 0;
         let mut data_chunk = [0u8; 32768];
@@ -473,12 +465,21 @@ impl PackExecutor {
             if let Some(ref cb) = telemetry_cb {
                 let elapsed = (Utc::now() - start_time).num_seconds().max(1) as u64;
                 let bps = total_downloaded / elapsed;
+                let progress_pct = total_size
+                    .map(|t| {
+                        if t > 0 {
+                            ((total_downloaded as f64 / t as f64) * 100.0).min(100.0)
+                        } else {
+                            0.0
+                        }
+                    })
+                    .unwrap_or(0.0);
 
                 cb(AdaptiveTelemetry {
                     download_id: task.id.to_string(),
-                    total_bytes: None,
+                    total_bytes: total_size,
                     downloaded_bytes: total_downloaded,
-                    progress_pct: 50.0,
+                    progress_pct,
                     instant_throughput_bps: bps,
                     rolling_throughput_bps: bps,
                     upload_throughput_bps: 0,

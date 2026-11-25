@@ -8,7 +8,7 @@ use tokio::process::Command;
 
 #[cfg(windows)]
 mod windows_job {
-    use std::sync::Once;
+    use std::sync::OnceLock;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
@@ -16,31 +16,28 @@ mod windows_job {
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
-    static INIT: Once = Once::new();
-    static mut GLOBAL_JOB: HANDLE = 0 as HANDLE;
+    static GLOBAL_JOB: OnceLock<usize> = OnceLock::new();
 
     pub fn get_or_init_job() -> HANDLE {
-        unsafe {
-            INIT.call_once(|| {
-                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-                if job != 0 as HANDLE {
-                    let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-                    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-                    let set_res = SetInformationJobObject(
-                        job,
-                        JobObjectExtendedLimitInformation,
-                        &info as *const _ as *const std::ffi::c_void,
-                        std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                    );
-                    if set_res != 0 {
-                        GLOBAL_JOB = job;
-                    } else {
-                        CloseHandle(job);
-                    }
+        let raw = *GLOBAL_JOB.get_or_init(|| unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job != 0 as HANDLE {
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let set_res = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if set_res != 0 {
+                    return job as usize;
                 }
-            });
-            GLOBAL_JOB
-        }
+                CloseHandle(job);
+            }
+            0
+        });
+        raw as HANDLE
     }
 
     pub fn assign_child_to_job(child: &tokio::process::Child) {

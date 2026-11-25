@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use edm_ipc::DownloadState;
 use rusqlite::{params, Connection};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 pub enum StoreError {
     #[error("Database error: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("Serialization error: {0}")]
-    Json(#[from] serde_json::Error),
+    #[error("Database lock poisoned: {0}")]
+    Lock(String),
     #[error("Not found: {0}")]
     NotFound(String),
 }
@@ -117,8 +117,12 @@ impl Store {
         Ok(store)
     }
 
+    fn lock_conn(&self) -> std::result::Result<MutexGuard<'_, Connection>, StoreError> {
+        self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))
+    }
+
     fn migrate(&self) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS downloads (
@@ -219,7 +223,7 @@ impl Store {
     }
 
     pub fn insert_download(&self, dl: &DownloadRecord) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             r#"
             INSERT INTO downloads (
@@ -261,7 +265,7 @@ impl Store {
         state: DownloadState,
         error_msg: Option<&str>,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET state = ?1, error_msg = ?2 WHERE id = ?3",
             params![
@@ -278,7 +282,7 @@ impl Store {
         id: Uuid,
         size_done: u64,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET size_done = ?1 WHERE id = ?2",
             params![size_done, id.to_string()],
@@ -291,7 +295,7 @@ impl Store {
         id: Uuid,
         size_total: u64,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET size_total = ?1 WHERE id = ?2",
             params![size_total as i64, id.to_string()],
@@ -305,7 +309,7 @@ impl Store {
         size_done: u64,
         size_total: Option<u64>,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         if let Some(total) = size_total {
             conn.execute(
                 "UPDATE downloads SET size_done = ?1, size_total = ?2 WHERE id = ?3",
@@ -324,7 +328,7 @@ impl Store {
         &self,
         segments: &[SegmentRecord],
     ) -> std::result::Result<(), StoreError> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
         for s in segments {
             tx.execute(
@@ -355,7 +359,7 @@ impl Store {
         &self,
         download_id: Uuid,
     ) -> std::result::Result<Vec<SegmentRecord>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT idx, start, "end", pos, state, retries
@@ -384,7 +388,7 @@ impl Store {
     }
 
     pub fn get_download_state(&self, id: Uuid) -> std::result::Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT state FROM downloads WHERE id = ?1")?;
         let mut rows = stmt.query(params![id.to_string()])?;
         if let Some(row) = rows.next()? {
@@ -396,7 +400,7 @@ impl Store {
     }
 
     pub fn get_setting(&self, key: &str) -> std::result::Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT value_json FROM settings WHERE key = ?1")?;
         let mut rows = stmt.query(params![key])?;
         if let Some(row) = rows.next()? {
@@ -408,7 +412,7 @@ impl Store {
     }
 
     pub fn set_setting(&self, key: &str, value_json: &str) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             r#"
             INSERT INTO settings (key, value_json) VALUES (?1, ?2)
@@ -420,7 +424,7 @@ impl Store {
     }
 
     pub fn list_all_downloads(&self) -> std::result::Result<Vec<DownloadRecord>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, url, final_url, filename, save_dir, category, state,
@@ -484,7 +488,7 @@ impl Store {
     }
 
     pub fn delete_download(&self, id: Uuid) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM segments WHERE download_id = ?1",
             params![id.to_string()],
@@ -501,7 +505,7 @@ impl Store {
         record: &DownloadRecord,
         completed_at: DateTime<Utc>,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             r#"
             INSERT OR REPLACE INTO history (
@@ -531,9 +535,15 @@ impl Store {
         limit: Option<usize>,
         query: Option<&str>,
     ) -> std::result::Result<Vec<HistoryRecord>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let limit_val = limit.unwrap_or(200);
-        let q_pattern = query.map(|q| format!("%{}%", q));
+        let q_pattern = query.map(|q| {
+            let escaped = q
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        });
 
         let mut stmt = if q_pattern.is_some() {
             conn.prepare(
@@ -541,7 +551,7 @@ impl Store {
                 SELECT id, url, filename, save_dir, category, size_total, size_done,
                        state, created_at, completed_at, error_msg
                 FROM history
-                WHERE filename LIKE ?1 OR url LIKE ?1
+                WHERE filename LIKE ?1 ESCAPE '\' OR url LIKE ?1 ESCAPE '\'
                 ORDER BY completed_at DESC
                 LIMIT ?2
                 "#,
@@ -601,7 +611,7 @@ impl Store {
     }
 
     pub fn clear_history(&self) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM history", [])?;
         Ok(())
     }
@@ -634,7 +644,7 @@ impl Store {
         id: Uuid,
         cookies_blob: &[u8],
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET cookies_encrypted = ?1 WHERE id = ?2",
             params![cookies_blob, id.to_string()],
@@ -646,7 +656,7 @@ impl Store {
         &self,
         id: Uuid,
     ) -> std::result::Result<Option<Vec<u8>>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT cookies_encrypted FROM downloads WHERE id = ?1")?;
         let mut rows = stmt.query(params![id.to_string()])?;
         if let Some(row) = rows.next()? {
@@ -658,7 +668,7 @@ impl Store {
     }
 
     pub fn purge_encrypted_cookies(&self, id: Uuid) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET cookies_encrypted = NULL WHERE id = ?1",
             params![id.to_string()],
@@ -671,7 +681,7 @@ impl Store {
         id: Uuid,
         new_url: &str,
     ) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE downloads SET url = ?1 WHERE id = ?2",
             params![new_url, id.to_string()],
@@ -700,7 +710,7 @@ impl Store {
     }
 
     pub fn list_queues(&self) -> std::result::Result<Vec<QueueRecord>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, name, max_concurrent, speed_limit_bytes_per_sec,
@@ -730,7 +740,7 @@ impl Store {
     }
 
     pub fn upsert_queue(&self, q: &QueueRecord) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             r#"
             INSERT INTO queues (
@@ -764,13 +774,13 @@ impl Store {
         if queue_id == "default" {
             return Err(StoreError::NotFound("Cannot delete default queue".into()));
         }
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM queues WHERE id = ?1", params![queue_id])?;
         Ok(())
     }
 
     pub fn checkpoint(&self) -> std::result::Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;");
         Ok(())
     }
@@ -860,5 +870,41 @@ mod tests {
             .find_duplicate("https://example.com/file.iso", "other.iso", None)
             .expect("find dup failed");
         assert!(dup.is_some());
+    }
+
+    #[test]
+    fn test_list_history_escapes_like_wildcards() {
+        let store = Store::open_in_memory().expect("failed to open in memory store");
+        let make_rec = |name: &str| DownloadRecord {
+            id: Uuid::new_v4(),
+            url: format!("https://example.com/{}", name),
+            final_url: None,
+            filename: name.into(),
+            save_dir: "C:\\Downloads".into(),
+            category: "Programs".into(),
+            state: DownloadState::Completed,
+            size_total: Some(100),
+            size_done: 100,
+            resumable: true,
+            etag: None,
+            last_modified: None,
+            content_type: None,
+            referer: None,
+            user_agent: None,
+            connections: 1,
+            created_at: Utc::now(),
+            error_msg: None,
+        };
+
+        store
+            .add_to_history(&make_rec("100%_real.zip"), Utc::now())
+            .unwrap();
+        store
+            .add_to_history(&make_rec("1000xreal.zip"), Utc::now())
+            .unwrap();
+
+        let matched = store.list_history(None, Some("100%_")).unwrap();
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].filename, "100%_real.zip");
     }
 }
