@@ -34,6 +34,7 @@ pub struct AdaptiveDownloadTask {
     pub cookies: Option<String>,
     pub referer: Option<String>,
     pub user_agent: Option<String>,
+    pub selected_files: Option<Vec<usize>>,
 }
 
 pub struct AdaptiveEngine {

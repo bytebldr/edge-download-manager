@@ -282,6 +282,7 @@ pub async fn run_diagnostic_matrix_test(
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let res = engine.download(task, None).await;

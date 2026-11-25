@@ -12,6 +12,20 @@ pub struct MagnetInfo {
     pub exact_topic: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TorrentFileEntry {
+    pub index: usize,
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TorrentInspectionResult {
+    pub name: String,
+    pub total_bytes: u64,
+    pub files: Vec<TorrentFileEntry>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BencodeValue {
     Integer(i64),
@@ -56,7 +70,183 @@ fn find_largest_file_recursive(dir: &std::path::Path) -> Option<std::path::PathB
     best_file
 }
 
+async fn load_add_torrent(
+    url: &str,
+    cookies: Option<&str>,
+    referer: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<librqbit::AddTorrent<'static>, String> {
+    use librqbit::AddTorrent;
+
+    const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
+
+    if url.starts_with("magnet:") {
+        let mut enriched = url.to_string();
+        for tr in TIER1_TRACKERS {
+            let enc = urlencoding::encode(tr);
+            if !enriched.contains(&enc.to_string()) && !enriched.contains(tr) {
+                enriched.push_str("&tr=");
+                enriched.push_str(&enc);
+            }
+        }
+        return Ok(AddTorrent::from_url(enriched));
+    }
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        let mut req = reqwest::Client::new().get(url);
+        if let Some(c) = cookies {
+            req = req.header("Cookie", c);
+        }
+        if let Some(r) = referer {
+            req = req.header("Referer", r);
+        }
+        if let Some(ua) = user_agent {
+            req = req.header("User-Agent", ua);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download remote .torrent file: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Failed to fetch .torrent: HTTP {}", resp.status()));
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read .torrent response bytes: {}", e))?;
+
+        validate_torrent_bytes(bytes.as_ref(), "received HTML authentication page or invalid response instead of bencode data")?;
+        return Ok(AddTorrent::from_bytes(bytes.to_vec()));
+    }
+
+    let path = if url.starts_with("file://") {
+        url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.to_file_path().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from(url))
+    } else {
+        std::path::PathBuf::from(url)
+    };
+
+    if path.exists() {
+        let meta = tokio::fs::metadata(&path)
+            .await
+            .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
+        if meta.len() as usize > MAX_TORRENT_BYTES {
+            return Err("Torrent file exceeds 10 MiB limit".into());
+        }
+        let data = tokio::fs::read(&path)
+            .await
+            .map_err(|e| format!("Failed to read .torrent file: {}", e))?;
+
+        validate_torrent_bytes(&data, "contains HTML text instead of bencode data")?;
+        return Ok(AddTorrent::from_bytes(data));
+    }
+
+    Ok(AddTorrent::from_url(url.to_string()))
+}
+
+fn validate_torrent_bytes(bytes: &[u8], html_msg: &str) -> Result<(), String> {
+    const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024;
+    if bytes.len() > MAX_TORRENT_BYTES {
+        return Err("Torrent file exceeds 10 MiB limit".into());
+    }
+    if bytes.is_empty() {
+        return Err("Torrent file is empty (0 bytes)".into());
+    }
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(64)]).to_lowercase();
+    if head.contains("<html") || head.contains("<!doctype") {
+        return Err(format!("Invalid .torrent file: {}", html_msg));
+    }
+    Ok(())
+}
+
 impl BitTorrentPack {
+    /// Inspect torrent/magnet metadata and file list without downloading payload
+    pub async fn inspect_torrent(
+        url: &str,
+        save_dir: &std::path::Path,
+    ) -> Result<TorrentInspectionResult, String> {
+        use librqbit::{AddTorrentOptions, AddTorrentResponse, ListenerOptions, Session, SessionOptions};
+        use std::time::Duration;
+
+        let add_torrent = load_add_torrent(url, None, None, None).await?;
+
+        let mut listener_opts = ListenerOptions::default();
+        listener_opts.listen_addr = "0.0.0.0:0"
+            .parse()
+            .unwrap_or_else(|_| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
+
+        let session_opts = SessionOptions {
+            peer_limit: Some(32),
+            client_name_and_version: Some(format!(
+                "EDM/{} (Evo Download Manager)",
+                env!("CARGO_PKG_VERSION")
+            )),
+            listen: Some(listener_opts),
+            ..Default::default()
+        };
+
+        let session = Session::new_with_opts(save_dir.to_path_buf(), session_opts)
+            .await
+            .map_err(|e| format!("Failed to create BitTorrent session: {}", e))?;
+
+        let add_opts = AddTorrentOptions {
+            list_only: true,
+            ..Default::default()
+        };
+
+        let add_res = tokio::time::timeout(
+            Duration::from_secs(25),
+            session.add_torrent(add_torrent, Some(add_opts)),
+        )
+        .await;
+
+        let _ = session.stop().await;
+
+        let resp = match add_res {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => return Err(format!("Failed to inspect torrent: {}", e)),
+            Err(_) => {
+                return Err(
+                    "Timed out after 25s resolving torrent/magnet metadata".to_string(),
+                )
+            }
+        };
+
+        match resp {
+            AddTorrentResponse::ListOnly(list_res) => {
+                let files: Vec<TorrentFileEntry> = list_res
+                    .info
+                    .iter_file_details()
+                    .enumerate()
+                    .map(|(index, d)| TorrentFileEntry {
+                        index,
+                        path: d.filename.to_string(),
+                        size_bytes: d.len,
+                    })
+                    .collect();
+                let total_bytes = files.iter().map(|f| f.size_bytes).sum();
+                let name = list_res
+                    .info
+                    .name()
+                    .map(|n| n.into_owned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "torrent".to_string());
+
+                Ok(TorrentInspectionResult {
+                    name,
+                    total_bytes,
+                    files,
+                })
+            }
+            _ => Err("Unexpected non-list response during torrent inspection".to_string()),
+        }
+    }
+
     /// Download a torrent or magnet URI in-process using librqbit
     pub async fn download_in_process(
         task: crate::adaptive::AdaptiveDownloadTask,
@@ -64,11 +254,17 @@ impl BitTorrentPack {
     ) -> Result<std::path::PathBuf, String> {
         use crate::adaptive::{AccelerationMode, AdaptiveTelemetry, WorkerStatus, WorkerTelemetry};
         use chrono::Utc;
-        use librqbit::{AddTorrent, AddTorrentOptions, ListenerOptions, Session, SessionOptions};
+        use librqbit::{AddTorrentOptions, ListenerOptions, Session, SessionOptions};
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
-        const MAX_TORRENT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
+        let add_torrent = load_add_torrent(
+            &task.url,
+            task.cookies.as_deref(),
+            task.referer.as_deref(),
+            task.user_agent.as_deref(),
+        )
+        .await?;
 
         let peer_limit = task.config.max_connections.clamp(4, 128) as usize;
         let mut listener_opts = ListenerOptions::default();
@@ -91,106 +287,10 @@ impl BitTorrentPack {
             .await
             .map_err(|e| format!("Failed to create BitTorrent session: {}", e))?;
 
-        let add_torrent = if task.url.starts_with("magnet:") {
-            let mut enriched = task.url.clone();
-            for tr in TIER1_TRACKERS {
-                let enc = urlencoding::encode(tr);
-                if !enriched.contains(&enc.to_string()) && !enriched.contains(tr) {
-                    enriched.push_str("&tr=");
-                    enriched.push_str(&enc);
-                }
-            }
-            AddTorrent::from_url(enriched)
-        } else if task.url.starts_with("http://") || task.url.starts_with("https://") {
-            // Remote .torrent URL: fetch bytes in-memory with user cookies and referer headers
-            let mut req = reqwest::Client::new().get(&task.url);
-            if let Some(ref c) = task.cookies {
-                req = req.header("Cookie", c);
-            }
-            if let Some(ref r) = task.referer {
-                req = req.header("Referer", r);
-            }
-            if let Some(ref ua) = task.user_agent {
-                req = req.header("User-Agent", ua);
-            }
-
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| format!("Failed to download remote .torrent file: {}", e))?;
-
-            if !resp.status().is_success() {
-                let _ = session.stop().await;
-                return Err(format!(
-                    "Failed to fetch .torrent: HTTP {}",
-                    resp.status()
-                ));
-            }
-
-            let bytes = resp
-                .bytes()
-                .await
-                .map_err(|e| format!("Failed to read .torrent response bytes: {}", e))?;
-
-            if bytes.len() > MAX_TORRENT_BYTES {
-                let _ = session.stop().await;
-                return Err("Torrent file exceeds 10 MiB limit".into());
-            }
-
-            let slice = bytes.as_ref();
-            if slice.is_empty() {
-                let _ = session.stop().await;
-                return Err("Torrent file is empty (0 bytes)".into());
-            }
-
-            let head = String::from_utf8_lossy(&slice[..slice.len().min(64)]).to_lowercase();
-            if head.contains("<html") || head.contains("<!doctype") {
-                let _ = session.stop().await;
-                return Err("Invalid .torrent file: received HTML authentication page or invalid response instead of bencode data".into());
-            }
-
-            AddTorrent::from_bytes(bytes.to_vec())
-        } else {
-            let path = if task.url.starts_with("file://") {
-                url::Url::parse(&task.url)
-                    .ok()
-                    .and_then(|u| u.to_file_path().ok())
-                    .unwrap_or_else(|| std::path::PathBuf::from(&task.url))
-            } else {
-                std::path::PathBuf::from(&task.url)
-            };
-            if path.exists() {
-                let meta = tokio::fs::metadata(&path)
-                    .await
-                    .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
-                if meta.len() as usize > MAX_TORRENT_BYTES {
-                    let _ = session.stop().await;
-                    return Err("Torrent file exceeds 10 MiB limit".into());
-                }
-                let data = tokio::fs::read(&path)
-                    .await
-                    .map_err(|e| format!("Failed to read .torrent file: {}", e))?;
-
-                if data.is_empty() {
-                    let _ = session.stop().await;
-                    return Err("Torrent file is empty (0 bytes)".into());
-                }
-
-                let head = String::from_utf8_lossy(&data[..data.len().min(64)]).to_lowercase();
-                if head.contains("<html") || head.contains("<!doctype") {
-                    let _ = session.stop().await;
-                    return Err("Invalid .torrent file: contains HTML text instead of bencode data".into());
-                }
-
-                AddTorrent::from_bytes(data)
-            } else {
-                AddTorrent::from_url(&task.url)
-            }
-        };
-
         let add_opts = AddTorrentOptions {
             paused: false,
             overwrite: true,
+            only_files: task.selected_files.clone(),
             ..Default::default()
         };
 
