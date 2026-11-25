@@ -65,6 +65,9 @@ import {
 import { EdmSettings, defaultSettings, saveSettings } from "../types/settings";
 import { FEATURE_PACKS } from "../types/featurePacks";
 import { formatBytes } from "../utils/format";
+import { useI18n, type Locale } from "../features/i18n";
+import { RoutingAndCategoryPanel } from "../features/routing";
+import { AutomationPanel } from "../features/automation";
 import { motion, AnimatePresence } from "motion/react";
 import { springs, popoverVariants } from "../utils/motion";
 import type { DownloadItem } from "../App";
@@ -112,6 +115,7 @@ export default function SettingsPage({
   activeThreads = 0,
   totalSessionBytes = 0,
 }: SettingsPageProps) {
+  const { locale, setLocale, availableLocales } = useI18n();
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [searchQuery, setSearchQuery] = useState("");
   const [customCatName, setCustomCatName] = useState("");
@@ -819,6 +823,28 @@ export default function SettingsPage({
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Language Selector */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-[var(--border-subtle)]">
+                  <div>
+                    <label className="text-xs font-semibold text-[var(--text-primary)] block">Language</label>
+                    <span className="text-[11px] text-[var(--text-muted)]">
+                      Interface language and text direction (RTL supported for Arabic).
+                    </span>
+                  </div>
+                  <select
+                    aria-label="Language"
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value as Locale)}
+                    className="h-8 px-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] cursor-pointer shrink-0"
+                  >
+                    {availableLocales.map((loc) => (
+                      <option key={loc.code} value={loc.code}>
+                        {loc.nativeLabel} ({loc.label})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1650,6 +1676,8 @@ export default function SettingsPage({
                   </div>
                 )}
               </div>
+
+              <RoutingAndCategoryPanel />
             </section>
           )}
 
@@ -1712,6 +1740,8 @@ export default function SettingsPage({
                   </label>
                 </div>
               </div>
+
+              <AutomationPanel />
             </section>
           )}
 

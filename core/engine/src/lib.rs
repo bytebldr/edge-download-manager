@@ -1,13 +1,17 @@
 pub mod adaptive;
 pub mod adaptive_wrapper;
+pub mod automation;
 pub mod batch;
+pub mod batch_import;
 pub mod engine;
 pub mod limiter;
 pub mod media;
 pub mod packs;
 pub mod planner;
 pub mod probe;
+pub mod routing;
 pub mod sanitizer;
+pub mod scheduler;
 pub mod security;
 pub mod verify;
 pub mod worker;

@@ -29,12 +29,37 @@ impl PackExecutor {
         crate::adaptive_wrapper::AdaptiveWrapper::execute(task, engine, client, telemetry_cb).await
     }
 
-    /// M3U8 Pack: Parse playlist, concurrently download TS segments, and transmux to MP4
+    /// M3U8 / DASH Pack: Parse playlist or .mpd manifest, download segments, and transmux to MP4
     pub(crate) async fn execute_m3u8(
         task: AdaptiveDownloadTask,
         client: Client,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
+        if task
+            .url
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .ends_with(".mpd")
+        {
+            let target_file = task.save_dir.join(&task.filename);
+            let recorder = super::dash::DashLiveRecorder::new(
+                super::dash::LiveRecordConfig::new(task.url.clone(), target_file.clone()),
+            );
+            let cancel_handle = recorder.cancel_handle();
+            let task_cancelled = task.cancelled.clone();
+            let watcher = tokio::spawn(async move {
+                while !task_cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                cancel_handle.cancel();
+            });
+            let res = recorder.record().await;
+            watcher.abort();
+            return res.map(|p| p.output_path);
+        }
+
         let resp = client
             .get(&task.url)
             .send()
@@ -507,7 +532,8 @@ impl PackExecutor {
         task: AdaptiveDownloadTask,
         telemetry_cb: Option<TelemetryCallback>,
     ) -> Result<PathBuf, String> {
-        BitTorrentPack::download_in_process(task, telemetry_cb).await
+        let power = task.torrent_power.clone();
+        BitTorrentPack::download_in_process_with_power(task, telemetry_cb, power).await
     }
 
     /// eD2k Pack: eD2k link resolver

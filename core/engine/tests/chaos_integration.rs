@@ -173,6 +173,7 @@ async fn test_adaptive_download_full_integrity() {
         referer: None,
         user_agent: None,
         selected_files: None,
+        torrent_power: None,
     };
 
     let completed_path = engine.download(task, None).await.expect("download failed");
@@ -215,6 +216,7 @@ async fn test_single_stream_fallback_norange() {
         referer: None,
         user_agent: None,
         selected_files: None,
+        torrent_power: None,
     };
 
     let completed_path = engine
@@ -329,6 +331,7 @@ async fn test_cancellation_and_persistence() {
         referer: None,
         user_agent: None,
         selected_files: None,
+        torrent_power: None,
     };
 
     let res = engine.download(task, None).await;
@@ -372,6 +375,7 @@ async fn test_bandwidth_limiter() {
         referer: None,
         user_agent: None,
         selected_files: None,
+        torrent_power: None,
     };
 
     let t0 = std::time::Instant::now();

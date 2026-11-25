@@ -34,6 +34,7 @@ import {
   Copy,
   Check,
   Image,
+  CalendarClock,
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
@@ -42,6 +43,9 @@ import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
+import { BatchImportModal, ImportedLink } from "./features/batch-import";
+import { QueueSchedulerPanel } from "./features/scheduler";
+import { EditRequestModal } from "./features/routing";
 import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
 import { motion, AnimatePresence } from "motion/react";
@@ -185,6 +189,7 @@ export default function App() {
   const [settings, setSettings] = useState<EdmSettings>(loadSettings);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [refreshModalTask, setRefreshModalTask] = useState<DownloadItem | null>(null);
+  const [editRequestTask, setEditRequestTask] = useState<DownloadItem | null>(null);
 
   useEffect(() => {
     tauriIsWizardCompleted().then((completed) => {
@@ -219,6 +224,8 @@ export default function App() {
   const [selectedDownload, setSelectedDownload] = useState<DownloadItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
+  const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
@@ -2372,6 +2379,15 @@ export default function App() {
             <span className="hidden xs:inline">Settings</span>
           </button>
 
+          <button
+            onClick={() => setIsSchedulerOpen(true)}
+            className="h-7 px-2.5 rounded-md text-[11px] sm:text-xs font-medium btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            title="Download Queues & Scheduler"
+          >
+            <CalendarClock className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 icon-3d" />
+            <span className="hidden sm:inline">Scheduler</span>
+          </button>
+
           {/* Speed Limiter Dial (Opens upward from status bar) */}
           <div className="relative shrink-0">
             <button
@@ -2467,8 +2483,61 @@ export default function App() {
         onAdd={(url, filename, category, conns, saveDir, selectedFiles) => {
           handleAddDownload(url, filename, category, conns, saveDir, selectedFiles);
         }}
+        onOpenBatchImport={() => setIsBatchImportOpen(true)}
         settings={settings}
       />
+
+      <BatchImportModal
+        isOpen={isBatchImportOpen}
+        onClose={() => setIsBatchImportOpen(false)}
+        onQueueSelected={async (links: ImportedLink[]) => {
+          for (const link of links) {
+            await handleAddDownload(
+              link.url,
+              link.filename_hint ?? undefined,
+              link.category_hint ?? undefined
+            );
+          }
+        }}
+      />
+
+      <AnimatePresence>
+        {isSchedulerOpen && (
+          <motion.div
+            variants={backdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            onClick={() => setIsSchedulerOpen(false)}
+          >
+            <motion.div
+              variants={modalVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="panel-3d w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+                <span className="font-bold tracking-tight text-sm flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-[var(--accent)]" />
+                  Queue Scheduler
+                </span>
+                <button
+                  onClick={() => setIsSchedulerOpen(false)}
+                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto">
+                <QueueSchedulerPanel />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <SetupWizard
         isOpen={isWizardOpen}
@@ -2493,6 +2562,24 @@ export default function App() {
       />
 
       <PowerCountdownModal />
+
+      {editRequestTask && (
+        <EditRequestModal
+          isOpen={Boolean(editRequestTask)}
+          taskId={editRequestTask.id}
+          initialUrl={editRequestTask.url}
+          onClose={() => setEditRequestTask(null)}
+          onSaved={(override) => {
+            if (override.url) {
+              setDownloads((prev) =>
+                prev.map((d) =>
+                  d.id === editRequestTask.id ? { ...d, url: override.url! } : d
+                )
+              );
+            }
+          }}
+        />
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           DELETE CONFIRMATION MODAL (Glassmorphic)
@@ -2721,6 +2808,17 @@ export default function App() {
               <Layers className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>Inspect Streams</span>
               <span className="ml-auto text-[10px] text-[var(--text-muted)] font-mono">Enter</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setEditRequestTask(contextMenu.item);
+                setContextMenu((p) => ({ ...p, visible: false }));
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            >
+              <FileCode className="w-3.5 h-3.5 text-[var(--accent)]" />
+              <span>Edit Request / Headers</span>
             </button>
           </div>
 

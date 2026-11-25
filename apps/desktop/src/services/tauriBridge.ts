@@ -903,6 +903,14 @@ export async function tauriProbeMediaPage(mediaUrl: string): Promise<{ variants:
   return { variants: [], is_drm: false };
 }
 
+export async function tauriProbeMediaStreams(url: string) {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<import("../features/media-picker").MediaProbeInfo>("probe_media_streams", { url });
+  }
+  throw new Error("Media stream probing requires the desktop app runtime.");
+}
+
 export async function tauriSetSpeedLimit(bytesPerSec: number | null): Promise<void> {
   if (isTauri()) {
     try {

@@ -35,6 +35,7 @@ pub struct AdaptiveDownloadTask {
     pub referer: Option<String>,
     pub user_agent: Option<String>,
     pub selected_files: Option<Vec<usize>>,
+    pub torrent_power: Option<crate::adaptive::types::TorrentPowerConfig>,
 }
 
 pub struct AdaptiveEngine {

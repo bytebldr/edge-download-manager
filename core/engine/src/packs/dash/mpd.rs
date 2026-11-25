@@ -251,11 +251,19 @@ fn extract_segment_template(block: &str) -> Option<DashSegmentTemplate> {
 }
 
 fn extract_direct_base_url(block: &str) -> Option<String> {
-    let start_tag = "<BaseURL";
-    let start = block.find(start_tag)?;
-    let after_open = block[start..].find('>')? + start + 1;
-    let end = block[after_open..].find("</BaseURL>")? + after_open;
-    let val = block[after_open..end].trim();
+    let body_start = block.find('>')? + 1;
+    let body = &block[body_start..];
+    let child_limit = ["<Period", "<AdaptationSet", "<Representation"]
+        .iter()
+        .filter_map(|tag| body.find(tag))
+        .min()
+        .unwrap_or(body.len());
+    let scope = &body[..child_limit];
+
+    let start = scope.find("<BaseURL")?;
+    let after_open = scope[start..].find('>')? + start + 1;
+    let end = scope[after_open..].find("</BaseURL>")? + after_open;
+    let val = scope[after_open..end].trim();
     if val.is_empty() {
         None
     } else {

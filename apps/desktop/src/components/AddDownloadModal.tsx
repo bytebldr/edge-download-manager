@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, CheckCircle2, FolderOpen, FileCode, Search, AlertCircle } from "lucide-react";
+import { X, CheckCircle2, FolderOpen, FileCode, Search, AlertCircle, Film, Upload } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { backdropVariants, modalVariants } from "../utils/motion";
 import { EdmSettings } from "../types/settings";
@@ -8,9 +8,20 @@ import {
   TorrentInspectionResult,
   tauriInspectTorrentFiles,
   tauriProbeUrl,
+  tauriProbeMediaStreams,
   tauriSelectDownloadDirectory,
   tauriSelectTorrentFile,
 } from "../services/tauriBridge";
+import {
+  TorrentPowerOptions,
+  DEFAULT_TORRENT_POWER_CONFIG,
+  TorrentPowerConfig,
+} from "../features/torrent-options";
+import {
+  MediaStreamPickerModal,
+  MediaProbeInfo,
+  MediaPickerSelection,
+} from "../features/media-picker";
 
 interface AddDownloadModalProps {
   isOpen: boolean;
@@ -23,6 +34,7 @@ interface AddDownloadModalProps {
     saveDir: string,
     selectedFiles?: number[]
   ) => void;
+  onOpenBatchImport?: () => void;
   settings: EdmSettings;
 }
 
@@ -37,6 +49,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   isOpen,
   onClose,
   onAdd,
+  onOpenBatchImport,
   settings,
 }) => {
   const [urlInput, setUrlInput] = useState("");
@@ -55,6 +68,13 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [torrentInfo, setTorrentInfo] = useState<TorrentInspectionResult | null>(null);
   const [torrentInspectError, setTorrentInspectError] = useState<string | null>(null);
   const [selectedFileIndices, setSelectedFileIndices] = useState<Set<number>>(new Set());
+  const [torrentPowerConfig, setTorrentPowerConfig] = useState<TorrentPowerConfig>(
+    DEFAULT_TORRENT_POWER_CONFIG
+  );
+  const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
+  const [mediaProbeInfo, setMediaProbeInfo] = useState<MediaProbeInfo | null>(null);
+  const [isMediaProbing, setIsMediaProbing] = useState(false);
+  const [mediaProbeError, setMediaProbeError] = useState<string | null>(null);
 
   const trimmedUrl = urlInput.trim();
   const lowerUrl = trimmedUrl.toLowerCase();
@@ -98,6 +118,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     setTorrentInfo(null);
     setTorrentInspectError(null);
     setSelectedFileIndices(new Set());
+    setTorrentPowerConfig(DEFAULT_TORRENT_POWER_CONFIG);
+    setIsMediaPickerOpen(false);
+    setMediaProbeInfo(null);
+    setMediaProbeError(null);
     setAddSaveDir("");
     onClose();
   };
@@ -158,6 +182,57 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     } finally {
       setIsProbing(false);
     }
+  };
+
+  const handleProbeMedia = async () => {
+    if (!trimmedUrl) return;
+    setIsMediaPickerOpen(true);
+    setIsMediaProbing(true);
+    setMediaProbeError(null);
+    try {
+      const info = await tauriProbeMediaStreams(trimmedUrl);
+      setMediaProbeInfo(info);
+    } catch (e: any) {
+      setMediaProbeInfo(null);
+      setMediaProbeError(typeof e === "string" ? e : e?.message || "Failed to probe media streams");
+    } finally {
+      setIsMediaProbing(false);
+    }
+  };
+
+  const handleMediaConfirm = (selection: MediaPickerSelection) => {
+    if (!mediaProbeInfo) return;
+    if (selection.selectedEntryUrls.length > 0) {
+      for (const entryUrl of selection.selectedEntryUrls) {
+        const entry = mediaProbeInfo.entries.find((e) => e.url === entryUrl);
+        onAdd(
+          entryUrl,
+          entry?.title ? `${entry.title}.mp4` : "",
+          "Video",
+          addConnections,
+          currentDestination
+        );
+      }
+      resetState();
+      return;
+    }
+
+    const chosenVideo = mediaProbeInfo.video_formats.find(
+      (f) => f.format_id === selection.videoFormatId
+    );
+    const chosenAudio = mediaProbeInfo.audio_formats.find(
+      (f) => f.format_id === selection.audioFormatId
+    );
+    const directUrl = chosenVideo?.url || chosenAudio?.url;
+    if (directUrl) {
+      setUrlInput(directUrl);
+    }
+    if (mediaProbeInfo.title && !fileNameInput.trim()) {
+      const ext = chosenVideo?.ext || chosenAudio?.ext || "mp4";
+      setFileNameInput(`${mediaProbeInfo.title}.${ext}`);
+    }
+    setAddCategory("Video");
+    setIsMediaPickerOpen(false);
   };
 
   const handleInspectTorrent = async (targetUrlOverride?: string) => {
@@ -288,18 +363,33 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
             <div className="p-5 space-y-4">
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1 gap-2">
                   <label className="block text-xs font-medium text-[var(--text-secondary)]">
                     Source Address (URL / HTTP / Magnet / .torrent)
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleBrowseTorrentFile}
-                    className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
-                  >
-                    <FileCode className="w-3.5 h-3.5" />
-                    <span>Choose .torrent File...</span>
-                  </button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {onOpenBatchImport && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetState();
+                          onOpenBatchImport();
+                        }}
+                        className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Import Batch (.txt/.csv/.html)</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleBrowseTorrentFile}
+                      className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                    >
+                      <FileCode className="w-3.5 h-3.5" />
+                      <span>Choose .torrent File...</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -320,14 +410,26 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                       <span>{isInspectingTorrent ? "Looking up..." : "Look up"}</span>
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={handleProbe}
-                      disabled={isProbing || !trimmedUrl}
-                      className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer shrink-0"
-                    >
-                      {isProbing ? "Probing..." : "Probe Server"}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleProbe}
+                        disabled={isProbing || !trimmedUrl}
+                        className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer shrink-0"
+                      >
+                        {isProbing ? "Probing..." : "Probe Server"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleProbeMedia()}
+                        disabled={isMediaProbing || !trimmedUrl}
+                        className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                        title="Probe video/audio/subtitle streams (yt-dlp / DASH)"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        <span>{isMediaProbing ? "Probing..." : "Probe Media"}</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -425,6 +527,13 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                 </div>
               )}
 
+              {isTorrentTarget && (
+                <TorrentPowerOptions
+                  value={torrentPowerConfig}
+                  onChange={setTorrentPowerConfig}
+                />
+              )}
+
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block font-medium text-[var(--text-secondary)] mb-1">Category</label>
@@ -499,6 +608,14 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
           </motion.div>
         </motion.div>
       )}
+      <MediaStreamPickerModal
+        isOpen={isMediaPickerOpen}
+        onClose={() => setIsMediaPickerOpen(false)}
+        probeInfo={mediaProbeInfo}
+        isLoading={isMediaProbing}
+        error={mediaProbeError}
+        onConfirm={handleMediaConfirm}
+      />
     </AnimatePresence>
   );
 };

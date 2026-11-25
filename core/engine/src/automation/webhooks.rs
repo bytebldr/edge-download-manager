@@ -46,7 +46,8 @@ pub async fn dispatch_completion_webhook(url: &str, payload: Value) -> Result<u1
 
     let resp = client
         .post(parsed)
-        .json(&payload)
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
         .send()
         .await
         .map_err(|e| format!("Webhook request failed: {e}"))?;

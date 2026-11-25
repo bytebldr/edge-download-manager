@@ -844,6 +844,27 @@ fn main() {
                         let _ = ticker_tray.set_tooltip(Some(tooltip));
                     }
                 });
+
+                // Background queue schedule evaluator (every 30 seconds)
+                let sched_store = app_state_ref.store.clone();
+                app_state_ref.rt_handle.spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                    loop {
+                        interval.tick().await;
+                        if let Ok(Some(raw)) = sched_store.get_setting("edm_queues") {
+                            if let Ok(queues) = serde_json::from_str::<Vec<commands::scheduler::ScheduledQueue>>(&raw) {
+                                let now = chrono::Local::now();
+                                let active_windows = queues
+                                    .iter()
+                                    .filter(|q| q.enabled && q.schedule.enabled && q.schedule.is_within_window(now))
+                                    .count();
+                                if active_windows > 0 {
+                                    tracing::debug!("Scheduler tick: {} scheduled queue window(s) active", active_windows);
+                                }
+                            }
+                        }
+                    }
+                });
             }
 
             // Initialize theme and palette in ws_manager from store
@@ -922,8 +943,16 @@ fn main() {
             clear_history,
             export_history_csv,
             get_queues,
+            list_queues,
             save_queue,
             delete_queue,
+            evaluate_queue_schedules,
+            parse_batch_import_file,
+            parse_batch_import_text,
+            probe_media_streams,
+            get_torrent_power_defaults,
+            refresh_torrent_trackers,
+            validate_ip_blocklist,
             cancel_power_countdown,
             get_power_countdown_status,
             probe_media_page,
@@ -932,7 +961,15 @@ fn main() {
             check_existing_installation,
             perform_native_uninstallation,
             perform_native_repair,
-            launch_main_app
+            launch_main_app,
+            get_routing_policies,
+            save_domain_proxy_rules,
+            save_category_policies,
+            update_task_request_override,
+            get_automation_config,
+            save_automation_config,
+            test_automation_webhook,
+            trim_idle_webview_memory
         ])
         .build(tauri::generate_context!())
         .expect("error while building EDM desktop application")

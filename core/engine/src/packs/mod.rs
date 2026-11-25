@@ -2,6 +2,7 @@
 //! Unifying all 9 protocol packs: HTTP, BitTorrent, FTP, eD2k, M3U8, FFmpeg, yt-dlp, GitHub, Hugging Face
 
 pub mod bittorrent;
+pub mod dash;
 pub mod ed2k;
 pub mod executor;
 pub mod extractors;
@@ -11,8 +12,11 @@ pub mod github;
 pub mod http;
 pub mod huggingface;
 pub mod m3u8;
+pub mod metalink;
 pub mod process;
 pub mod remux;
+pub mod sftp_ftps;
+pub mod torrent_power;
 pub mod traits;
 pub mod ytdlp;
 

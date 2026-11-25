@@ -623,6 +623,17 @@ pub fn execute_download_with_selected_files(
             .await;
     });
 
+    let torrent_power = if pack_target.is_p2p || ext == "torrent" {
+        state
+            .store
+            .get_setting("torrent_power_defaults")
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str::<edm_core::adaptive::types::TorrentPowerConfig>(&s).ok())
+    } else {
+        None
+    };
+
     let task = AdaptiveDownloadTask {
         id,
         url: url.clone(),
@@ -635,6 +646,7 @@ pub fn execute_download_with_selected_files(
         referer: referer.clone(),
         user_agent,
         selected_files,
+        torrent_power,
     };
 
     let engine = state.engine.clone();

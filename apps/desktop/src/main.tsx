@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { I18nProvider } from "./features/i18n";
 import { LifecycleApp, resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
 import { tauriWindowClose } from "./services/tauriBridge";
 import "./styles/theme.css";
@@ -125,7 +126,11 @@ function Root() {
     );
   }
 
-  return <App />;
+  return (
+    <I18nProvider>
+      <App />
+    </I18nProvider>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
