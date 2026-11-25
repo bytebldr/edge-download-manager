@@ -111,6 +111,11 @@ impl AdaptiveEngine {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or(sanitized);
 
+        // Check partial/target existence BEFORE FileWriter::new creates an empty .edmpart file
+        let part_path = task.save_dir.join(format!("{}.edmpart", filename));
+        let target_path = task.save_dir.join(&filename);
+        let partial_or_target_exists = part_path.exists() || target_path.exists();
+
         // 1. Prepare disk writer with NTFS sparse allocation
         let writer = FileWriter::new(&task.save_dir, &filename, total_size)
             .map_err(|e| format!("Writer init failed: {}", e))?;
@@ -165,6 +170,7 @@ impl AdaptiveEngine {
             let _ = self
                 .store
                 .update_download_state(task.id, DownloadState::Paused, None);
+            let _ = self.store.checkpoint();
             return Err("Download cancelled by user".into());
         }
 
@@ -183,11 +189,50 @@ impl AdaptiveEngine {
             };
 
             // Check if existing valid segments exist in Store for this task (Resume)
-            let existing_segments = if is_resumable {
+            let mut existing_segments = if is_resumable {
                 self.store.get_segments(task.id).unwrap_or_default()
             } else {
                 Vec::new()
             };
+
+            if let Some(ref existing) = existing_record {
+                if !existing_segments.is_empty() {
+                    if should_invalidate_resume(
+                        existing,
+                        probe.etag.as_deref(),
+                        probe.last_modified.as_deref(),
+                        total_size,
+                        partial_or_target_exists,
+                    ) {
+                        warn!("Server file changed or partial file missing; restarting from byte 0");
+                        let _ = self.store.delete_segments(task.id);
+                        let _ = writer.reset();
+                        let _ = self.store.update_download_validators(
+                            task.id,
+                            probe.etag.as_deref(),
+                            probe.last_modified.as_deref(),
+                            total_size,
+                        );
+                        let _ = self.store.update_download_progress(task.id, 0);
+                        total_downloaded = 0;
+                        range_set = RangeSet::new();
+                        existing_segments.clear();
+                    } else if (existing.etag.is_none() && probe.etag.is_some())
+                        || (existing.last_modified.is_none() && probe.last_modified.is_some())
+                        || (existing.size_total.is_none() && total_size.is_some())
+                    {
+                        let _ = self.store.update_download_validators(
+                            task.id,
+                            existing.etag.as_deref().or(probe.etag.as_deref()),
+                            existing
+                                .last_modified
+                                .as_deref()
+                                .or(probe.last_modified.as_deref()),
+                            existing.size_total.or(total_size),
+                        );
+                    }
+                }
+            }
 
             if !existing_segments.is_empty() {
                 info!(
@@ -267,6 +312,9 @@ impl AdaptiveEngine {
         loop {
             if task.cancelled.load(Ordering::Relaxed) {
                 info!("Download task {} received cancellation signal", task.id);
+                scheduler.cancel_all();
+                let _ = writer.flush();
+                writer.close();
                 let seg_records: Vec<SegmentRecord> = scheduler
                     .workers
                     .iter()
@@ -281,15 +329,13 @@ impl AdaptiveEngine {
                     })
                     .collect();
                 let _ = self.store.save_segment_positions(&seg_records);
-                scheduler.cancel_all();
-                let _ = writer.flush();
-                writer.close();
                 let _ = self
                     .store
                     .update_download_progress(task.id, total_downloaded);
                 let _ = self
                     .store
                     .update_download_state(task.id, DownloadState::Paused, None);
+                let _ = self.store.checkpoint();
                 return Err("Download cancelled by user".into());
             }
 
@@ -376,13 +422,20 @@ impl AdaptiveEngine {
                                 scheduler.cancel_all();
                                 tokio::time::sleep(Duration::from_millis(50)).await;
                                 let _ = writer.reset();
+                                let _ = self.store.delete_segments(task.id);
+                                let new_etag_opt = Some(new_etag.clone());
+                                let _ = self.store.update_download_validators(
+                                    task.id,
+                                    new_etag_opt.as_deref(),
+                                    probe.last_modified.as_deref(),
+                                    total_size,
+                                );
                                 range_set = RangeSet::new();
                                 total_downloaded = 0;
                                 sample_bytes = 0;
 
                                 while event_rx.try_recv().is_ok() {}
 
-                                let new_etag_opt = Some(new_etag.clone());
                                 if let Some(size) = total_size {
                                     let initial_conns = if is_resumable {
                                         task.config.initial_connections.min(task.config.max_connections).max(1)
@@ -424,6 +477,72 @@ impl AdaptiveEngine {
                                 error!("Task {}: Server ETag changed repeatedly. Aborting to avoid corrupting output.", task.id);
                                 let _ = self.store.update_download_state(task.id, DownloadState::Failed, Some("ETag changed repeatedly"));
                                 return Err("Server ETag changed repeatedly mid-download".into());
+                            }
+                        }
+                        Some(AdaptiveWorkerEvent::LastModifiedChanged { idx, old_last_modified, new_last_modified }) => {
+                            warn!(
+                                "Task {}: Worker {} detected Last-Modified change ('{}' -> '{}'). Restarting clean download.",
+                                task.id, idx, old_last_modified, new_last_modified
+                            );
+                            if etag_restarts < 2 {
+                                etag_restarts += 1;
+                                scheduler.cancel_all();
+                                tokio::time::sleep(Duration::from_millis(50)).await;
+                                let _ = writer.reset();
+                                let _ = self.store.delete_segments(task.id);
+                                let _ = self.store.update_download_validators(
+                                    task.id,
+                                    probe.etag.as_deref(),
+                                    Some(new_last_modified.as_str()),
+                                    total_size,
+                                );
+                                range_set = RangeSet::new();
+                                total_downloaded = 0;
+                                sample_bytes = 0;
+
+                                while event_rx.try_recv().is_ok() {}
+
+                                if let Some(size) = total_size {
+                                    let initial_conns = if is_resumable {
+                                        task.config.initial_connections.min(task.config.max_connections).max(1)
+                                    } else {
+                                        1
+                                    };
+                                    let plans = Planner::plan(size, initial_conns, task.config.min_chunk_size);
+                                    for plan in plans {
+                                        scheduler.spawn_worker(
+                                            probe.final_url.clone(),
+                                            plan.start,
+                                            plan.end,
+                                            probe.etag.clone(),
+                                            task.cookies.clone(),
+                                            task.referer.clone(),
+                                            task.user_agent.clone(),
+                                            self.client.clone(),
+                                            writer.clone(),
+                                            task.limiter.clone(),
+                                            event_tx.clone(),
+                                        );
+                                    }
+                                } else {
+                                    scheduler.spawn_worker(
+                                        probe.final_url.clone(),
+                                        0,
+                                        u64::MAX - 1,
+                                        probe.etag.clone(),
+                                        task.cookies.clone(),
+                                        task.referer.clone(),
+                                        task.user_agent.clone(),
+                                        self.client.clone(),
+                                        writer.clone(),
+                                        task.limiter.clone(),
+                                        event_tx.clone(),
+                                    );
+                                }
+                            } else {
+                                error!("Task {}: Server Last-Modified changed repeatedly. Aborting to avoid corrupting output.", task.id);
+                                let _ = self.store.update_download_state(task.id, DownloadState::Failed, Some("Last-Modified changed repeatedly"));
+                                return Err("Server Last-Modified changed repeatedly mid-download".into());
                             }
                         }
                         Some(AdaptiveWorkerEvent::RateLimited { idx, retry_after }) => {
@@ -762,5 +881,147 @@ impl AdaptiveEngine {
             final_path, final_completed_bytes
         );
         Ok(final_path)
+    }
+}
+
+fn normalize_etag(etag: &str) -> &str {
+    let s = etag.trim();
+    let s = s
+        .strip_prefix("W/")
+        .or_else(|| s.strip_prefix("w/"))
+        .unwrap_or(s);
+    s.trim().trim_matches('"')
+}
+
+/// Returns `true` when saved segments must be discarded and restarted from byte 0.
+pub(crate) fn should_invalidate_resume(
+    existing: &DownloadRecord,
+    probe_etag: Option<&str>,
+    probe_last_modified: Option<&str>,
+    total_size: Option<u64>,
+    partial_or_target_exists: bool,
+) -> bool {
+    if !partial_or_target_exists {
+        return true;
+    }
+
+    if let (Some(old_etag), Some(new_etag)) = (existing.etag.as_deref(), probe_etag) {
+        let old_norm = normalize_etag(old_etag);
+        let new_norm = normalize_etag(new_etag);
+        if !old_norm.is_empty() && !new_norm.is_empty() && old_norm != new_norm {
+            return true;
+        }
+    }
+
+    if let (Some(old_lm), Some(new_lm)) = (existing.last_modified.as_deref(), probe_last_modified) {
+        let old_trim = old_lm.trim();
+        let new_trim = new_lm.trim();
+        if !old_trim.is_empty() && !new_trim.is_empty() && old_trim != new_trim {
+            return true;
+        }
+    }
+
+    if let (Some(old_size), Some(new_size)) = (existing.size_total, total_size) {
+        if old_size != new_size {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_record(
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+        size_total: Option<u64>,
+    ) -> DownloadRecord {
+        DownloadRecord {
+            id: Uuid::new_v4(),
+            url: "https://example.com/archive.bin".into(),
+            final_url: None,
+            filename: "archive.bin".into(),
+            save_dir: "C:\\Downloads".into(),
+            category: "General".into(),
+            state: DownloadState::Paused,
+            size_total,
+            size_done: 512,
+            resumable: true,
+            etag: etag.map(str::to_string),
+            last_modified: last_modified.map(str::to_string),
+            content_type: None,
+            referer: None,
+            user_agent: None,
+            connections: 4,
+            created_at: Utc::now(),
+            error_msg: None,
+        }
+    }
+
+    #[test]
+    fn test_should_invalidate_resume_on_validator_mismatch_or_missing_file() {
+        let rec = sample_record(
+            Some("\"abc123\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+        );
+
+        // Matching validators (including weak/quoted ETag normalization) and file present -> keep segments
+        assert!(!should_invalidate_resume(
+            &rec,
+            Some("W/\"abc123\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+            true,
+        ));
+
+        // Missing partial/target file -> invalidate
+        assert!(should_invalidate_resume(
+            &rec,
+            Some("\"abc123\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+            false,
+        ));
+
+        // ETag changed -> invalidate
+        assert!(should_invalidate_resume(
+            &rec,
+            Some("\"def456\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+            true,
+        ));
+
+        // Last-Modified changed -> invalidate
+        assert!(should_invalidate_resume(
+            &rec,
+            Some("\"abc123\""),
+            Some("Thu, 22 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+            true,
+        ));
+
+        // Total size changed -> invalidate
+        assert!(should_invalidate_resume(
+            &rec,
+            Some("\"abc123\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(2048),
+            true,
+        ));
+
+        // Previously None validator newly discovered -> keep segments
+        let rec_no_etag = sample_record(None, None, Some(1024));
+        assert!(!should_invalidate_resume(
+            &rec_no_etag,
+            Some("\"new-etag\""),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(1024),
+            true,
+        ));
     }
 }

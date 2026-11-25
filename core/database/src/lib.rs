@@ -324,6 +324,35 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_download_validators(
+        &self,
+        id: Uuid,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+        size_total: Option<u64>,
+    ) -> std::result::Result<(), StoreError> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE downloads SET etag = ?1, last_modified = ?2, size_total = ?3 WHERE id = ?4",
+            params![
+                etag,
+                last_modified,
+                size_total.map(|v| v as i64),
+                id.to_string()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn pause_stale_downloading_tasks(&self) -> std::result::Result<usize, StoreError> {
+        let conn = self.lock_conn()?;
+        let updated = conn.execute(
+            "UPDATE downloads SET state = 'paused', error_msg = ?1 WHERE LOWER(state) = 'downloading'",
+            params!["Interrupted (power/app closed) — ready to resume"],
+        )?;
+        Ok(updated)
+    }
+
     pub fn save_segment_positions(
         &self,
         segments: &[SegmentRecord],
@@ -385,6 +414,15 @@ impl Store {
             results.push(r?);
         }
         Ok(results)
+    }
+
+    pub fn delete_segments(&self, download_id: Uuid) -> std::result::Result<(), StoreError> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM segments WHERE download_id = ?1",
+            params![download_id.to_string()],
+        )?;
+        Ok(())
     }
 
     pub fn get_download_state(&self, id: Uuid) -> std::result::Result<Option<String>, StoreError> {
@@ -906,5 +944,92 @@ mod tests {
         let matched = store.list_history(None, Some("100%_")).unwrap();
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].filename, "100%_real.zip");
+    }
+
+    #[test]
+    fn test_pause_stale_downloading_tasks_and_validators() {
+        let store = Store::open_in_memory().expect("failed to open in memory store");
+        let make_rec = |state: DownloadState, etag: Option<&str>| DownloadRecord {
+            id: Uuid::new_v4(),
+            url: "https://example.com/file.bin".into(),
+            final_url: None,
+            filename: "file.bin".into(),
+            save_dir: "C:\\Downloads".into(),
+            category: "General".into(),
+            state,
+            size_total: Some(1024),
+            size_done: 256,
+            resumable: true,
+            etag: etag.map(str::to_string),
+            last_modified: None,
+            content_type: None,
+            referer: None,
+            user_agent: None,
+            connections: 4,
+            created_at: Utc::now(),
+            error_msg: None,
+        };
+
+        let dl1 = make_rec(DownloadState::Downloading, Some("\"e1\""));
+        let dl2 = make_rec(DownloadState::Downloading, None);
+        let dl_done = make_rec(DownloadState::Completed, Some("\"e2\""));
+        store.insert_download(&dl1).unwrap();
+        store.insert_download(&dl2).unwrap();
+        store.insert_download(&dl_done).unwrap();
+
+        let paused_count = store.pause_stale_downloading_tasks().unwrap();
+        assert_eq!(paused_count, 2);
+
+        let all = store.list_all_downloads().unwrap();
+        for rec in &all {
+            if rec.id == dl1.id || rec.id == dl2.id {
+                assert_eq!(rec.state, DownloadState::Paused);
+                assert_eq!(
+                    rec.error_msg.as_deref(),
+                    Some("Interrupted (power/app closed) — ready to resume")
+                );
+            } else if rec.id == dl_done.id {
+                assert_eq!(rec.state, DownloadState::Completed);
+                assert_eq!(rec.error_msg, None);
+            }
+        }
+
+        // Validator update and segment deletion
+        store
+            .save_segment_positions(&[SegmentRecord {
+                download_id: dl1.id,
+                idx: 0,
+                start: 0,
+                end: 1023,
+                pos: 256,
+                state: "paused".into(),
+                retries: 0,
+            }])
+            .unwrap();
+        assert_eq!(store.get_segments(dl1.id).unwrap().len(), 1);
+
+        store
+            .update_download_validators(
+                dl1.id,
+                Some("\"e1-new\""),
+                Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+                Some(2048),
+            )
+            .unwrap();
+        let updated = store
+            .list_all_downloads()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == dl1.id)
+            .unwrap();
+        assert_eq!(updated.etag.as_deref(), Some("\"e1-new\""));
+        assert_eq!(
+            updated.last_modified.as_deref(),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT")
+        );
+        assert_eq!(updated.size_total, Some(2048));
+
+        store.delete_segments(dl1.id).unwrap();
+        assert!(store.get_segments(dl1.id).unwrap().is_empty());
     }
 }

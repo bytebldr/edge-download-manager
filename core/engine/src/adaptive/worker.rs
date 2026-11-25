@@ -1,6 +1,6 @@
 use chrono::Utc;
 use futures_util::StreamExt;
-use reqwest::header::{ACCEPT_ENCODING, IF_RANGE, RANGE, RETRY_AFTER};
+use reqwest::header::{ACCEPT_ENCODING, IF_RANGE, LAST_MODIFIED, RANGE, RETRY_AFTER};
 use reqwest::Client;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -28,6 +28,11 @@ pub enum AdaptiveWorkerEvent {
         idx: u32,
         old_etag: String,
         new_etag: String,
+    },
+    LastModifiedChanged {
+        idx: u32,
+        old_last_modified: String,
+        new_last_modified: String,
     },
     RateLimited {
         idx: u32,
@@ -88,6 +93,7 @@ pub struct AdaptiveWorker {
     pub last_snapshot_bytes: Arc<AtomicU64>,
     pub last_snapshot_ms: Arc<AtomicU64>,
     pub etag: Option<String>,
+    pub last_modified: Option<String>,
     pub cancelled: Arc<AtomicBool>,
     pub is_reconnecting: Arc<AtomicBool>,
     pub cookies: Option<String>,
@@ -123,6 +129,7 @@ impl AdaptiveWorker {
             last_snapshot_bytes: Arc::new(AtomicU64::new(0)),
             last_snapshot_ms: Arc::new(AtomicU64::new(now)),
             etag,
+            last_modified: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             is_reconnecting: Arc::new(AtomicBool::new(false)),
             cookies,
@@ -189,6 +196,7 @@ impl AdaptiveWorker {
         max_retries: u32,
     ) {
         let mut retries = 0;
+        let mut expected_last_modified = self.last_modified.clone();
 
         while retries < max_retries && !self.cancelled.load(Ordering::Relaxed) {
             let current_pos = self.pos.load(Ordering::Relaxed);
@@ -220,6 +228,8 @@ impl AdaptiveWorker {
 
             if let Some(ref tag) = self.etag {
                 req = req.header(IF_RANGE, tag.as_str());
+            } else if let Some(ref lm) = expected_last_modified {
+                req = req.header(IF_RANGE, lm.as_str());
             }
 
             if let Some(ref cookie_str) = self.cookies {
@@ -329,12 +339,13 @@ impl AdaptiveWorker {
                 continue;
             }
 
-            // Validate ETag if server provides one
-            if let Some(resp_etag) = resp
+            // Validate ETag if server provides one, otherwise validate Last-Modified on 206 responses
+            let resp_etag_header = resp
                 .headers()
                 .get(reqwest::header::ETAG)
-                .and_then(|v| v.to_str().ok())
-            {
+                .and_then(|v| v.to_str().ok());
+
+            if let Some(resp_etag) = resp_etag_header {
                 let clean_resp = resp_etag.trim().trim_matches('"');
                 if let Some(ref expected) = self.etag {
                     let clean_exp = expected.trim().trim_matches('"');
@@ -352,6 +363,34 @@ impl AdaptiveWorker {
                             })
                             .await;
                         return;
+                    }
+                }
+            } else if status == reqwest::StatusCode::PARTIAL_CONTENT {
+                if let Some(resp_lm) = resp
+                    .headers()
+                    .get(LAST_MODIFIED)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    if let Some(ref expected_lm) = expected_last_modified {
+                        if resp_lm != expected_lm.trim() {
+                            warn!(
+                                "Worker {}: Server Last-Modified changed from '{}' to '{}'. Aborting worker.",
+                                self.idx, expected_lm, resp_lm
+                            );
+                            self.set_status(WorkerStatus::Failed);
+                            let _ = event_tx
+                                .send(AdaptiveWorkerEvent::LastModifiedChanged {
+                                    idx: self.idx,
+                                    old_last_modified: expected_lm.clone(),
+                                    new_last_modified: resp_lm.to_string(),
+                                })
+                                .await;
+                            return;
+                        }
+                    } else {
+                        expected_last_modified = Some(resp_lm.to_string());
                     }
                 }
             }
