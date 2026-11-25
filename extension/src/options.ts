@@ -1,4 +1,5 @@
 // Options Page Controller
+import { autoDetectToken, isValidToken } from "./utils/token";
 
 const inputToken = document.getElementById("inputToken") as HTMLInputElement;
 const btnAutoDetect = document.getElementById("btnAutoDetect") as HTMLButtonElement;
@@ -38,8 +39,8 @@ async function loadSettings() {
     "edm_notify_fail",
     "edm_youtube_pill_enabled",
   ]);
-  if (stored.edm_ws_token && stored.edm_ws_token.length >= 32 && !stored.edm_ws_token.startsWith("ed0000000000")) {
-    inputToken.value = stored.edm_ws_token;
+  if (isValidToken(stored.edm_ws_token)) {
+    inputToken.value = stored.edm_ws_token.trim();
   } else {
     // Attempt automatic detection on page load
     triggerAutoDetect(false);
@@ -64,31 +65,18 @@ async function triggerAutoDetect(interactive = true) {
     if (btnAutoDetect) btnAutoDetect.disabled = true;
   }
 
-  // Direct fetch fallback
-  for (const url of ["http://127.0.0.1:14370/token", "http://localhost:14370/token"]) {
-    try {
-      const resp = await fetch(url, {
-        method: "GET",
-        headers: { "X-EDM-Client": "extension" },
-        cache: "no-store",
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.token && typeof data.token === "string" && data.token.length >= 32) {
-          inputToken.value = data.token;
-          await chrome.storage.local.set({ edm_ws_token: data.token });
-          chrome.runtime.sendMessage({ action: "update_token", token: data.token });
-          if (btnAutoDetect) btnAutoDetect.disabled = false;
-          saveFeedback.className = "feedback-msg success";
-          saveFeedback.textContent = "Token auto-detected and synchronized successfully!";
-          checkStatus();
-          setTimeout(() => {
-            saveFeedback.textContent = "";
-          }, 3000);
-          return;
-        }
-      }
-    } catch {}
+  const detected = await autoDetectToken();
+  if (detected) {
+    inputToken.value = detected;
+    chrome.runtime.sendMessage({ action: "update_token", token: detected });
+    if (btnAutoDetect) btnAutoDetect.disabled = false;
+    saveFeedback.className = "feedback-msg success";
+    saveFeedback.textContent = "Token auto-detected and synchronized successfully!";
+    checkStatus();
+    setTimeout(() => {
+      saveFeedback.textContent = "";
+    }, 3000);
+    return;
   }
 
   chrome.runtime.sendMessage({ action: "auto_detect_token" }, (resp) => {

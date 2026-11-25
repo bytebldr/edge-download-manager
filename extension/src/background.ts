@@ -2,6 +2,7 @@
 // Direct High-Performance Local WebSocket Client for 127.0.0.1:14370
 
 import { compareVersions } from "./utils/version";
+import { autoDetectToken, isValidToken } from "./utils/token";
 
 interface WsTaskItem {
   id: string;
@@ -77,7 +78,6 @@ function checkAndPerformAutoReload(expectedVersion?: string) {
 
   if (activeHandoffsCount > 0 || isWaking) {
     pendingReload = true;
-    console.log("[EDM Extension] Update available, deferring reload until active handoff/wake completes");
     return;
   }
 
@@ -89,7 +89,6 @@ function checkAndPerformAutoReload(expectedVersion?: string) {
   }
   lastReloadAttemptTime = now;
 
-  console.log(`[EDM Extension] App update detected (${currentVersion} -> ${expectedVersion}). Reloading extension...`);
   try {
     chrome.runtime.reload();
   } catch (err) {
@@ -99,7 +98,6 @@ function checkAndPerformAutoReload(expectedVersion?: string) {
 
 function onHandoffSettle() {
   if (pendingReload && activeHandoffsCount === 0 && !isWaking) {
-    console.log("[EDM Extension] Active handoff settled. Executing deferred reload...");
     try {
       chrome.runtime.reload();
     } catch (err) {
@@ -110,75 +108,12 @@ function onHandoffSettle() {
 
 // 1. Get Authentication Token from chrome.storage.local or auto-detect
 async function autoDetectAndSetToken(): Promise<string | null> {
-  // 1. Try Native Messaging Host com.edm.nmh first (fastest, reads token directly)
-  try {
-    const nmhToken = await new Promise<string | null>((resolve) => {
-      chrome.runtime.sendNativeMessage("com.edm.nmh", { type: "get_token" }, (response) => {
-        if (chrome.runtime.lastError || !response) {
-          return resolve(null);
-        }
-        if (
-          response.token &&
-          typeof response.token === "string" &&
-          response.token.length >= 32 &&
-          !response.token.startsWith("ed0000000000")
-        ) {
-          resolve(response.token);
-        } else {
-          resolve(null);
-        }
-      });
-    });
-
-    if (nmhToken) {
-      await chrome.storage.local.set({ edm_ws_token: nmhToken });
-      console.log("[EDM Extension] Successfully auto-detected token from Native Messaging Host!");
-      return nmhToken;
-    }
-  } catch (_e) {}
-
-  // 2. Try HTTP loopback endpoints
-  const headers = {
-    "X-EDM-Client": "extension",
-    "X-EDM-Extension-Id": (typeof chrome !== "undefined" && chrome.runtime?.id) ? chrome.runtime.id : "ginpdimhcdbojbhemgjedghkeolbcmgj",
-  };
-
-  for (const url of ["http://127.0.0.1:14370/token", "http://localhost:14370/token"]) {
-    try {
-      const resp = await fetch(url, {
-        method: "GET",
-        headers,
-        cache: "no-store",
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (
-          data &&
-          data.token &&
-          typeof data.token === "string" &&
-          data.token.length >= 32 &&
-          !data.token.startsWith("ed0000000000")
-        ) {
-          await chrome.storage.local.set({ edm_ws_token: data.token });
-          console.log("[EDM Extension] Successfully auto-detected token from HTTP handshake!");
-          return data.token;
-        }
-      }
-    } catch (_e) {}
-  }
-
-  return null;
+  return autoDetectToken();
 }
 
 async function getToken(): Promise<string> {
   const store = await chrome.storage.local.get("edm_ws_token");
-  if (
-    store &&
-    store.edm_ws_token &&
-    typeof store.edm_ws_token === "string" &&
-    store.edm_ws_token.trim().length >= 32 &&
-    !store.edm_ws_token.startsWith("ed0000000000")
-  ) {
+  if (store && isValidToken(store.edm_ws_token)) {
     return store.edm_ws_token.trim();
   }
 
@@ -420,7 +355,6 @@ async function checkIfEdmRunning(): Promise<{ running: boolean; token?: string }
     try {
       chrome.runtime.sendNativeMessage("com.edm.nmh", { type: "get_status" }, (res) => {
         if (chrome.runtime.lastError || !res) {
-          console.debug("[EDM Extension] NMH status check:", chrome.runtime.lastError?.message || "No response");
           return resolve({ running: false });
         }
         if (res.running || res.status === "running" || res.status === "connected") {
@@ -447,8 +381,7 @@ async function connectWebSocket() {
 
   try {
     socket = new WebSocket(WS_URL);
-  } catch (err) {
-    console.debug("[EDM Extension] WebSocket creation:", err);
+  } catch {
     return;
   }
 
@@ -611,7 +544,6 @@ async function connectWebSocket() {
         }
 
         case "refresh_link": {
-          console.log("[EDM Extension] Download link expired for task:", data.task_id, data.filename);
           chrome.storage.local.set({
             pending_refresh_task: {
               task_id: data.task_id,
@@ -648,17 +580,14 @@ async function connectWebSocket() {
   };
 
   socket.onclose = async () => {
-    const wasConnected = connectionStatus === "connected";
     connectionStatus = "asleep";
     socket = null;
     stopPingInterval();
     notifyPopupPorts();
-    console.debug("[EDM Extension] WebSocket connection closed.");
 
     // Check if auto-reconnect is disabled by user preference
     const store = await chrome.storage.local.get("edm_auto_reconnect");
     if (store && store.edm_auto_reconnect === false) {
-      console.debug("[EDM Extension] Auto-reconnect disabled in settings. Staying idle.");
       return;
     }
 
@@ -670,7 +599,6 @@ async function connectWebSocket() {
       }
       reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, Math.min(reconnectAttempts, 5)), 30000);
-      console.debug(`[EDM Extension] EDM is running, scheduling reconnect in ${delay}ms`);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => {
         if (connectionStatus !== "connected") {
@@ -678,7 +606,6 @@ async function connectWebSocket() {
         }
       }, delay);
     } else {
-      console.debug("[EDM Extension] EDM is asleep or closed. Staying idle.");
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -687,8 +614,7 @@ async function connectWebSocket() {
     }
   };
 
-  socket.onerror = (err) => {
-    console.debug("[EDM Extension] WebSocket event:", err);
+  socket.onerror = () => {
     if (socket) {
       socket.close();
     }
@@ -1137,7 +1063,6 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
 
     // 4b. If desktop is offline / asleep, pause download and wake via NMH
     if (!socket || socket.readyState !== WebSocket.OPEN || connectionStatus !== "connected") {
-      console.log("[EDM Extension] EDM is not connected. Pausing browser download and waking EDM...");
       await safeDownloadPause(item.id);
 
       const wakeRes = await wakeDesktop(false);
@@ -1193,8 +1118,27 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   return true;
 });
 
-// 8. Runtime Messages from Content Script & Options Page
+const PRIVILEGED_ACTIONS = new Set([
+  "wake_desktop",
+  "update_token",
+  "test_token",
+  "auto_detect_token",
+  "refresh_task",
+  "get_detected_media",
+  "probe_media",
+  "check_update",
+  "reload_extension",
+]);
+
+// 8. Runtime Messages from Content Script & Extension Pages
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  const isExtensionSender = !_sender?.tab && _sender?.id === chrome.runtime.id;
+
+  if (PRIVILEGED_ACTIONS.has(msg?.action) && !isExtensionSender) {
+    sendResponse({ ok: false, error: "Unauthorized sender" });
+    return true;
+  }
+
   if (msg.action === "wake_desktop") {
     wakeDesktop(!!msg.show_window).then((res) => {
       sendResponse(res);
@@ -1240,7 +1184,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     (async () => {
       // 1. If testToken is empty, fall back to storage or auto-detect
-      if (!testToken || testToken.length < 32 || testToken.startsWith("ed0000000000")) {
+      if (!isValidToken(testToken)) {
         testToken = await getToken();
       }
 
@@ -1354,12 +1298,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.action === "create_task") {
+    const rawUrl = typeof msg.url === "string" ? msg.url.trim() : "";
+    if (!/^(https?:\/\/|magnet:)/i.test(rawUrl)) {
+      sendResponse({ ok: false, error: "Invalid or unsupported URL scheme" });
+      return true;
+    }
+
     const req_id = crypto.randomUUID();
     (async () => {
       let cookies: Array<{ name: string; value: string; domain?: string; path?: string }> = [];
-      if (msg.url && (msg.url.startsWith("http://") || msg.url.startsWith("https://"))) {
+      if (isExtensionSender && /^https?:\/\//i.test(rawUrl)) {
         try {
-          const rawCookies = await chrome.cookies.getAll({ url: msg.url });
+          const rawCookies = await chrome.cookies.getAll({ url: rawUrl });
           cookies = rawCookies.map((c) => ({
             name: c.name,
             value: c.value,
@@ -1371,7 +1321,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const res = await sendWsCreateTask({
         type: "create_task",
         req_id,
-        url: msg.url,
+        url: rawUrl,
         filename: msg.filename,
         referrer: msg.referrer,
         user_agent: navigator.userAgent,
@@ -1577,7 +1527,6 @@ async function initOnStartup() {
   } else {
     connectionStatus = "asleep";
     notifyPopupPorts();
-    console.debug("[EDM Extension] EDM is asleep on startup. Staying idle.");
   }
 }
 initOnStartup();
