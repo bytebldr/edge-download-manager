@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ExternalLink, Pause, Play, X } from "lucide-react";
 import {
   BackendDownloadItem,
@@ -10,6 +10,17 @@ import {
 } from "../services/tauriBridge";
 
 const ACTIVE_STATES = new Set(["downloading", "probing", "queued", "verifying", "paused"]);
+
+function stateRank(state: string): number {
+  if (state === "paused") return 0;
+  if (state === "queued") return 1;
+  return 2;
+}
+
+function createdAtMs(createdAt: string): number {
+  const ms = Date.parse(createdAt);
+  return Number.isFinite(ms) ? ms : 0;
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -32,6 +43,34 @@ function formatEta(seconds?: number | null): string {
 export default function TrayFlyout() {
   const [items, setItems] = useState<BackendDownloadItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const rankDiff = stateRank(a.state) - stateRank(b.state);
+      if (rankDiff !== 0) return rankDiff;
+      return createdAtMs(a.created_at) - createdAtMs(b.created_at);
+    });
+  }, [items]);
+
+  const queueOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    let n = 1;
+    for (const item of sortedItems) {
+      if (item.state === "queued") {
+        map.set(item.id, n++);
+      }
+    }
+    return map;
+  }, [sortedItems]);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && autoScrollRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [sortedItems]);
 
   const refreshDownloads = useCallback(async () => {
     const list = await tauriListDownloads();
@@ -123,8 +162,15 @@ export default function TrayFlyout() {
         </div>
 
         {/* Active downloads list (up to 3 visible, scrollable if >3) */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 max-h-[210px]">
-          {items.length === 0 ? (
+        <div
+          ref={listRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+          className="flex-1 overflow-y-auto px-3 py-2 space-y-2 max-h-[210px]"
+        >
+          {sortedItems.length === 0 ? (
             <div className="flex h-full min-h-[120px] flex-col items-center justify-center text-center px-4">
               <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-[var(--text-muted)]">
                 <ArrowDownToLine className="h-4 w-4" />
@@ -135,14 +181,17 @@ export default function TrayFlyout() {
               </p>
             </div>
           ) : (
-            items.map((item) => {
+            sortedItems.map((item) => {
               const total = item.size_total ?? 0;
               const pct = total > 0 ? Math.min(100, Math.round((item.size_done / total) * 100)) : 0;
               const isPaused = item.state === "paused";
+              const queuePos = queueOrder.get(item.id);
               const speed = item.speed_bytes_per_sec > 0 ? `${formatBytes(item.speed_bytes_per_sec)}/s` : "0 B/s";
               const meta = isPaused
                 ? `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · Paused`
-                : `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · ${speed} · ${formatEta(item.eta_seconds)}`;
+                : queuePos != null
+                  ? `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · Queued`
+                  : `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · ${speed} · ${formatEta(item.eta_seconds)}`;
 
               return (
                 <div
@@ -150,9 +199,16 @@ export default function TrayFlyout() {
                   className="rounded-lg border border-[var(--border-dim)] bg-[var(--bg-card)] px-2.5 py-2 transition-colors hover:border-[var(--border-subtle)]"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-medium text-[var(--text-primary)]" title={item.filename}>
-                      {item.filename}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-xs font-medium text-[var(--text-primary)]" title={item.filename}>
+                        {item.filename}
+                      </span>
+                      {queuePos != null && (
+                        <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] tabular-nums">
+                          Queued #{queuePos}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"
@@ -200,7 +256,7 @@ export default function TrayFlyout() {
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--accent-on)] transition-colors hover:bg-[var(--accent-hover)] active:bg-[var(--accent-pressed)]"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Open Evo Download Manager
+            Open EDM
           </button>
         </div>
       </div>
