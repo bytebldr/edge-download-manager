@@ -24,5 +24,4 @@ We aim to acknowledge reports within 72 hours and provide a fix or mitigation pl
 
 - **Local-Only IPC**: The desktop WebSocket/HTTP bridge binds to `127.0.0.1` only, enforces exact `Host` and allowed extension `Origin` checks, and uses constant-time token verification (`subtle`).
 - **Path & Execution Safety**: File paths are canonicalized and containment-checked; dangerous executable extensions are not auto-executed directly.
-- **Update Integrity**: OTA updates verify SHA-256 checksums and Authenticode signatures before launching the installer.
-- **Code Signing**: Official Windows releases are signed via [SignPath.org](https://signpath.org/) (see [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)).
+- **Update Integrity**: OTA updates verify SHA-256 checksums before launching the installer.
