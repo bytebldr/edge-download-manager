@@ -87,7 +87,8 @@ pub fn parse_mpd(xml: &str, manifest_url: &str) -> Result<DashManifest, String> 
     let mpd_type = get_attr(&mpd_attrs, "type").unwrap_or("static");
     let is_live = mpd_type.eq_ignore_ascii_case("dynamic");
 
-    let duration_secs = get_attr(&mpd_attrs, "mediaPresentationDuration").and_then(parse_iso_duration);
+    let duration_secs =
+        get_attr(&mpd_attrs, "mediaPresentationDuration").and_then(parse_iso_duration);
 
     let mpd_base = extract_direct_base_url(trimmed)
         .map(|u| resolve_url(manifest_url, &u))
@@ -126,9 +127,7 @@ pub fn parse_mpd(xml: &str, manifest_url: &str) -> Result<DashManifest, String> 
 
             for rep in extract_blocks(adapt, "Representation") {
                 let rep_attrs = extract_tag_attrs(rep, "Representation").unwrap_or_default();
-                let id = get_attr(&rep_attrs, "id")
-                    .unwrap_or("0")
-                    .to_string();
+                let id = get_attr(&rep_attrs, "id").unwrap_or("0").to_string();
                 let bandwidth = get_attr(&rep_attrs, "bandwidth")
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(0);
@@ -149,7 +148,8 @@ pub fn parse_mpd(xml: &str, manifest_url: &str) -> Result<DashManifest, String> 
                     .map(|u| resolve_url(&adapt_base, &u))
                     .unwrap_or_else(|| adapt_base.clone());
 
-                let segment_template = extract_segment_template(rep).or_else(|| adapt_template.clone());
+                let segment_template =
+                    extract_segment_template(rep).or_else(|| adapt_template.clone());
 
                 let kind = classify_track(
                     adapt_content_type.as_deref(),

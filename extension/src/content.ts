@@ -607,7 +607,11 @@ function injectYoutubePillIfNeeded() {
     return new Promise((resolve) => {
       let resolved = false;
       const handler = (event: MessageEvent) => {
-        if (event.source === window && event.data?.type === "EDM_STREAM_DATA_RESPONSE") {
+        if (
+          event.source === window &&
+          event.origin === window.location.origin &&
+          event.data?.type === "EDM_STREAM_DATA_RESPONSE"
+        ) {
           window.removeEventListener("message", handler);
           if (!resolved) {
             resolved = true;
@@ -617,7 +621,7 @@ function injectYoutubePillIfNeeded() {
       };
       window.addEventListener("message", handler);
 
-      window.postMessage({ type: "EDM_REQUEST_STREAM_DATA" }, "*");
+      window.postMessage({ type: "EDM_REQUEST_STREAM_DATA" }, window.location.origin);
 
       setTimeout(() => {
         window.removeEventListener("message", handler);

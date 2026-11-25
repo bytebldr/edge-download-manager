@@ -6,10 +6,8 @@ use std::time::Instant;
 pub const WS_PORT: u16 = 14370;
 pub const WS_ADDR: &str = "127.0.0.1:14370";
 pub const HTTP_BRIDGE_ADDR: &str = "127.0.0.1:8998";
-pub const FORWARD_ENDPOINTS: [&str; 2] = [
-    "http://127.0.0.1:14370/api",
-    "http://127.0.0.1:8998/api",
-];
+pub const FORWARD_ENDPOINTS: [&str; 2] =
+    ["http://127.0.0.1:14370/api", "http://127.0.0.1:8998/api"];
 pub const FORWARD_ORIGIN: &str = "chrome-extension://ginpdimhcdbojbhemgjedghkeolbcmgj";
 pub const MAX_NMH_MESSAGE_BYTES: usize = 10 * 1024 * 1024;
 

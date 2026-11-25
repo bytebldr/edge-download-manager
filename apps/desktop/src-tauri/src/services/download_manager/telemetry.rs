@@ -171,16 +171,22 @@ pub(super) fn classify_execution_result(
         {
             (
                 DownloadState::LinkExpired,
-                Some("Download link expired (HTTP 401/403/410). Refresh link to resume.".to_string()),
+                Some(
+                    "Download link expired (HTTP 401/403/410). Refresh link to resume.".to_string(),
+                ),
                 None,
             )
         }
-        Err(ref e) if e.contains("429") => {
-            (DownloadState::Failed, Some("HTTP 429 Rate Limited".to_string()), None)
-        }
-        Err(ref e) if e.contains("stalled") => {
-            (DownloadState::Failed, Some("Connection Stalled".to_string()), None)
-        }
+        Err(ref e) if e.contains("429") => (
+            DownloadState::Failed,
+            Some("HTTP 429 Rate Limited".to_string()),
+            None,
+        ),
+        Err(ref e) if e.contains("stalled") => (
+            DownloadState::Failed,
+            Some("Connection Stalled".to_string()),
+            None,
+        ),
         Err(e) => (DownloadState::Failed, Some(e), None),
     }
 }

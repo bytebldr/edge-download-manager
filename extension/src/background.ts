@@ -469,7 +469,7 @@ async function connectWebSocket() {
                       title: "EDM: Download Completed",
                       message: `${t.filename || "File"} has finished downloading.`,
                     });
-                  } else if ((currentStatus === "error" || currentStatus === "failed") && notifyFail) {
+                  } else if ((String(currentStatus) === "error" || currentStatus === "failed") && notifyFail) {
                     chrome.notifications.create({
                       type: "basic",
                       iconUrl: "logo.png",

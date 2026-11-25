@@ -1,7 +1,5 @@
+pub use crate::lifecycle::{is_newer_version, parse_version, OtaProgress, UpdateCheckResult};
 use tauri::{AppHandle, State};
-pub use crate::lifecycle::{
-    is_newer_version, parse_version, OtaProgress, UpdateCheckResult,
-};
 
 #[tauri::command]
 pub fn get_app_version() -> String {

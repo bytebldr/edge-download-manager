@@ -38,7 +38,11 @@ const COINIT_APARTMENTTHREADED: u32 = 0x2;
 
 #[repr(C)]
 struct IUnknownVtbl {
-    QueryInterface: unsafe extern "system" fn(this: *mut c_void, riid: *const GUID, ppv: *mut *mut c_void) -> i32,
+    QueryInterface: unsafe extern "system" fn(
+        this: *mut c_void,
+        riid: *const GUID,
+        ppv: *mut *mut c_void,
+    ) -> i32,
     AddRef: unsafe extern "system" fn(this: *mut c_void) -> u32,
     Release: unsafe extern "system" fn(this: *mut c_void) -> u32,
 }
@@ -46,12 +50,20 @@ struct IUnknownVtbl {
 #[repr(C)]
 struct IShellLinkWVtbl {
     parent: IUnknownVtbl,
-    GetPath: unsafe extern "system" fn(this: *mut c_void, pszFile: *mut u16, cch: i32, pfd: *mut c_void, fFlags: u32) -> i32,
+    GetPath: unsafe extern "system" fn(
+        this: *mut c_void,
+        pszFile: *mut u16,
+        cch: i32,
+        pfd: *mut c_void,
+        fFlags: u32,
+    ) -> i32,
     GetIDList: unsafe extern "system" fn(this: *mut c_void, ppidl: *mut *mut c_void) -> i32,
     SetIDList: unsafe extern "system" fn(this: *mut c_void, pidl: *const c_void) -> i32,
-    GetDescription: unsafe extern "system" fn(this: *mut c_void, pszName: *mut u16, cch: i32) -> i32,
+    GetDescription:
+        unsafe extern "system" fn(this: *mut c_void, pszName: *mut u16, cch: i32) -> i32,
     SetDescription: unsafe extern "system" fn(this: *mut c_void, pszName: *const u16) -> i32,
-    GetWorkingDirectory: unsafe extern "system" fn(this: *mut c_void, pszDir: *mut u16, cch: i32) -> i32,
+    GetWorkingDirectory:
+        unsafe extern "system" fn(this: *mut c_void, pszDir: *mut u16, cch: i32) -> i32,
     SetWorkingDirectory: unsafe extern "system" fn(this: *mut c_void, pszDir: *const u16) -> i32,
     GetArguments: unsafe extern "system" fn(this: *mut c_void, pszArgs: *mut u16, cch: i32) -> i32,
     SetArguments: unsafe extern "system" fn(this: *mut c_void, pszArgs: *const u16) -> i32,
@@ -59,9 +71,19 @@ struct IShellLinkWVtbl {
     SetHotkey: unsafe extern "system" fn(this: *mut c_void, wHotkey: u16) -> i32,
     GetShowCmd: unsafe extern "system" fn(this: *mut c_void, piShowCmd: *mut i32) -> i32,
     SetShowCmd: unsafe extern "system" fn(this: *mut c_void, iShowCmd: i32) -> i32,
-    GetIconLocation: unsafe extern "system" fn(this: *mut c_void, pszIconPath: *mut u16, cch: i32, piIcon: *mut i32) -> i32,
-    SetIconLocation: unsafe extern "system" fn(this: *mut c_void, pszIconPath: *const u16, iIcon: i32) -> i32,
-    SetRelativePath: unsafe extern "system" fn(this: *mut c_void, pszPathRel: *const u16, dwReserved: u32) -> i32,
+    GetIconLocation: unsafe extern "system" fn(
+        this: *mut c_void,
+        pszIconPath: *mut u16,
+        cch: i32,
+        piIcon: *mut i32,
+    ) -> i32,
+    SetIconLocation:
+        unsafe extern "system" fn(this: *mut c_void, pszIconPath: *const u16, iIcon: i32) -> i32,
+    SetRelativePath: unsafe extern "system" fn(
+        this: *mut c_void,
+        pszPathRel: *const u16,
+        dwReserved: u32,
+    ) -> i32,
     Resolve: unsafe extern "system" fn(this: *mut c_void, hwnd: *mut c_void, fFlags: u32) -> i32,
     SetPath: unsafe extern "system" fn(this: *mut c_void, pszFile: *const u16) -> i32,
 }
@@ -72,7 +94,11 @@ struct IPersistFileVtbl {
     GetClassID: unsafe extern "system" fn(this: *mut c_void, pClassID: *mut GUID) -> i32,
     IsDirty: unsafe extern "system" fn(this: *mut c_void) -> i32,
     Load: unsafe extern "system" fn(this: *mut c_void, pszFileName: *const u16, dwMode: u32) -> i32,
-    Save: unsafe extern "system" fn(this: *mut c_void, pszFileName: *const u16, fRemember: i32) -> i32,
+    Save: unsafe extern "system" fn(
+        this: *mut c_void,
+        pszFileName: *const u16,
+        fRemember: i32,
+    ) -> i32,
     SaveCompleted: unsafe extern "system" fn(this: *mut c_void, pszFileName: *const u16) -> i32,
     GetCurFile: unsafe extern "system" fn(this: *mut c_void, ppszFileName: *mut *mut u16) -> i32,
 }
@@ -146,30 +172,34 @@ pub fn create_com_shortcut(
             if uninit_needed {
                 CoUninitialize();
             }
-            return Err(format!("CoCreateInstance(CLSID_ShellLink) failed: 0x{:08X}", hr_inst as u32));
+            return Err(format!(
+                "CoCreateInstance(CLSID_ShellLink) failed: 0x{:08X}",
+                hr_inst as u32
+            ));
         }
 
         let link_vtbl = *(shell_link_raw as *mut *const IShellLinkWVtbl);
         let unk_vtbl = *(shell_link_raw as *mut *const IUnknownVtbl);
 
         let target_wide = to_wide(target_exe.as_os_str());
-        ( (*link_vtbl).SetPath )(shell_link_raw, target_wide.as_ptr());
+        ((*link_vtbl).SetPath)(shell_link_raw, target_wide.as_ptr());
 
         let work_wide = to_wide(work_dir.as_os_str());
-        ( (*link_vtbl).SetWorkingDirectory )(shell_link_raw, work_wide.as_ptr());
+        ((*link_vtbl).SetWorkingDirectory)(shell_link_raw, work_wide.as_ptr());
 
         if let Some(a) = args {
             let args_wide = to_wide(a);
-            ( (*link_vtbl).SetArguments )(shell_link_raw, args_wide.as_ptr());
+            ((*link_vtbl).SetArguments)(shell_link_raw, args_wide.as_ptr());
         }
 
         let icon_target = icon_path.unwrap_or(target_exe);
         let icon_wide = to_wide(icon_target.as_os_str());
-        ( (*link_vtbl).SetIconLocation )(shell_link_raw, icon_wide.as_ptr(), icon_index);
+        ((*link_vtbl).SetIconLocation)(shell_link_raw, icon_wide.as_ptr(), icon_index);
 
         // QueryInterface for IPersistFile
         let mut persist_file_raw: *mut c_void = std::ptr::null_mut();
-        let hr_qi = ( (*unk_vtbl).QueryInterface )(shell_link_raw, &IID_IPersistFile, &mut persist_file_raw);
+        let hr_qi =
+            ((*unk_vtbl).QueryInterface)(shell_link_raw, &IID_IPersistFile, &mut persist_file_raw);
 
         let save_res = if hr_qi >= 0 && !persist_file_raw.is_null() {
             let pf_vtbl = *(persist_file_raw as *mut *const IPersistFileVtbl);
@@ -177,20 +207,26 @@ pub fn create_com_shortcut(
                 let _ = std::fs::create_dir_all(parent);
             }
             let lnk_wide = to_wide(shortcut_path.as_os_str());
-            let hr_save = ( (*pf_vtbl).Save )(persist_file_raw, lnk_wide.as_ptr(), 1);
+            let hr_save = ((*pf_vtbl).Save)(persist_file_raw, lnk_wide.as_ptr(), 1);
             let pf_unk_vtbl = *(persist_file_raw as *mut *const IUnknownVtbl);
-            ( (*pf_unk_vtbl).Release )(persist_file_raw);
+            ((*pf_unk_vtbl).Release)(persist_file_raw);
 
             if hr_save >= 0 {
                 Ok(())
             } else {
-                Err(format!("IPersistFile::Save failed: 0x{:08X}", hr_save as u32))
+                Err(format!(
+                    "IPersistFile::Save failed: 0x{:08X}",
+                    hr_save as u32
+                ))
             }
         } else {
-            Err(format!("QueryInterface(IID_IPersistFile) failed: 0x{:08X}", hr_qi as u32))
+            Err(format!(
+                "QueryInterface(IID_IPersistFile) failed: 0x{:08X}",
+                hr_qi as u32
+            ))
         };
 
-        ( (*unk_vtbl).Release )(shell_link_raw);
+        ((*unk_vtbl).Release)(shell_link_raw);
 
         if uninit_needed {
             CoUninitialize();
@@ -228,7 +264,11 @@ pub fn terminate_sibling_instances() -> Result<(), String> {
             loop {
                 let pid = entry.th32ProcessID;
                 if pid != current_pid && pid != 0 {
-                    let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                    let len = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(entry.szExeFile.len());
                     let name = String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase();
                     if target_names.iter().any(|&t| t == name) {
                         let proc_handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
@@ -259,7 +299,9 @@ pub fn check_file_locked(path: &Path) -> bool {
         Ok(_) => false,
         Err(e) => {
             // Sharing violation (ERROR_SHARING_VIOLATION = 32) or PermissionDenied (5)
-            e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(32) || e.raw_os_error() == Some(5)
+            e.kind() == std::io::ErrorKind::PermissionDenied
+                || e.raw_os_error() == Some(32)
+                || e.raw_os_error() == Some(5)
         }
     }
 }
@@ -284,7 +326,9 @@ pub fn register_autostart(edm_exe: &Path, enabled: bool) -> Result<(), String> {
 
 pub fn register_uninstall_entry(target_dir: &Path, edm_exe: &Path) -> Result<(), String> {
     let uninstall_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM";
-    let key = CURRENT_USER.create(uninstall_key).map_err(|e| e.to_string())?;
+    let key = CURRENT_USER
+        .create(uninstall_key)
+        .map_err(|e| e.to_string())?;
 
     let edm_exe_str = edm_exe.to_string_lossy().to_string();
     let _ = key.set_string("DisplayName", "EDM — Evo Download Manager");
@@ -293,8 +337,14 @@ pub fn register_uninstall_entry(target_dir: &Path, edm_exe: &Path) -> Result<(),
     let _ = key.set_string("Publisher", "bytebldr");
     let now_date = chrono::Local::now().format("%Y%m%d").to_string();
     let _ = key.set_string("InstallDate", &now_date);
-    let _ = key.set_string("UninstallString", &format!("\"{}\" --uninstall", edm_exe_str));
-    let _ = key.set_string("QuietUninstallString", &format!("\"{}\" --clean-uninstall", edm_exe_str));
+    let _ = key.set_string(
+        "UninstallString",
+        &format!("\"{}\" --uninstall", edm_exe_str),
+    );
+    let _ = key.set_string(
+        "QuietUninstallString",
+        &format!("\"{}\" --clean-uninstall", edm_exe_str),
+    );
     let _ = key.set_string("InstallLocation", &target_dir.to_string_lossy());
     let _ = key.set_u32("NoModify", 1);
     let _ = key.set_u32("NoRepair", 1);
@@ -331,7 +381,9 @@ pub fn register_protocol_handlers(edm_exe: &Path) -> Result<(), String> {
     }
     if let Ok(k) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile") {
         let _ = k.set_string("", "BitTorrent File");
-        if let Ok(cmd_key) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile\shell\open\command") {
+        if let Ok(cmd_key) =
+            CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile\shell\open\command")
+        {
             let _ = cmd_key.set_string("", &cmd_str);
         }
         if let Ok(ico_key) = CURRENT_USER.create(r"Software\Classes\EDM.TorrentFile\DefaultIcon") {
@@ -399,6 +451,7 @@ pub fn register_browser_nmh(target_dir: &Path, nmh_exe: &Path) -> Result<(), Str
 pub fn remove_browser_nmh() {
     let _ = CURRENT_USER.remove_tree(r"Software\Google\Chrome\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Microsoft\Edge\NativeMessagingHosts\com.edm.nmh");
-    let _ = CURRENT_USER.remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
+    let _ = CURRENT_USER
+        .remove_tree(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.edm.nmh");
     let _ = CURRENT_USER.remove_tree(r"Software\Mozilla\NativeMessagingHosts\com.edm.nmh");
 }

@@ -1,9 +1,9 @@
 use crate::adaptive::AdaptiveDownloadTask;
+use crate::adaptive::TelemetryCallback;
 use crate::adaptive_wrapper::traits::AdaptiveWrapperAdapter;
 use crate::adaptive_wrapper::types::{
     ChunkingStrategy, PostFlightContext, PreFlightExecution, PreFlightPlan,
 };
-use crate::adaptive::TelemetryCallback;
 use async_trait::async_trait;
 use reqwest::Client;
 use std::path::PathBuf;
@@ -48,7 +48,10 @@ impl AdaptiveWrapperAdapter for HttpAdapter {
                     .and_then(|cr| cr.split('/').next_back()?.trim().parse::<u64>().ok());
 
                 let content_len = resp.content_length();
-                (is_partial || accepts_bytes, content_range_len.or(content_len))
+                (
+                    is_partial || accepts_bytes,
+                    content_range_len.or(content_len),
+                )
             }
             _ => (true, None),
         };

@@ -24,9 +24,9 @@ fn load_json_setting<T: serde::de::DeserializeOwned>(
     key: &str,
 ) -> Result<Option<T>, String> {
     match state.store.get_setting(key) {
-        Ok(Some(raw)) if !raw.trim().is_empty() => {
-            serde_json::from_str::<T>(&raw).map(Some).map_err(|e| e.to_string())
-        }
+        Ok(Some(raw)) if !raw.trim().is_empty() => serde_json::from_str::<T>(&raw)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Ok(_) => Ok(None),
         Err(e) => Err(e.to_string()),
     }
@@ -38,7 +38,10 @@ fn save_json_setting<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<(), String> {
     let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
-    state.store.set_setting(key, &json).map_err(|e| e.to_string())
+    state
+        .store
+        .set_setting(key, &json)
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -118,7 +121,8 @@ pub fn update_task_request_override(
     }
     request_override.validate()?;
 
-    let uuid = Uuid::parse_str(&trimmed_id).map_err(|_| format!("Invalid task ID: {trimmed_id}"))?;
+    let uuid =
+        Uuid::parse_str(&trimmed_id).map_err(|_| format!("Invalid task ID: {trimmed_id}"))?;
     let exists = state
         .store
         .list_all_downloads()

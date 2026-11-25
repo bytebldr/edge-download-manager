@@ -1,6 +1,4 @@
-use edm_core::automation::{
-    dispatch_completion_webhook, validate_webhook_url, AutomationConfig,
-};
+use edm_core::automation::{dispatch_completion_webhook, validate_webhook_url, AutomationConfig};
 use serde_json::json;
 use tauri::{command, State};
 

@@ -44,9 +44,10 @@ impl PackExecutor {
             .ends_with(".mpd")
         {
             let target_file = task.save_dir.join(&task.filename);
-            let recorder = super::dash::DashLiveRecorder::new(
-                super::dash::LiveRecordConfig::new(task.url.clone(), target_file.clone()),
-            );
+            let recorder = super::dash::DashLiveRecorder::new(super::dash::LiveRecordConfig::new(
+                task.url.clone(),
+                target_file.clone(),
+            ));
             let cancel_handle = recorder.cancel_handle();
             let task_cancelled = task.cancelled.clone();
             let watcher = tokio::spawn(async move {

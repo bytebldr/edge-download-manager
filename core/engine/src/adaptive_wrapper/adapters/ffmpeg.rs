@@ -1,9 +1,9 @@
 use crate::adaptive::AdaptiveDownloadTask;
+use crate::adaptive::TelemetryCallback;
 use crate::adaptive_wrapper::traits::AdaptiveWrapperAdapter;
 use crate::adaptive_wrapper::types::{
     ChunkingStrategy, PostFlightContext, PreFlightExecution, PreFlightPlan,
 };
-use crate::adaptive::TelemetryCallback;
 use crate::packs::ffmpeg::FfmpegPack;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -21,10 +21,7 @@ impl AdaptiveWrapperAdapter for FfmpegAdapter {
     ) -> Result<PreFlightPlan, String> {
         let caps = FfmpegPack::get_capabilities().await;
         let mut metadata = HashMap::new();
-        metadata.insert(
-            "hwaccel_nvenc".to_string(),
-            caps.supports_nvenc.to_string(),
-        );
+        metadata.insert("hwaccel_nvenc".to_string(), caps.supports_nvenc.to_string());
         metadata.insert("hwaccel_qsv".to_string(), caps.supports_qsv.to_string());
 
         Ok(PreFlightPlan {

@@ -37,10 +37,9 @@ impl ScheduleWindow {
             return true;
         }
 
-        let (Some(start_mins), Some(end_mins)) = (
-            parse_hhmm(&self.start_hhmm),
-            parse_hhmm(&self.end_hhmm),
-        ) else {
+        let (Some(start_mins), Some(end_mins)) =
+            (parse_hhmm(&self.start_hhmm), parse_hhmm(&self.end_hhmm))
+        else {
             return false;
         };
 

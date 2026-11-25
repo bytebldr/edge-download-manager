@@ -194,10 +194,17 @@ pub fn execute_download_with_selected_files(
         state: DownloadState::Downloading,
         size_total: effective_size.or_else(|| existing_record.as_ref().and_then(|r| r.size_total)),
         size_done: existing_record.as_ref().map(|r| r.size_done).unwrap_or(0),
-        resumable: existing_record.as_ref().map(|r| r.resumable).unwrap_or(true),
+        resumable: existing_record
+            .as_ref()
+            .map(|r| r.resumable)
+            .unwrap_or(true),
         etag: existing_record.as_ref().and_then(|r| r.etag.clone()),
-        last_modified: existing_record.as_ref().and_then(|r| r.last_modified.clone()),
-        content_type: existing_record.as_ref().and_then(|r| r.content_type.clone()),
+        last_modified: existing_record
+            .as_ref()
+            .and_then(|r| r.last_modified.clone()),
+        content_type: existing_record
+            .as_ref()
+            .and_then(|r| r.content_type.clone()),
         referer: referer.clone(),
         user_agent: user_agent.clone(),
         connections: exec_cfg.adaptive.max_connections,
@@ -254,8 +261,7 @@ pub fn execute_download_with_selected_files(
             ws_mgr_cb.clone(),
         );
         let result = edm_core::PackExecutor::execute(task, engine, client, Some(cb)).await;
-        let (final_state, error_msg, verified_size) =
-            telemetry::classify_execution_result(result);
+        let (final_state, error_msg, verified_size) = telemetry::classify_execution_result(result);
 
         telemetry::handle_download_completion(
             id,

@@ -5,7 +5,9 @@ use tauri::{command, State};
 use uuid::Uuid;
 
 use crate::os::{open_file, open_folder};
-use crate::services::download_manager::{execute_download_with_selected_files, remove_download_task};
+use crate::services::download_manager::{
+    execute_download_with_selected_files, remove_download_task,
+};
 use crate::services::extension_bridge::handle_extension_message;
 use crate::state::AppState;
 

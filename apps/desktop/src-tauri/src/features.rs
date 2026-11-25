@@ -73,7 +73,10 @@ impl PowerCountdownController {
 
         self.active.store(true, Ordering::Relaxed);
         *self.action.lock().unwrap_or_else(|e| e.into_inner()) = action.to_string();
-        *self.seconds_remaining.lock().unwrap_or_else(|e| e.into_inner()) = 60;
+        *self
+            .seconds_remaining
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = 60;
 
         let active_flag = self.active.clone();
         let action_str = action.to_string();
@@ -122,13 +125,23 @@ impl PowerCountdownController {
 
     pub fn cancel(&self) {
         self.active.store(false, Ordering::Relaxed);
-        *self.seconds_remaining.lock().unwrap_or_else(|e| e.into_inner()) = 0;
+        *self
+            .seconds_remaining
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = 0;
     }
 
     pub fn status(&self) -> PowerCountdownInfo {
         let active = self.active.load(Ordering::Relaxed);
-        let action = self.action.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let sec = *self.seconds_remaining.lock().unwrap_or_else(|e| e.into_inner());
+        let action = self
+            .action
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let sec = *self
+            .seconds_remaining
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         PowerCountdownInfo {
             active,
             action,

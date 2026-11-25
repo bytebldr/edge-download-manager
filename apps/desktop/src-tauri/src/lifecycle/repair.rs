@@ -1,8 +1,8 @@
-use std::path::PathBuf;
-use tracing::info;
 use super::install::get_default_install_dir;
 use super::platform;
 use super::types::{RepairPlan, RepairReport};
+use std::path::PathBuf;
+use tracing::info;
 
 pub fn perform_native_repair(plan: RepairPlan) -> Result<RepairReport, String> {
     let mut details = Vec::new();
@@ -30,7 +30,9 @@ pub fn perform_native_repair(plan: RepairPlan) -> Result<RepairReport, String> {
         } else if let Ok(current_exe) = std::env::current_exe() {
             let _ = std::fs::copy(&current_exe, &edm_exe);
             let _ = std::fs::copy(&current_exe, &desktop_exe);
-            details.push("Synchronized running binary to EDM.exe and edm-desktop-app.exe.".to_string());
+            details.push(
+                "Synchronized running binary to EDM.exe and edm-desktop-app.exe.".to_string(),
+            );
         } else {
             binaries_ok = false;
             details.push("Warning: Main EDM executable could not be verified.".to_string());
@@ -74,10 +76,20 @@ pub fn perform_native_repair(plan: RepairPlan) -> Result<RepairReport, String> {
             let edm_exe = install_dir.join("EDM.exe");
 
             if let Ok(appdata) = std::env::var("APPDATA") {
-                let start_menu_dir = PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs");
+                let start_menu_dir =
+                    PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs");
                 let start_menu_lnk = start_menu_dir.join("EDM.lnk");
-                match platform::create_com_shortcut(&start_menu_lnk, &edm_exe, &install_dir, None, 0, None) {
-                    Ok(_) => details.push("Restored Start Menu COM shortcut (EDM.lnk).".to_string()),
+                match platform::create_com_shortcut(
+                    &start_menu_lnk,
+                    &edm_exe,
+                    &install_dir,
+                    None,
+                    0,
+                    None,
+                ) {
+                    Ok(_) => {
+                        details.push("Restored Start Menu COM shortcut (EDM.lnk).".to_string())
+                    }
                     Err(e) => {
                         shortcuts_ok = false;
                         details.push(format!("Start menu shortcut repair failed: {}", e));
@@ -87,7 +99,14 @@ pub fn perform_native_repair(plan: RepairPlan) -> Result<RepairReport, String> {
 
             if let Ok(userprofile) = std::env::var("USERPROFILE") {
                 let desktop_lnk = PathBuf::from(userprofile).join("Desktop").join("EDM.lnk");
-                match platform::create_com_shortcut(&desktop_lnk, &edm_exe, &install_dir, None, 0, None) {
+                match platform::create_com_shortcut(
+                    &desktop_lnk,
+                    &edm_exe,
+                    &install_dir,
+                    None,
+                    0,
+                    None,
+                ) {
                     Ok(_) => details.push("Restored Desktop COM shortcut (EDM.lnk).".to_string()),
                     Err(e) => {
                         shortcuts_ok = false;
@@ -98,7 +117,10 @@ pub fn perform_native_repair(plan: RepairPlan) -> Result<RepairReport, String> {
         }
     }
 
-    info!("Native repair completed: browser={}, shortcuts={}, binaries={}", browser_ok, shortcuts_ok, binaries_ok);
+    info!(
+        "Native repair completed: browser={}, shortcuts={}, binaries={}",
+        browser_ok, shortcuts_ok, binaries_ok
+    );
 
     Ok(RepairReport {
         success: browser_ok && shortcuts_ok && binaries_ok,

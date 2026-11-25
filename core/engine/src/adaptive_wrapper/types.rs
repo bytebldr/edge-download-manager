@@ -4,9 +4,18 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChunkingStrategy {
-    StandardAdaptive { initial_chunk_size: u64, max_connections: usize },
-    CdnAntiThrottling { slice_size: u64, max_connections: usize },
-    FixedPartSize { part_size: u64, align_boundaries: bool }, // eD2k: 9,728,000 bytes
+    StandardAdaptive {
+        initial_chunk_size: u64,
+        max_connections: usize,
+    },
+    CdnAntiThrottling {
+        slice_size: u64,
+        max_connections: usize,
+    },
+    FixedPartSize {
+        part_size: u64,
+        align_boundaries: bool,
+    }, // eD2k: 9,728,000 bytes
     DirectStreamPiped,
 }
 

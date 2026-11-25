@@ -1,10 +1,10 @@
+use super::platform;
+use super::types::{OtaProgress, UpdateCheckResult};
+use crate::AppState;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 use tracing::info;
-use super::platform;
-use super::types::{OtaProgress, UpdateCheckResult};
-use crate::AppState;
 
 static LATEST_INSTALLER_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
@@ -40,7 +40,11 @@ extern "system" {
     fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> *mut std::ffi::c_void;
     fn Process32FirstW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
     fn Process32NextW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
-    fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+    fn OpenProcess(
+        dwDesiredAccess: u32,
+        bInheritHandle: i32,
+        dwProcessId: u32,
+    ) -> *mut std::ffi::c_void;
     fn TerminateProcess(hProcess: *mut std::ffi::c_void, uExitCode: u32) -> i32;
     fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
 }
@@ -96,14 +100,26 @@ pub fn kill_zombie_update_processes() {
                     loop {
                         let pid = entry.th32ProcessID;
                         if pid != current_pid && pid != 0 {
-                            let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
-                            let name = String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase();
-                            if target_names.iter().any(|&t| t == name || name.starts_with("edm_setup") || name.starts_with("edm_update")) {
+                            let len = entry
+                                .szExeFile
+                                .iter()
+                                .position(|&c| c == 0)
+                                .unwrap_or(entry.szExeFile.len());
+                            let name =
+                                String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase();
+                            if target_names.iter().any(|&t| {
+                                t == name
+                                    || name.starts_with("edm_setup")
+                                    || name.starts_with("edm_update")
+                            }) {
                                 let proc_handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
                                 if !proc_handle.is_null() {
                                     let _ = TerminateProcess(proc_handle, 0);
                                     CloseHandle(proc_handle);
-                                    append_update_log(&format!("Terminated zombie update process: {} (PID: {})", name, pid));
+                                    append_update_log(&format!(
+                                        "Terminated zombie update process: {} (PID: {})",
+                                        name, pid
+                                    ));
                                 }
                             }
                         }
@@ -119,7 +135,14 @@ pub fn kill_zombie_update_processes() {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "EDM_Update_Installer.exe", "/IM", "EDM_Setup.exe", "/T"])
+            .args([
+                "/F",
+                "/IM",
+                "EDM_Update_Installer.exe",
+                "/IM",
+                "EDM_Setup.exe",
+                "/T",
+            ])
             .creation_flags(CREATE_NO_WINDOW)
             .output();
 
@@ -318,10 +341,12 @@ async fn verify_release_sha256(
         if !resp.status().is_success() {
             continue;
         }
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read release checksums from {}: {}", checksum_url, e))?;
+        let body = resp.text().await.map_err(|e| {
+            format!(
+                "Failed to read release checksums from {}: {}",
+                checksum_url, e
+            )
+        })?;
 
         let expected = parse_sha256_for_asset(&body, asset_name).ok_or_else(|| {
             format!(
@@ -367,9 +392,7 @@ fn parse_sha256_for_asset(content: &str, asset_name: &str) -> Option<String> {
             None => return Some(first.to_ascii_lowercase()),
             Some(file_part) => {
                 let clean_name = file_part.trim_start_matches('*');
-                if clean_name == asset_name
-                    || clean_name.rsplit('/').next() == Some(asset_name)
-                {
+                if clean_name == asset_name || clean_name.rsplit('/').next() == Some(asset_name) {
                     return Some(first.to_ascii_lowercase());
                 }
             }
@@ -504,7 +527,9 @@ pub async fn install_update(
     );
 
     // Save target pending update flag in store for post-update verification
-    let _ = state.store.set_setting("pending_update_version", &installer_path.to_string_lossy());
+    let _ = state
+        .store
+        .set_setting("pending_update_version", &installer_path.to_string_lossy());
     let _ = state.store.checkpoint();
 
     // Verify installer file on disk
@@ -515,18 +540,28 @@ pub async fn install_update(
     })?;
     let file_size = metadata.len();
     if file_size < 1_000_000 {
-        let msg = format!("Installer package on disk is incomplete ({} bytes)", file_size);
+        let msg = format!(
+            "Installer package on disk is incomplete ({} bytes)",
+            file_size
+        );
         append_update_log(&format!("ERROR: {}", msg));
         return Err(msg);
     }
-    append_update_log(&format!("Installer verified on disk: {} (size: {} bytes)", installer_path.display(), file_size));
+    append_update_log(&format!(
+        "Installer verified on disk: {} (size: {} bytes)",
+        installer_path.display(),
+        file_size
+    ));
 
     // Pre-flight file lock validation & sibling termination
     append_update_log("Terminating sibling EDM processes...");
     let _ = platform::terminate_sibling_instances();
 
     // Detached handoff to updater package with silent headless flags
-    append_update_log(&format!("Handing off execution to update package: {}", installer_path.display()));
+    append_update_log(&format!(
+        "Handing off execution to update package: {}",
+        installer_path.display()
+    ));
     launch_installer_windows(&installer_path)?;
 
     // Gracefully shut down current instance to prevent file locks
@@ -662,7 +697,9 @@ fn verify_installer_integrity(installer_path: &Path) -> Result<(), String> {
         if status == 0 {
             append_update_log("Authenticode signature verified.");
         } else if status == TRUST_E_NOSIGNATURE {
-            append_update_log("Warning: Installer has no Authenticode signature; PE and SHA-256 checks passed.");
+            append_update_log(
+                "Warning: Installer has no Authenticode signature; PE and SHA-256 checks passed.",
+            );
         } else {
             return Err(format!(
                 "Security violation: Authenticode verification failed (0x{:08X})",
@@ -690,8 +727,15 @@ pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
             params_str
         ));
 
-        let path_wide: Vec<u16> = installer_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-        let params_wide: Vec<u16> = OsStr::new(&params_str).encode_wide().chain(std::iter::once(0)).collect();
+        let path_wide: Vec<u16> = installer_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let params_wide: Vec<u16> = OsStr::new(&params_str)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
 
         extern "system" {
             fn ShellExecuteW(
@@ -705,8 +749,14 @@ pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
         }
 
         const SW_SHOWNORMAL: i32 = 1;
-        let open_verb: Vec<u16> = OsStr::new("open").encode_wide().chain(std::iter::once(0)).collect();
-        let runas_verb: Vec<u16> = OsStr::new("runas").encode_wide().chain(std::iter::once(0)).collect();
+        let open_verb: Vec<u16> = OsStr::new("open")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let runas_verb: Vec<u16> = OsStr::new("runas")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
 
         let res = unsafe {
             ShellExecuteW(
@@ -724,7 +774,10 @@ pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
             return Ok(());
         }
 
-        append_update_log(&format!("ShellExecuteW (open) returned code {}, trying runas...", res));
+        append_update_log(&format!(
+            "ShellExecuteW (open) returned code {}, trying runas...",
+            res
+        ));
 
         let runas_res = unsafe {
             ShellExecuteW(
@@ -742,7 +795,10 @@ pub fn launch_installer_windows(installer_path: &Path) -> Result<(), String> {
             return Ok(());
         }
 
-        append_update_log(&format!("ShellExecuteW (runas) returned code {}, trying Command spawn fallback...", runas_res));
+        append_update_log(&format!(
+            "ShellExecuteW (runas) returned code {}, trying Command spawn fallback...",
+            runas_res
+        ));
 
         use std::os::windows::process::CommandExt;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
@@ -823,7 +879,9 @@ pub fn open_installer_folder() -> Result<(), String> {
             cmd.arg(&temp_dir);
         }
         cmd.creation_flags(CREATE_NO_WINDOW);
-        let _ = cmd.spawn().map_err(|e| format!("Failed to open directory: {}", e))?;
+        let _ = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to open directory: {}", e))?;
         Ok(())
     }
 

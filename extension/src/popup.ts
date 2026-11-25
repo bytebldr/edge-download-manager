@@ -247,7 +247,7 @@ class PopupController {
   private updateAllCounters() {
     const isDone = (d: DownloadItem) =>
       d.state === "completed" ||
-      (d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
+      (d.size_total != null && d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
     const activeDownloads = this.downloads.filter(
       (d) =>
         (d.state === "downloading" ||
@@ -611,7 +611,7 @@ class PopupController {
   private renderTasksTab(): string {
     const isDone = (d: DownloadItem) =>
       d.state === "completed" ||
-      (d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
+      (d.size_total != null && d.size_total > 0 && d.size_done >= d.size_total && d.speed_bytes_per_sec === 0 && d.state !== "paused" && d.state !== "failed" && d.state !== "queued");
     const activeDownloads = this.downloads.filter(
       (d) =>
         (d.state === "downloading" ||
@@ -679,7 +679,8 @@ class PopupController {
         d.url.toLowerCase().includes(this.searchQuery.toLowerCase());
       const isDone =
         d.state === "completed" ||
-        (d.size_total > 0 &&
+        (d.size_total != null &&
+          d.size_total > 0 &&
           d.size_done >= d.size_total &&
           d.speed_bytes_per_sec === 0 &&
           d.state !== "paused" &&

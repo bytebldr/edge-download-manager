@@ -118,7 +118,10 @@ async fn load_add_torrent(
             .await
             .map_err(|e| format!("Failed to read .torrent response bytes: {}", e))?;
 
-        validate_torrent_bytes(bytes.as_ref(), "received HTML authentication page or invalid response instead of bencode data")?;
+        validate_torrent_bytes(
+            bytes.as_ref(),
+            "received HTML authentication page or invalid response instead of bencode data",
+        )?;
         return Ok(AddTorrent::from_bytes(bytes.to_vec()));
     }
 
@@ -170,7 +173,9 @@ impl BitTorrentPack {
         url: &str,
         save_dir: &std::path::Path,
     ) -> Result<TorrentInspectionResult, String> {
-        use librqbit::{AddTorrentOptions, AddTorrentResponse, ListenerOptions, Session, SessionOptions};
+        use librqbit::{
+            AddTorrentOptions, AddTorrentResponse, ListenerOptions, Session, SessionOptions,
+        };
         use std::time::Duration;
 
         let add_torrent = load_add_torrent(url, None, None, None).await?;
@@ -211,9 +216,7 @@ impl BitTorrentPack {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => return Err(format!("Failed to inspect torrent: {}", e)),
             Err(_) => {
-                return Err(
-                    "Timed out after 25s resolving torrent/magnet metadata".to_string(),
-                )
+                return Err("Timed out after 25s resolving torrent/magnet metadata".to_string())
             }
         };
 
@@ -400,10 +403,15 @@ impl BitTorrentPack {
             let stats = handle.stats();
             if matches!(stats.state, librqbit::TorrentStatsState::Error) {
                 let _ = session.stop().await;
-                return Err("BitTorrent engine entered error state (disk I/O or swarm failure)".to_string());
+                return Err(
+                    "BitTorrent engine entered error state (disk I/O or swarm failure)".to_string(),
+                );
             }
 
-            let is_initializing = matches!(stats.state, librqbit::TorrentStatsState::Initializing { .. });
+            let is_initializing = matches!(
+                stats.state,
+                librqbit::TorrentStatsState::Initializing { .. }
+            );
 
             let now = std::time::Instant::now();
             let elapsed_sec = now.duration_since(last_tick_time).as_secs_f64().max(0.1);
@@ -446,7 +454,8 @@ impl BitTorrentPack {
             // Deferred disk space check once torrent metadata resolves total size
             if !disk_space_checked && stats.total_bytes > 0 {
                 disk_space_checked = true;
-                if let Err(e) = crate::security::check_disk_space(&task.save_dir, stats.total_bytes) {
+                if let Err(e) = crate::security::check_disk_space(&task.save_dir, stats.total_bytes)
+                {
                     let _ = session.stop().await;
                     return Err(format!("Insufficient disk space: {}", e));
                 }
@@ -474,7 +483,9 @@ impl BitTorrentPack {
                 stats.uploaded_bytes.saturating_sub(prev_uploaded_bytes)
             };
             prev_uploaded_bytes = stats.uploaded_bytes;
-            let elapsed_ul_sec = now.saturating_duration_since(last_upload_sample).as_secs_f64();
+            let elapsed_ul_sec = now
+                .saturating_duration_since(last_upload_sample)
+                .as_secs_f64();
             last_upload_sample = now;
             let measured_ul_bps = if elapsed_ul_sec > 0.0 {
                 ((upload_delta as f64 / elapsed_ul_sec) * 8.0) as u64
@@ -511,13 +522,14 @@ impl BitTorrentPack {
                 (0.3 * instant_bps as f64 + 0.7 * rolling_bps as f64) as u64
             };
 
-            let mode = if live_conns == 0 || (instant_bps > prev_instant_bps && prev_instant_bps > 0) {
-                AccelerationMode::Optimizing
-            } else if live_conns >= (task.config.max_connections / 2).max(2) {
-                AccelerationMode::Stable
-            } else {
-                AccelerationMode::Auto
-            };
+            let mode =
+                if live_conns == 0 || (instant_bps > prev_instant_bps && prev_instant_bps > 0) {
+                    AccelerationMode::Optimizing
+                } else if live_conns >= (task.config.max_connections / 2).max(2) {
+                    AccelerationMode::Stable
+                } else {
+                    AccelerationMode::Auto
+                };
             prev_instant_bps = instant_bps;
 
             let decision_reason = if is_initializing {
@@ -623,11 +635,15 @@ impl BitTorrentPack {
                 });
             }
 
-            let eff_speed = if is_initializing { 0 } else { (instant_bps / 8).max(dl_speed) };
+            let eff_speed = if is_initializing {
+                0
+            } else {
+                (instant_bps / 8).max(dl_speed)
+            };
             let is_download_complete =
                 stats.total_bytes > 0 && (stats.finished || progress_pct >= 100.0);
-            let has_seed_policy = power_cfg.seed_ratio_limit.is_some()
-                || power_cfg.seed_time_limit_mins.is_some();
+            let has_seed_policy =
+                power_cfg.seed_ratio_limit.is_some() || power_cfg.seed_time_limit_mins.is_some();
 
             if is_download_complete && has_seed_policy && seeding_started_at.is_none() {
                 seeding_started_at = Some(std::time::Instant::now());
@@ -679,26 +695,27 @@ impl BitTorrentPack {
                 decision_reason
             };
 
-            let eta_seconds = if !is_initializing && eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
-                let raw_eta = (stats.total_bytes - stats.progress_bytes) / eff_speed;
-                eta_sample_count += 1;
-                if eta_sample_count < 3 {
-                    None
+            let eta_seconds =
+                if !is_initializing && eff_speed > 0 && stats.total_bytes > stats.progress_bytes {
+                    let raw_eta = (stats.total_bytes - stats.progress_bytes) / eff_speed;
+                    eta_sample_count += 1;
+                    if eta_sample_count < 3 {
+                        None
+                    } else {
+                        let smoothed = match smoothed_eta_sec {
+                            None => raw_eta,
+                            Some(prev) => (0.1 * raw_eta as f64 + 0.9 * prev as f64) as u64,
+                        };
+                        smoothed_eta_sec = Some(smoothed);
+                        smoothed_eta_sec
+                    }
                 } else {
-                    let smoothed = match smoothed_eta_sec {
-                        None => raw_eta,
-                        Some(prev) => (0.1 * raw_eta as f64 + 0.9 * prev as f64) as u64,
-                    };
-                    smoothed_eta_sec = Some(smoothed);
-                    smoothed_eta_sec
-                }
-            } else {
-                if !is_initializing {
-                    eta_sample_count = 0;
-                    smoothed_eta_sec = None;
-                }
-                None
-            };
+                    if !is_initializing {
+                        eta_sample_count = 0;
+                        smoothed_eta_sec = None;
+                    }
+                    None
+                };
 
             if let Some(ref cb) = telemetry_cb {
                 cb(AdaptiveTelemetry {

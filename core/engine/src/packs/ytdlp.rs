@@ -501,7 +501,10 @@ impl YtDlpPack {
                 || task.url.contains("#4k")
             {
                 Some("2160")
-            } else if task.url.contains("#1440p") || task.filename.contains("1440p") || task.url.contains("#2k") {
+            } else if task.url.contains("#1440p")
+                || task.filename.contains("1440p")
+                || task.url.contains("#2k")
+            {
                 Some("1440")
             } else if task.url.contains("#1080p") || task.filename.contains("1080p") {
                 Some("1080")

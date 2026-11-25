@@ -1,9 +1,9 @@
 use crate::adaptive::AdaptiveDownloadTask;
+use crate::adaptive::TelemetryCallback;
 use crate::adaptive_wrapper::traits::AdaptiveWrapperAdapter;
 use crate::adaptive_wrapper::types::{
     ChunkingStrategy, PostFlightContext, PreFlightExecution, PreFlightPlan,
 };
-use crate::adaptive::TelemetryCallback;
 use async_trait::async_trait;
 use reqwest::Client;
 use std::collections::HashMap;

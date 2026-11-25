@@ -224,10 +224,11 @@ test("6. Torrent Upload Telemetry and Elapsed time support (Bug 2)", () => {
 // TEST 7: File Collision and Concurrency Limits (Bug 6 & Bug 8)
 // ---------------------------------------------------------
 test("7. File Collision and Concurrency Policy (Bug 6 & Bug 8)", () => {
-  const dm = fs.readFileSync(
-    path.join(rootDir, "apps", "desktop", "src-tauri", "src", "services", "download_manager.rs"),
-    "utf8"
-  );
+  const dmDir = path.join(rootDir, "apps", "desktop", "src-tauri", "src", "services", "download_manager");
+  const dm =
+    fs.readFileSync(path.join(dmDir, "mod.rs"), "utf8") +
+    "\n" +
+    fs.readFileSync(path.join(dmDir, "config.rs"), "utf8");
   assert.ok(
     dm.includes("filenameConflictPolicy"),
     "download_manager.rs must check filenameConflictPolicy"

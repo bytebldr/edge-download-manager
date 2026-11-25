@@ -33,7 +33,9 @@ pub fn parse_batch_import_file(file_path: String) -> Result<Vec<ImportedLink>, S
     let format = canonical
         .extension()
         .and_then(|ext| ext.to_str())
-        .ok_or_else(|| "Batch import file must have a .txt, .csv, or .html extension".to_string())?;
+        .ok_or_else(|| {
+            "Batch import file must have a .txt, .csv, or .html extension".to_string()
+        })?;
 
     let file = std::fs::File::open(&canonical)
         .map_err(|e| format!("Failed to open batch import file: {}", e))?;
@@ -51,7 +53,10 @@ pub fn parse_batch_import_file(file_path: String) -> Result<Vec<ImportedLink>, S
 }
 
 #[command]
-pub fn parse_batch_import_text(content: String, format: String) -> Result<Vec<ImportedLink>, String> {
+pub fn parse_batch_import_text(
+    content: String,
+    format: String,
+) -> Result<Vec<ImportedLink>, String> {
     if content.len() as u64 > MAX_BATCH_IMPORT_BYTES {
         return Err("Batch import content exceeds 5 MiB size limit".into());
     }

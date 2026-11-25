@@ -20,7 +20,7 @@
 ---
 
 > [!NOTE]
-> **Early Development**: Evo Download Manager (EDM) is currently in active early development (`v0.1.0`). Core acceleration, BitTorrent, and media extraction features are functional, though you may encounter occasional edge-case bugs or rapid updates. Feedback and bug reports are welcome via GitHub Issues!
+> **Early Development (`v0.1.0`)**: Evo Download Manager (EDM) `v0.1.0` delivers 64-stream adaptive acceleration, crash-safe resume with server change detection, selective BitTorrent file downloads, MPEG-DASH/HLS capture, and a System Tray Mini-Flyout. Feedback and bug reports are welcome via GitHub Issues!
 
 **Evo Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
 
@@ -56,25 +56,31 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 ## ✨ Why EDM is the Best Download Manager for Windows
 
 ### 🚀 Adaptive Multi-Connection Download Accelerator
-- **Up to 32 Parallel Streams**: Splits files dynamically into concurrent byte-range streams to saturate your internet connection and download at the maximum speed your network can deliver.
+- **Up to 64 Adaptive Parallel Streams**: Dynamically scales from `1` up to `64` concurrent byte-range streams per file when the server supports it, saturating high-speed connections.
 - **Dynamic Work-Stealing Tail Sniper**: Automatically detects slow or stalled server connections, splits remaining byte gaps, and reassigns them to faster workers.
-- **Token-Bucket Bandwidth Limiter**: Enforce global bandwidth limits to download large files without lagging games, video calls, or household Wi-Fi.
+- **Crash-Safe Resume & Server Change Guard**: Pause, close your laptop, or lose power — EDM recovers interrupted tasks on startup and checks `ETag`, `Last-Modified`, `If-Range`, and `Content-Length` so a changed file on the server never corrupts your download.
+- **Token-Bucket Bandwidth Limiter**: Enforce global or per-category bandwidth limits to download large files without lagging games or video calls.
 
-### 🧲 In-Process BitTorrent & Magnet Download Manager
-- **Zero Dead-End Downloads**: Opening a `.torrent` file or clicking a `magnet:` link automatically launches the in-process swarm engine to download your content—never leaving you stranded with an inert metadata file.
-- **Automatic Stop-Seeding on Completion**: Immediately closes the swarm session and stops uploading data once a torrent reaches 100%, preserving your upload bandwidth.
-- **Curated Tier-1 Public Tracker Injection**: Automatically injects high-availability public trackers into sparse magnet links for instant DHT peer discovery in under 3 seconds.
-- **Sequential Play-While-Downloading (VOD)**: Prioritizes video pieces sequentially so you can stream and preview `.mp4` and `.mkv` media files before the download finishes.
+### 🧲 In-Process BitTorrent & Selective File-by-File Swarm Engine
+- **Selective File-by-File Download**: Inspect `.torrent` files and `magnet:` links before starting, pick individual files with size summaries, `Select all` / `Select none`, and create/rename subfolders.
+- **Torrent Power Controls**: Sequential download mode, configurable seeding ratio and time limits, automatic Tier-1 tracker refresh, and IPv4/CIDR peer blocklists.
+- **Zero Dead-End Downloads**: Opening a `.torrent` file or clicking a `magnet:` link automatically launches the in-process `librqbit` swarm engine.
 
-### 🎥 4K/8K Media & Video Stream Downloader
-- **YouTube Dynamic Quality Selector**: Integrates a clean download button directly into YouTube watch pages and shorts, displaying every resolution actually available for that video (8K, 4K, 1440p, 1080p, 720p, 480p, 360p, 240p, 144p) alongside MP3/M4A audio extraction.
+### 🎥 4K/8K Media, HLS & MPEG-DASH Downloader
+- **Media Stream Picker & Live Recording**: Probe `.mpd` (MPEG-DASH), `.m3u8` (HLS), and `yt-dlp` sources to pick video quality, audio tracks, subtitles, or playlist entries — including bounded live stream recording.
 - **Dual-Stream Parallel Pipelining**: Simultaneously downloads high-resolution video and audio streams across parallel workers, then stitches them losslessly via FFmpeg (`-c copy`).
 - **M3U8 / HLS Stream Capture**: Concurrently fetches transport stream segments with in-process AES-128 decryption.
 
-### ⚡ Intelligent Upfront & Adaptive Wrapper Subsystem
-- **Speculative Sub-600ms Mirror Racing**: Automatically pings origin and CDN mirrors in parallel for GitHub releases and Hugging Face models, routing workers to the fastest responsive endpoint.
-- **Credential & Security Isolation**: Strips sensitive authorization headers and session cookies before contacting third-party mirrors.
-- **Cryptographic Hash Verification**: Automatically validates downloaded files against SHA-256, Blake3, and Git-LFS checksums.
+### 🗂️ Queues, Scheduler, Batch Import & Tray Mini-Flyout
+- **System Tray Mini-Flyout**: Click the tray icon for an instant compact card showing queued tasks on top, active downloads at the bottom, inline Pause/Resume/Cancel, ETA, and one-click **`Open EDM`**.
+- **Named Queues & Time-Based Scheduler**: Create custom queues with per-queue concurrency caps and overnight-capable `HH:MM` schedule windows.
+- **Batch Import & Page Link Grabber**: Import URL lists from `.txt`, `.csv`, or `.html` files, expand numeric ranges (`[1-10]`), or grab all downloadable links from the active browser tab.
+
+### ⚡ Protocols, Routing, Localization & Automation
+- **Broad Protocol Support**: HTTP/HTTPS, BitTorrent/Magnet, HLS (`.m3u8`), MPEG-DASH (`.mpd`), Metalink (`.meta4` / `.metalink`), FTP, and SFTP/FTPS.
+- **Per-Domain Proxy Routing & Request Overrides**: Route specific domains through custom HTTP/SOCKS5 proxies, enforce per-category speed/concurrency policies, and edit URL, headers, or proxy mid-download.
+- **Multi-Language UI (i18n + RTL)**: Built-in localization for English, Español, हिन्दी, العربية (automatic RTL), and 中文.
+- **Automation & Idle Memory Trim**: `aria2`-compatible JSON-RPC 2.0 endpoint (token-authenticated), completion webhooks, and Windows tray idle working-set trimming.
 
 ### 🧩 Seamless Browser Integration
 - **Automatic Download Capture**: Intercepts single-click and right-click downloads across Chrome, Edge, Brave, Opera, and Firefox.
@@ -94,7 +100,7 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 | :--- | :---: | :---: | :---: | :---: |
 | **License & Price** | **100% Free & Open Source (GPL-3.0)** | Paid (\$24.95 / year) | Free (Closed / Ad-Supported) | Free |
 | **User Interface** | **Modern Dark Theme & 3D Glass UI** | 90s-era Windows dialogs | Modern | Basic download shelf |
-| **Parallel Acceleration** | **Up to 32 Adaptive Streams** | Up to 32 Connections | Multi-segmented | Single connection |
+| **Parallel Acceleration** | **Up to 64 Adaptive Streams** | Up to 32 Connections | Multi-segmented | Single connection |
 | **BitTorrent & Magnet** | **Built-in In-Process Swarm Engine** | ❌ No Torrent Support | Supported | ❌ No |
 | **YouTube & Video Downloader** | **Dual-Stream Parallel Pipeline** | Basic video sniffer | Basic video grabber | ❌ No |
 | **Speed Telemetry** | **Real-time 250ms Byte Telemetry** | Averaged / Estimated | Basic graph | Simple progress bar |
@@ -109,10 +115,11 @@ Get the latest production release from the official [**GitHub Releases Page**](h
 
 | Package | Type | Link |
 | :--- | :--- | :--- |
-| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.0.12_x64-setup.exe`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/EDM_0.0.12_x64-setup.exe) |
-| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-extension-chromium.zip) |
-| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-firefox.xpi) |
-| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-extension.tar.gz) |
+| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.1.0_x64-setup.exe`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.0/EDM_0.1.0_x64-setup.exe) |
+| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.0/edm-extension-chromium.zip) |
+| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.0/edm-firefox.xpi) |
+| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.0/edm-extension.tar.gz) |
+| **Release Checksums** | SHA-256 Manifest (`.txt`) | [**`SHA256SUMS.txt`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.0/SHA256SUMS.txt) |
 
 ### Installing the Browser Companion:
 1. Download `edm-extension-chromium.zip` (for Chrome, Edge, Brave, Opera) or `edm-firefox.xpi` (for Firefox).
@@ -120,7 +127,7 @@ Get the latest production release from the official [**GitHub Releases Page**](h
    - Extract the `.zip` archive.
    - Go to `chrome://extensions` or `edge://extensions`.
    - Enable **Developer mode** (top-right switch).
-   - Click **Load unpacked** and select the extracted folder.
+   - Click **Load unpacked** and select the extracted folder (or `extension/dist/chromium` if building from source).
 3. The extension connects automatically to EDM and is ready to capture downloads!
 
 ---
@@ -131,7 +138,7 @@ Get the latest production release from the official [**GitHub Releases Page**](h
 Yes! EDM is 100% free and open source under the GPL-3.0 license. Unlike IDM, EDM does not require a paid license, has zero trial limits, contains zero advertisements, and includes modern features such as native BitTorrent support, 4K video extraction, and an intuitive dark theme interface.
 
 ### How does EDM download files faster than browsers?
-Standard web browsers download files through a single HTTP connection, which is often throttled by remote servers or high-latency network routes. EDM divides files into multiple byte-range segments and downloads them simultaneously over up to 32 parallel connections, fully utilizing your available bandwidth.
+Standard web browsers download files through a single HTTP connection, which is often throttled by remote servers or high-latency network routes. EDM divides files into multiple byte-range segments and downloads them simultaneously over up to 64 adaptive parallel connections, fully utilizing your available bandwidth.
 
 ### Can EDM download torrent files and magnet links?
 Yes. EDM includes an in-process BitTorrent client powered by `librqbit`. It resolves `magnet:` links, downloads `.torrent` files, contacts Tier-1 public trackers, and supports sequential streaming so you can watch video files while they download.
@@ -163,11 +170,12 @@ cargo test --workspace
 
 ---
 
-## 🔒 Security, Privacy & Code Signing
+## 🔒 Security & Privacy
 
+- [**Architecture Overview**](docs/02-new-architecture.md) — Modular directory map across `core/engine`, `core/bridge`, `apps/desktop`, and `extension`.
+- [**Contributing Guide**](docs/CONTRIBUTING.md) — Local setup, coding standards, and pull request workflow.
 - [**Privacy Policy**](PRIVACY.md) — Details on local-only network activity, zero telemetry, and browser extension permissions (Chrome Web Store Limited Use compliant).
 - [**Security Policy**](docs/SECURITY.md) — Vulnerability reporting and local IPC/integrity guarantees.
-- [**Code Signing Policy**](docs/CODE_SIGNING_POLICY.md) — Free code signing provided by [**SignPath.org**](https://signpath.org/), using a certificate by [**SignPath Foundation**](https://signpath.foundation/).
 - [**Third-Party Notices**](THIRD_PARTY_NOTICES.md) — Microsoft Edge WebView2 Redistributable, Tauri NSIS attribution, and open-source dependency licenses.
 
 ---

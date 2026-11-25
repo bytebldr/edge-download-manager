@@ -87,8 +87,8 @@ pub fn verify_file_checksum(
     {
         return Err("Invalid file path: parent directory traversal not allowed".into());
     }
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|e| format!("Failed to resolve file path: {}", e))?;
+    let canonical =
+        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve file path: {}", e))?;
     if !canonical.is_file() {
         return Err("Target path is not a regular file".into());
     }

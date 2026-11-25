@@ -30,7 +30,10 @@ pub async fn app_close(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall") {
+    if args
+        .iter()
+        .any(|a| a == "--setup" || a == "--uninstall" || a == "-uninstall")
+    {
         std::process::exit(0);
     }
 

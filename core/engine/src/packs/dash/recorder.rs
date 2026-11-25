@@ -249,8 +249,13 @@ impl DashLiveRecorder {
         let mut bytes_written = 0u64;
 
         if let Some(ref init_pat) = tmpl.initialization {
-            let resolved =
-                DashSegmentTemplate::resolve_pattern(init_pat, &track.id, None, track.bandwidth, None);
+            let resolved = DashSegmentTemplate::resolve_pattern(
+                init_pat,
+                &track.id,
+                None,
+                track.bandwidth,
+                None,
+            );
             let init_url = resolve_url(base, &resolved);
             let bytes = self.fetch_bytes(&init_url).await?;
             out_file

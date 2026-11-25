@@ -2,9 +2,7 @@ use crate::config;
 use crate::nmh;
 use chrono::Utc;
 use edm_core::sanitizer::Sanitizer;
-use edm_ipc::{
-    AppReply, DownloadOverview, DownloadState, ExtensionMessage, PROTOCOL_VERSION,
-};
+use edm_ipc::{AppReply, DownloadOverview, DownloadState, ExtensionMessage, PROTOCOL_VERSION};
 use edm_store::{DownloadRecord, Store};
 use std::env;
 use std::fs;

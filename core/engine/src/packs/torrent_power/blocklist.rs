@@ -21,8 +21,9 @@ impl IpBlocklist {
             if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
                 continue;
             }
-            let rule = parse_ipv4_rule(line)
-                .ok_or_else(|| format!("Invalid IP blocklist rule at line {}: '{}'", idx + 1, line))?;
+            let rule = parse_ipv4_rule(line).ok_or_else(|| {
+                format!("Invalid IP blocklist rule at line {}: '{}'", idx + 1, line)
+            })?;
             ranges.push(rule);
         }
         Ok(Self::from_ranges(ranges))

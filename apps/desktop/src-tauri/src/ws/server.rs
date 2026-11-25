@@ -39,7 +39,10 @@ fn spawn_accept_loop(listener: TcpListener, manager: Arc<WsManager>) {
             let (stream, peer_addr) = match listener.accept().await {
                 Ok(conn) => conn,
                 Err(e) => {
-                    warn!("WebSocket listener accept error: {}. Retrying in 50ms...", e);
+                    warn!(
+                        "WebSocket listener accept error: {}. Retrying in 50ms...",
+                        e
+                    );
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }

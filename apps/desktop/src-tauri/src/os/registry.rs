@@ -247,7 +247,8 @@ pub fn purge_all_user_data() {
         let _ = std::fs::remove_file(lnk);
     }
     if let Ok(appdata_dir) = std::env::var("APPDATA") {
-        let lnk = PathBuf::from(&appdata_dir).join(r"Microsoft\Windows\Start Menu\Programs\EDM.lnk");
+        let lnk =
+            PathBuf::from(&appdata_dir).join(r"Microsoft\Windows\Start Menu\Programs\EDM.lnk");
         let _ = std::fs::remove_file(lnk);
         let _ = std::fs::remove_dir_all(PathBuf::from(&appdata_dir).join("EDM"));
     }

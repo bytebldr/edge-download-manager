@@ -75,7 +75,11 @@ fn dash_track_to_format(track: &DashTrack, is_video: bool) -> MediaStreamFormat 
         bandwidth: Some(track.bandwidth),
         filesize: None,
         vcodec: if is_video { track.codecs.clone() } else { None },
-        acodec: if !is_video { track.codecs.clone() } else { None },
+        acodec: if !is_video {
+            track.codecs.clone()
+        } else {
+            None
+        },
         language: track.language.clone(),
         url: track.base_url.clone(),
     }
@@ -174,7 +178,10 @@ async fn probe_with_ytdlp(url: &str) -> Result<MediaProbeInfo, String> {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Invalid JSON from yt-dlp: {}", e))?;
 
-    let title = json["title"].as_str().unwrap_or("Untitled Media").to_string();
+    let title = json["title"]
+        .as_str()
+        .unwrap_or("Untitled Media")
+        .to_string();
     let is_live = json["is_live"].as_bool().unwrap_or(false);
     let duration_secs = json["duration"].as_f64();
     let thumbnail = json["thumbnail"].as_str().map(str::to_string);
@@ -191,13 +198,14 @@ async fn probe_with_ytdlp(url: &str) -> Result<MediaProbeInfo, String> {
 
             let width = f["width"].as_u64().map(|w| w as u32);
             let height = f["height"].as_u64().map(|h| h as u32);
-            let resolution = f["resolution"]
-                .as_str()
-                .map(str::to_string)
-                .or_else(|| match (width, height) {
-                    (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
-                    _ => None,
-                });
+            let resolution =
+                f["resolution"]
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| match (width, height) {
+                        (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
+                        _ => None,
+                    });
 
             let item = MediaStreamFormat {
                 format_id: f["format_id"].as_str().unwrap_or("unknown").to_string(),

@@ -41,10 +41,11 @@ pub fn parse_metalink(xml: &str) -> Result<Vec<MetalinkFile>, String> {
         let filename = extract_attr(&attrs, "name")
             .map(|s| decode_xml_entities(&s).trim().to_string())
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "Metalink <file> element missing non-empty 'name' attribute".to_string())?;
+            .ok_or_else(|| {
+                "Metalink <file> element missing non-empty 'name' attribute".to_string()
+            })?;
 
-        let size = extract_element_text(&inner, "size")
-            .and_then(|s| s.trim().parse::<u64>().ok());
+        let size = extract_element_text(&inner, "size").and_then(|s| s.trim().parse::<u64>().ok());
 
         let hashes = parse_hashes(&inner);
         let mut urls = parse_urls(&inner);

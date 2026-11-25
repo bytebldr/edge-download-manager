@@ -156,7 +156,10 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
         let size = m.size();
         let scale = m.scale_factor();
         let (cx, cy) = match rect.position {
-            tauri::Position::Logical(_) => ((raw_ix + raw_iw / 2.0) * scale, (raw_iy + raw_ih / 2.0) * scale),
+            tauri::Position::Logical(_) => (
+                (raw_ix + raw_iw / 2.0) * scale,
+                (raw_iy + raw_ih / 2.0) * scale,
+            ),
             tauri::Position::Physical(_) => (raw_ix + raw_iw / 2.0, raw_iy + raw_ih / 2.0),
         };
         if cx >= pos.x as f64
@@ -174,11 +177,16 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
         let wa = monitor.work_area();
         let (ix, iy) = match rect.position {
             tauri::Position::Physical(p) => (p.x, p.y),
-            tauri::Position::Logical(p) => ((p.x * scale).round() as i32, (p.y * scale).round() as i32),
+            tauri::Position::Logical(p) => {
+                ((p.x * scale).round() as i32, (p.y * scale).round() as i32)
+            }
         };
         let (iw, ih) = match rect.size {
             tauri::Size::Physical(s) => (s.width as i32, s.height as i32),
-            tauri::Size::Logical(s) => ((s.width * scale).round() as i32, (s.height * scale).round() as i32),
+            tauri::Size::Logical(s) => (
+                (s.width * scale).round() as i32,
+                (s.height * scale).round() as i32,
+            ),
         };
         let fw = (FLYOUT_W * scale).round() as i32;
         let fh = (FLYOUT_H * scale).round() as i32;
@@ -279,7 +287,10 @@ fn main() {
             }
         }
         if recovered > 0 {
-            tracing::info!("Recovered {} interrupted download(s) to Paused state", recovered);
+            tracing::info!(
+                "Recovered {} interrupted download(s) to Paused state",
+                recovered
+            );
         }
     }
 
@@ -592,16 +603,7 @@ fn main() {
                 let state_ref = state.inner().clone();
                 state.rt_handle.spawn(async move {
                     let _ = services::download_manager::execute_download(
-                        &state_ref,
-                        id,
-                        target_url,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
+                        &state_ref, id, target_url, None, None, None, None, None, None, None,
                     );
                 });
 

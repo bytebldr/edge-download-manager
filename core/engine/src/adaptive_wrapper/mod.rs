@@ -87,13 +87,17 @@ impl AdaptiveWrapper {
                 let final_target = task.save_dir.join(format!("{}.{}", task.filename, ext));
                 (final_target, vec![video_path, audio_path])
             }
-            PreFlightExecution::DirectProtocol { task: proto_task, custom_metadata: _ } => {
+            PreFlightExecution::DirectProtocol {
+                task: proto_task,
+                custom_metadata: _,
+            } => {
                 let path = match pack_target.pack_id {
                     FeaturePackId::BitTorrentPack => {
                         PackExecutor::execute_bittorrent(proto_task, telemetry_cb.clone()).await?
                     }
                     FeaturePackId::M3u8Pack => {
-                        PackExecutor::execute_m3u8(proto_task, client.clone(), telemetry_cb.clone()).await?
+                        PackExecutor::execute_m3u8(proto_task, client.clone(), telemetry_cb.clone())
+                            .await?
                     }
                     FeaturePackId::YtDlpPack => {
                         PackExecutor::execute_ytdlp(
@@ -150,4 +154,3 @@ mod tests {
         }
     }
 }
-

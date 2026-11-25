@@ -37,9 +37,7 @@ async fn handle_api_request(
 
     // Security Guard 2: Anti-CSRF Origin check (allowlisted extensions only)
     if let Some(origin) = headers.get(axum::http::header::ORIGIN) {
-        let valid_origin = origin
-            .to_str()
-            .is_ok_and(config::is_allowed_http_origin);
+        let valid_origin = origin.to_str().is_ok_and(config::is_allowed_http_origin);
         if !valid_origin {
             return Err((StatusCode::FORBIDDEN, "Forbidden: Untrusted Origin"));
         }
@@ -87,9 +85,7 @@ pub async fn serve(store: Arc<Mutex<Store>>) -> io::Result<()> {
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
-                    origin
-                        .to_str()
-                        .is_ok_and(config::is_allowed_http_origin)
+                    origin.to_str().is_ok_and(config::is_allowed_http_origin)
                 }))
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers(tower_http::cors::Any),

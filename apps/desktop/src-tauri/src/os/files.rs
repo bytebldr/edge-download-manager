@@ -510,13 +510,11 @@ mod tests {
 
         assert!(dirs.downloads.ends_with("Downloads"));
         assert!(
-            dirs.documents.ends_with("Documents\\EDM")
-                || dirs.documents.ends_with("Documents/EDM")
+            dirs.documents.ends_with("Documents\\EDM") || dirs.documents.ends_with("Documents/EDM")
         );
         assert!(dirs.music.ends_with("Music\\EDM") || dirs.music.ends_with("Music/EDM"));
         assert!(
-            dirs.pictures.ends_with("Pictures\\EDM")
-                || dirs.pictures.ends_with("Pictures/EDM")
+            dirs.pictures.ends_with("Pictures\\EDM") || dirs.pictures.ends_with("Pictures/EDM")
         );
         assert!(dirs.videos.ends_with("Videos\\EDM") || dirs.videos.ends_with("Videos/EDM"));
         assert!(dirs.temp.ends_with("edm_chunks"));

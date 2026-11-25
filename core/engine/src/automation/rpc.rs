@@ -199,7 +199,8 @@ mod tests {
 
     #[test]
     fn parses_get_version_with_valid_secret() {
-        let raw = r#"{"jsonrpc":"2.0","id":"1","method":"aria2.getVersion","params":["token:mysecret"]}"#;
+        let raw =
+            r#"{"jsonrpc":"2.0","id":"1","method":"aria2.getVersion","params":["token:mysecret"]}"#;
         let (id, action) = parse_aria2_rpc(raw, "mysecret").unwrap();
         assert_eq!(id, json!("1"));
         assert_eq!(action, RpcAction::GetVersion);
@@ -211,7 +212,8 @@ mod tests {
         let err = parse_aria2_rpc(missing, "secret").unwrap_err();
         assert_eq!(err.error.as_ref().unwrap().code, -32600);
 
-        let wrong = r#"{"jsonrpc":"2.0","id":2,"method":"aria2.tellActive","params":["token:nope"]}"#;
+        let wrong =
+            r#"{"jsonrpc":"2.0","id":2,"method":"aria2.tellActive","params":["token:nope"]}"#;
         let err = parse_aria2_rpc(wrong, "secret").unwrap_err();
         assert_eq!(err.error.as_ref().unwrap().code, -32600);
     }
@@ -237,7 +239,8 @@ mod tests {
             ("aria2.unpause", RpcAction::Unpause { gid: "g1".into() }),
             ("aria2.remove", RpcAction::Remove { gid: "g1".into() }),
         ] {
-            let raw = json!({"jsonrpc":"2.0","id":"x","method":method,"params":["token:s","g1"]}).to_string();
+            let raw = json!({"jsonrpc":"2.0","id":"x","method":method,"params":["token:s","g1"]})
+                .to_string();
             let (_, action) = parse_aria2_rpc(&raw, "s").unwrap();
             assert_eq!(action, expected);
         }
@@ -252,7 +255,8 @@ mod tests {
         let bad_json = parse_aria2_rpc("{not json", "").unwrap_err();
         assert_eq!(bad_json.error.unwrap().code, -32700);
 
-        let unknown = parse_aria2_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"aria2.unknown"}"#, "").unwrap_err();
+        let unknown = parse_aria2_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"aria2.unknown"}"#, "")
+            .unwrap_err();
         assert_eq!(unknown.error.unwrap().code, -32601);
     }
 }

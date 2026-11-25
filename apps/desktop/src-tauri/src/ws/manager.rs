@@ -209,7 +209,8 @@ impl WsManager {
                 speed: 0,
                 status,
                 error_msg: None,
-                created_at: created_at.or_else(|| Some(chrono::Utc::now().timestamp_millis() as u64)),
+                created_at: created_at
+                    .or_else(|| Some(chrono::Utc::now().timestamp_millis() as u64)),
             },
         );
         drop(map);

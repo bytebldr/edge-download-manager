@@ -1,10 +1,10 @@
 use crate::adaptive::AdaptiveDownloadTask;
+use crate::adaptive::TelemetryCallback;
 use crate::adaptive_wrapper::scout::Scout;
 use crate::adaptive_wrapper::traits::AdaptiveWrapperAdapter;
 use crate::adaptive_wrapper::types::{
     ChunkingStrategy, EndpointCandidate, PostFlightContext, PreFlightExecution, PreFlightPlan,
 };
-use crate::adaptive::TelemetryCallback;
 use crate::packs::github::GithubPack;
 use async_trait::async_trait;
 use reqwest::Client;

@@ -4,9 +4,10 @@
 use std::path::Path;
 
 #[cfg(all(windows, target_arch = "x86_64"))]
-pub const EMBEDDED_WEBVIEW2_LOADER: &[u8] = include_bytes!(
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../../assets/vendor/win-x64/WebView2Loader.dll")
-);
+pub const EMBEDDED_WEBVIEW2_LOADER: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../assets/vendor/win-x64/WebView2Loader.dll"
+));
 
 const PINNED_WV2_SHA256: &str = "86545B66CDB0603BC26B626FB9AD610CB6E71F28D468F5EA66DF23B03DDA96D5";
 

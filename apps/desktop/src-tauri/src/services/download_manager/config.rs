@@ -135,32 +135,32 @@ pub(super) fn build_execution_config(
 
 /// Classify a download into a canonical category name from its filename and target flags.
 pub(super) fn classify_category(filename: &str, is_p2p: bool, is_stream: bool) -> &'static str {
-    let ext = filename
-        .split('.')
-        .next_back()
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = filename.split('.').next_back().unwrap_or("").to_lowercase();
 
     if is_p2p || ext == "torrent" {
         "Compressed"
     } else if is_stream
-        || ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"]
-            .contains(&ext.as_str())
+        || [
+            "mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts",
+        ]
+        .contains(&ext.as_str())
     {
         "Video"
     } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext.as_str()) {
         "Music"
-    } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico"]
-        .contains(&ext.as_str())
+    } else if [
+        "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico",
+    ]
+    .contains(&ext.as_str())
     {
         "Pictures"
-    } else if ["pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv"]
-        .contains(&ext.as_str())
+    } else if [
+        "pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv",
+    ]
+    .contains(&ext.as_str())
     {
         "Documents"
-    } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"]
-        .contains(&ext.as_str())
-    {
+    } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"].contains(&ext.as_str()) {
         "Compressed"
     } else {
         "Programs"
@@ -209,9 +209,7 @@ pub(super) fn resolve_destination(
         is_p2p || initial_category.eq_ignore_ascii_case("Compressed") || ext == "torrent";
 
     if save_dir.is_none() || save_path == default_downloads_path {
-        if let Some(target) =
-            resolve_auto_category_dir(settings_val, &ext, is_p2p_or_archive)
-        {
+        if let Some(target) = resolve_auto_category_dir(settings_val, &ext, is_p2p_or_archive) {
             let _ = std::fs::create_dir_all(&target);
             save_path = target;
         }
@@ -336,7 +334,9 @@ fn resolve_auto_category_dir(
                             .map(|arr| {
                                 arr.iter().any(|e| {
                                     e.as_str()
-                                        .map(|s| s.trim_start_matches('.').eq_ignore_ascii_case(ext))
+                                        .map(|s| {
+                                            s.trim_start_matches('.').eq_ignore_ascii_case(ext)
+                                        })
                                         .unwrap_or(false)
                                 })
                             })
@@ -362,14 +362,24 @@ fn resolve_auto_category_dir(
         let dirs = crate::os::get_system_user_dirs_internal();
         if is_p2p_or_archive {
             routed_path = Some(PathBuf::from(dirs.downloads).join("Archives"));
-        } else if ["mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts"].contains(&ext) {
+        } else if [
+            "mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "ts",
+        ]
+        .contains(&ext)
+        {
             routed_path = Some(PathBuf::from(dirs.videos));
         } else if ["mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus"].contains(&ext) {
             routed_path = Some(PathBuf::from(dirs.music));
-        } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico"].contains(&ext)
+        } else if [
+            "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "ico",
+        ]
+        .contains(&ext)
         {
             routed_path = Some(PathBuf::from(dirs.pictures));
-        } else if ["pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv"].contains(&ext)
+        } else if [
+            "pdf", "doc", "docx", "txt", "xlsx", "pptx", "rtf", "odt", "csv",
+        ]
+        .contains(&ext)
         {
             routed_path = Some(PathBuf::from(dirs.documents));
         } else if ["zip", "rar", "7z", "tar", "gz", "iso", "bin", "bz2", "xz"].contains(&ext) {

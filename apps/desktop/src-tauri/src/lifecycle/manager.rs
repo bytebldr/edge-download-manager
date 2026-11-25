@@ -84,7 +84,10 @@ impl LifecycleManager {
     }
 
     pub fn get_app_handle(&self) -> Option<AppHandle> {
-        self.app_handle.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.app_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     #[allow(dead_code)]

@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// A single link extracted from a batch import source (.txt, .csv, .html).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +34,10 @@ pub fn is_valid_link_url(raw: &str) -> bool {
     }
 
     let lower = trimmed.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("http://").or_else(|| lower.strip_prefix("https://")) {
+    if let Some(rest) = lower
+        .strip_prefix("http://")
+        .or_else(|| lower.strip_prefix("https://"))
+    {
         return !rest.is_empty() && !rest.starts_with('/');
     }
     if let Some(rest) = lower.strip_prefix("magnet:") {
@@ -100,7 +103,11 @@ pub fn parse_csv(content: &str) -> Vec<ImportedLink> {
         }
         let filename_hint = file_idx.and_then(|i| row.get(i).cloned());
         let category_hint = cat_idx.and_then(|i| row.get(i).cloned());
-        links.push(ImportedLink::new(raw_url.to_string(), filename_hint, category_hint));
+        links.push(ImportedLink::new(
+            raw_url.to_string(),
+            filename_hint,
+            category_hint,
+        ));
     }
     deduplicate_links(links)
 }
@@ -237,12 +244,11 @@ pub fn parse_html(content: &str) -> Vec<ImportedLink> {
 }
 
 fn is_attr_boundary(bytes: &[u8], start: usize, len: usize) -> bool {
-    let before_ok = start == 0
-        || bytes[start - 1].is_ascii_whitespace()
-        || bytes[start - 1] == b'<';
+    let before_ok =
+        start == 0 || bytes[start - 1].is_ascii_whitespace() || bytes[start - 1] == b'<';
     let after = start + len;
-    let after_ok = after < bytes.len()
-        && (bytes[after].is_ascii_whitespace() || bytes[after] == b'=');
+    let after_ok =
+        after < bytes.len() && (bytes[after].is_ascii_whitespace() || bytes[after] == b'=');
     before_ok && after_ok
 }
 
@@ -299,7 +305,8 @@ mod tests {
 
     #[test]
     fn parses_csv_without_header() {
-        let input = "https://example.com/one.pdf,doc.pdf,Documents\nhttp://example.com/two.mp3,,Music\n";
+        let input =
+            "https://example.com/one.pdf,doc.pdf,Documents\nhttp://example.com/two.mp3,,Music\n";
         let links = parse_csv(input);
         assert_eq!(
             links,

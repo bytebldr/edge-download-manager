@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use tracing::info;
 use super::platform;
 use super::types::{ExistingInstallationInfo, InstallOptions};
+use std::path::{Path, PathBuf};
+use tracing::info;
 
 pub fn get_default_install_dir() -> String {
     #[cfg(windows)]
@@ -13,7 +13,10 @@ pub fn get_default_install_dir() -> String {
             return format!("{}\\AppData\\Local\\EDM", user);
         }
     }
-    std::env::temp_dir().join("EDM").to_string_lossy().to_string()
+    std::env::temp_dir()
+        .join("EDM")
+        .to_string_lossy()
+        .to_string()
 }
 
 pub fn check_existing_installation() -> ExistingInstallationInfo {
@@ -27,7 +30,9 @@ pub fn check_existing_installation() -> ExistingInstallationInfo {
             publisher: None,
         };
 
-        if let Ok(key) = CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM") {
+        if let Ok(key) =
+            CURRENT_USER.open(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM")
+        {
             let mut valid = false;
             if let Ok(loc) = key.get_string("InstallLocation") {
                 let clean_loc = loc.trim_matches('"');
@@ -35,7 +40,8 @@ pub fn check_existing_installation() -> ExistingInstallationInfo {
                 let lower = clean_loc.to_lowercase();
                 if !lower.contains(r"\temp\")
                     && !lower.contains("nsd")
-                    && (dir_path.join("EDM.exe").exists() || dir_path.join("edm-desktop-app.exe").exists())
+                    && (dir_path.join("EDM.exe").exists()
+                        || dir_path.join("edm-desktop-app.exe").exists())
                 {
                     valid = true;
                     info.install_dir = Some(clean_loc.to_string());
@@ -60,7 +66,8 @@ pub fn check_existing_installation() -> ExistingInstallationInfo {
                     if !lower.contains(r"\temp\")
                         && !lower.contains("nsd")
                         && !lower.contains("target")
-                        && (dir_path.join("EDM.exe").exists() || dir_path.join("edm-desktop-app.exe").exists())
+                        && (dir_path.join("EDM.exe").exists()
+                            || dir_path.join("edm-desktop-app.exe").exists())
                     {
                         info.is_installed = true;
                         info.install_dir = Some(dir);
@@ -116,8 +123,11 @@ fn perform_windows_installation(options: InstallOptions) -> Result<(), String> {
     let _ = platform::terminate_sibling_instances();
 
     // 3. Copy running executable and sibling binaries to target_dir
-    let current_exe = std::env::current_exe().map_err(|e| format!("Cannot resolve current exe: {}", e))?;
-    let current_dir = current_exe.parent().ok_or("Cannot resolve current exe directory")?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("Cannot resolve current exe: {}", e))?;
+    let current_dir = current_exe
+        .parent()
+        .ok_or("Cannot resolve current exe directory")?;
 
     if let Ok(entries) = std::fs::read_dir(current_dir) {
         for entry in entries.flatten() {
@@ -152,8 +162,18 @@ fn perform_windows_installation(options: InstallOptions) -> Result<(), String> {
         let candidate_paths = [
             current_dir.join("edm-nmh.exe"),
             current_dir.join("resources").join("edm-nmh.exe"),
-            current_dir.join("resources").join("target").join("release").join("edm-nmh.exe"),
-            current_dir.join("_up_").join("_up_").join("_up_").join("target").join("release").join("edm-nmh.exe"),
+            current_dir
+                .join("resources")
+                .join("target")
+                .join("release")
+                .join("edm-nmh.exe"),
+            current_dir
+                .join("_up_")
+                .join("_up_")
+                .join("_up_")
+                .join("target")
+                .join("release")
+                .join("edm-nmh.exe"),
         ];
         let mut copied_nmh = false;
         for c in &candidate_paths {
@@ -191,15 +211,20 @@ fn perform_windows_installation(options: InstallOptions) -> Result<(), String> {
     if let Ok(appdata) = std::env::var("APPDATA") {
         let start_menu_dir = PathBuf::from(appdata).join(r"Microsoft\Windows\Start Menu\Programs");
         let start_menu_lnk = start_menu_dir.join("EDM.lnk");
-        let _ = platform::create_com_shortcut(&start_menu_lnk, &edm_exe, &target_path, None, 0, None);
-        info!("Created Start Menu COM shortcut at {}", start_menu_lnk.display());
+        let _ =
+            platform::create_com_shortcut(&start_menu_lnk, &edm_exe, &target_path, None, 0, None);
+        info!(
+            "Created Start Menu COM shortcut at {}",
+            start_menu_lnk.display()
+        );
     }
 
     // 5. Desktop shortcut using Pure Win32 COM
     if options.create_desktop_shortcut {
         if let Ok(userprofile) = std::env::var("USERPROFILE") {
             let desktop_lnk = PathBuf::from(userprofile).join("Desktop").join("EDM.lnk");
-            let _ = platform::create_com_shortcut(&desktop_lnk, &edm_exe, &target_path, None, 0, None);
+            let _ =
+                platform::create_com_shortcut(&desktop_lnk, &edm_exe, &target_path, None, 0, None);
             info!("Created Desktop COM shortcut at {}", desktop_lnk.display());
         }
     }
@@ -220,9 +245,14 @@ fn perform_windows_installation(options: InstallOptions) -> Result<(), String> {
     // 9. Uninstall registry key with full metadata
     let _ = platform::register_uninstall_entry(&target_path, &edm_exe);
 
-    info!("Native installation completed successfully in {}", target_path.display());
+    info!(
+        "Native installation completed successfully in {}",
+        target_path.display()
+    );
 
     // 10. Spawn installed EDM and exit installer
-    let _ = std::process::Command::new(&edm_exe).args(["--show-window"]).spawn();
+    let _ = std::process::Command::new(&edm_exe)
+        .args(["--show-window"])
+        .spawn();
     std::process::exit(0);
 }

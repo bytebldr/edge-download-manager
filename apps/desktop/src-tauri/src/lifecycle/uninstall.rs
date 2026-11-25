@@ -1,6 +1,6 @@
+use super::platform;
 use std::path::PathBuf;
 use tracing::info;
-use super::platform;
 
 pub fn perform_silent_uninstallation() {
     let _ = perform_native_uninstallation(false);
@@ -47,7 +47,10 @@ fn perform_windows_uninstallation(purge_user_data: bool) -> Result<(), String> {
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
             let p_str = parent.to_string_lossy().to_lowercase();
-            if !p_str.contains("temp") && !p_str.contains("target\\release") && !p_str.contains("target\\debug") {
+            if !p_str.contains("temp")
+                && !p_str.contains("target\\release")
+                && !p_str.contains("target\\debug")
+            {
                 target_dir = Some(parent.to_path_buf());
             }
         }
@@ -81,7 +84,13 @@ fn perform_windows_uninstallation(purge_user_data: bool) -> Result<(), String> {
 
     let _ = std::process::Command::new("powershell")
         .creation_flags(CREATE_NO_WINDOW)
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cleanup_script])
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &cleanup_script,
+        ])
         .spawn();
 
     info!("Native uninstallation dispatched. Exiting.");

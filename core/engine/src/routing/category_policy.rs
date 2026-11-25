@@ -11,15 +11,22 @@ pub struct CategoryPolicy {
 
 /// Default per-category policies for standard download categories.
 pub fn default_category_policies() -> Vec<CategoryPolicy> {
-    ["Video", "Music", "Documents", "Programs", "Compressed", "Other"]
-        .into_iter()
-        .map(|category| CategoryPolicy {
-            category: category.to_string(),
-            max_concurrent: None,
-            max_speed_bps: None,
-            save_dir: None,
-        })
-        .collect()
+    [
+        "Video",
+        "Music",
+        "Documents",
+        "Programs",
+        "Compressed",
+        "Other",
+    ]
+    .into_iter()
+    .map(|category| CategoryPolicy {
+        category: category.to_string(),
+        max_concurrent: None,
+        max_speed_bps: None,
+        save_dir: None,
+    })
+    .collect()
 }
 
 /// Finds a policy by category name (case-insensitive, trimmed).

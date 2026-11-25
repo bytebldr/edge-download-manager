@@ -122,9 +122,11 @@ impl AdaptiveEngine {
             .map_err(|e| format!("Writer init failed: {}", e))?;
 
         // 2. Persist download in SQLite store (preserve progress on resume)
-        let existing_record = self.store.list_all_downloads().ok().and_then(|records| {
-            records.into_iter().find(|d| d.id == task.id)
-        });
+        let existing_record = self
+            .store
+            .list_all_downloads()
+            .ok()
+            .and_then(|records| records.into_iter().find(|d| d.id == task.id));
 
         if existing_record.is_none() {
             let record = DownloadRecord {
@@ -153,7 +155,9 @@ impl AdaptiveEngine {
             };
             let _ = self.store.insert_download(&record);
         } else {
-            let _ = self.store.update_download_state(task.id, DownloadState::Downloading, None);
+            let _ = self
+                .store
+                .update_download_state(task.id, DownloadState::Downloading, None);
         }
 
         // 3. Initialize Adaptive Controller & Work Scheduler
@@ -205,7 +209,9 @@ impl AdaptiveEngine {
                         total_size,
                         partial_or_target_exists,
                     ) {
-                        warn!("Server file changed or partial file missing; restarting from byte 0");
+                        warn!(
+                            "Server file changed or partial file missing; restarting from byte 0"
+                        );
                         let _ = self.store.delete_segments(task.id);
                         let _ = writer.reset();
                         let _ = self.store.update_download_validators(

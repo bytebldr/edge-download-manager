@@ -118,7 +118,9 @@ impl Store {
     }
 
     fn lock_conn(&self) -> std::result::Result<MutexGuard<'_, Connection>, StoreError> {
-        self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))
+        self.conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))
     }
 
     fn migrate(&self) -> std::result::Result<(), StoreError> {

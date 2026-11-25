@@ -90,7 +90,10 @@ fn ensure_webview2_loader(exe: &Path) {
         if std::fs::write(&tmp, EMBEDDED_WEBVIEW2_LOADER).is_ok() {
             let _ = std::fs::rename(&tmp, &target_dll);
             let _ = std::fs::remove_file(&tmp);
-            tracing::info!("Instantly self-healed WebView2Loader.dll in {}", parent.display());
+            tracing::info!(
+                "Instantly self-healed WebView2Loader.dll in {}",
+                parent.display()
+            );
             return;
         }
     }
@@ -128,7 +131,8 @@ fn ensure_webview2_loader(exe: &Path) {
         if let Some(cur_parent) = cur_exe.parent() {
             candidate_sources.push(cur_parent.join("WebView2Loader.dll"));
             candidate_sources.push(cur_parent.join(r"resources\WebView2Loader.dll"));
-            candidate_sources.push(cur_parent.join(r"_up_\_up_\_up_\target\release\WebView2Loader.dll"));
+            candidate_sources
+                .push(cur_parent.join(r"_up_\_up_\_up_\target\release\WebView2Loader.dll"));
         }
     }
 
@@ -803,7 +807,9 @@ pub fn collect_diagnostics(_ext_id: Option<String>) -> DiagnosticsReport {
     }
 }
 
-pub fn read_message<R: Read>(mut reader: R) -> io::Result<Option<Result<ExtensionMessage, String>>> {
+pub fn read_message<R: Read>(
+    mut reader: R,
+) -> io::Result<Option<Result<ExtensionMessage, String>>> {
     let mut len_bytes = [0u8; 4];
     match reader.read_exact(&mut len_bytes) {
         Ok(_) => (),
