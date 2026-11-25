@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Edge Download Manager (EDM) are documented in this file.
+All notable changes to Evo Download Manager (EDM) are documented in this file.
 
 ## [v0.0.25] - 2026-11-20
 
@@ -218,7 +218,7 @@ All notable changes to Edge Download Manager (EDM) are documented in this file.
 - **Native Backend Fallback**: Added direct `send_system_notification_internal` invocation in `download_manager.rs` on task completion as a fail-safe.
 
 #### 7. Extension Rebranding & OTA Label Cleanup
-- **Extension Name Clean**: Renamed browser extension from `"EDM — Edge Download Manager"` to strictly `"EDM"` across all Chromium and Firefox manifests.
+- **Extension Name Clean**: Renamed browser extension from `"EDM — Evo Download Manager"` to strictly `"EDM"` across all Chromium and Firefox manifests.
 - **Pro Badge & OTA Removal**: Removed `"PRO "` prefix from version badge in Settings About section (`v0.0.15`) and stripped `"OTA"` references across UI labels.
 
 ## [v0.0.14] - 2026-11-15

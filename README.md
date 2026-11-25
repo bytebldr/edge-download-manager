@@ -2,15 +2,15 @@
   <img src="./assets/logo.png" alt="EDM Download Manager Logo" width="120" height="120" />
 </p>
 
-<h1 align="center">Edge Download Manager</h1>
+<h1 align="center">Evo Download Manager</h1>
 
 <p align="center">
   <strong>The modern, ultra-fast, open-source download manager and download accelerator for Windows (IDM & FDM Alternative). Built with Rust and Tauri v2.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/bytebldr/edge-download-manager/releases/latest"><img src="https://img.shields.io/github/v/release/bytebldr/edge-download-manager?color=00f2fe&style=flat-square" alt="Latest Release" /></a>
-  <a href="https://github.com/bytebldr/edge-download-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/bytebldr/evo-download-manager/releases/latest"><img src="https://img.shields.io/github/v/release/bytebldr/evo-download-manager?color=00f2fe&style=flat-square" alt="Latest Release" /></a>
+  <a href="https://github.com/bytebldr/evo-download-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/download--manager-accelerated-00f2fe?style=flat-square" alt="Download Manager" />
   <img src="https://img.shields.io/badge/IDM--alternative-open--source-10b981?style=flat-square" alt="IDM Alternative" />
   <img src="https://img.shields.io/badge/bittorrent-native%20swarm-8b5cf6?style=flat-square" alt="BitTorrent Client" />
@@ -20,9 +20,9 @@
 ---
 
 > [!NOTE]
-> **Early Development**: Edge Download Manager (EDM) is currently in active early development (`v0.0.x`). Core acceleration, BitTorrent, and media extraction features are functional, though you may encounter occasional edge-case bugs or rapid updates. Feedback and bug reports are welcome via GitHub Issues!
+> **Early Development**: Evo Download Manager (EDM) is currently in active early development (`v0.1.0`). Core acceleration, BitTorrent, and media extraction features are functional, though you may encounter occasional edge-case bugs or rapid updates. Feedback and bug reports are welcome via GitHub Issues!
 
-**Edge Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
+**Evo Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
 
 Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates file transfers up to 10x using dynamic parallel chunking, automatic BitTorrent & magnet handling, 4K/8K media extraction, and seamless browser extension capture.
 
@@ -34,21 +34,21 @@ Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates fi
 Organize, manage, and monitor all your downloads in a distraction-free, high-density interface with instant filtering by videos, music, archives, documents, and programs.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="EDM Download Manager Dashboard" width="900" />
+  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="EDM Download Manager Dashboard" width="900" />
 </p>
 
 ### Live Speed Telemetry & Multi-Connection Inspector
 Inspect genuine transfer speeds, real-time throughput graphs, and per-connection worker progress with zero synthetic numbers or fake peaks.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-telemetry-inspector-v0.0.5.png" alt="EDM Download Manager Live Speed Telemetry" width="720" />
+  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-telemetry-inspector-v0.0.5.png" alt="EDM Download Manager Live Speed Telemetry" width="720" />
 </p>
 
 ### Seamless Browser Companion Extension
 Catch downloads instantly from your favorite browser. Check live progress, pause, resume, or open files directly from the browser popup without switching windows.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/edge-download-manager/main/assets/screenshots/edm-browser-extension-v0.0.5.png" alt="EDM Download Manager Browser Extension" width="440" />
+  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-browser-extension-v0.0.5.png" alt="EDM Download Manager Browser Extension" width="440" />
 </p>
 
 ---
@@ -90,7 +90,7 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 
 ## ⚖️ How EDM Compares
 
-| Feature | EDM (Edge Download Manager) | Internet Download Manager (IDM) | Free Download Manager (FDM) | Default Browser Downloader |
+| Feature | EDM (Evo Download Manager) | Internet Download Manager (IDM) | Free Download Manager (FDM) | Default Browser Downloader |
 | :--- | :---: | :---: | :---: | :---: |
 | **License & Price** | **100% Free & Open Source (GPL-3.0)** | Paid (\$24.95 / year) | Free (Closed / Ad-Supported) | Free |
 | **User Interface** | **Modern Dark Theme & 3D Glass UI** | 90s-era Windows dialogs | Modern | Basic download shelf |
@@ -105,14 +105,14 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 
 ## 📥 Download & Install
 
-Get the latest production release from the official [**GitHub Releases Page**](https://github.com/bytebldr/edge-download-manager/releases/latest):
+Get the latest production release from the official [**GitHub Releases Page**](https://github.com/bytebldr/evo-download-manager/releases/latest):
 
 | Package | Type | Link |
 | :--- | :--- | :--- |
-| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.0.12_x64-setup.exe`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/EDM_0.0.12_x64-setup.exe) |
-| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-extension-chromium.zip) |
-| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-firefox.xpi) |
-| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/edge-download-manager/releases/download/v0.0.12/edm-extension.tar.gz) |
+| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.0.12_x64-setup.exe`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/EDM_0.0.12_x64-setup.exe) |
+| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-extension-chromium.zip) |
+| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-firefox.xpi) |
+| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.0.12/edm-extension.tar.gz) |
 
 ### Installing the Browser Companion:
 1. Download `edm-extension-chromium.zip` (for Chrome, Edge, Brave, Opera) or `edm-firefox.xpi` (for Firefox).
@@ -147,8 +147,8 @@ Prerequisites: **Rust** (stable toolchain), **Node.js** (20+ LTS), and **Visual 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/bytebldr/edge-download-manager.git
-cd edge-download-manager
+git clone https://github.com/bytebldr/evo-download-manager.git
+cd evo-download-manager
 
 # 2. Build the browser companion extension
 cd extension && npm install && npm run build && cd ..
@@ -163,9 +163,18 @@ cargo test --workspace
 
 ---
 
+## 🔒 Security, Privacy & Code Signing
+
+- [**Privacy Policy**](PRIVACY.md) — Details on local-only network activity, zero telemetry, and browser extension permissions (Chrome Web Store Limited Use compliant).
+- [**Security Policy**](docs/SECURITY.md) — Vulnerability reporting and local IPC/integrity guarantees.
+- [**Code Signing Policy**](docs/CODE_SIGNING_POLICY.md) — Free code signing provided by [**SignPath.org**](https://signpath.org/), using a certificate by [**SignPath Foundation**](https://signpath.foundation/).
+- [**Third-Party Notices**](THIRD_PARTY_NOTICES.md) — Microsoft Edge WebView2 Redistributable, Tauri NSIS attribution, and open-source dependency licenses.
+
+---
+
 ## 📄 License
 
-Edge Download Manager is released under the [**GNU General Public License v3.0 (GPL-3.0)**](LICENSE).
+Evo Download Manager is released under the [**GNU General Public License v3.0 (GPL-3.0)**](LICENSE).
 
 
 

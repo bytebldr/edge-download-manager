@@ -1,3 +1,7 @@
+; Copyright 2019-2024 Tauri Programme within The Commons Conservancy
+; SPDX-License-Identifier: Apache-2.0
+; SPDX-License-Identifier: MIT
+
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -838,7 +842,7 @@ Section Install
   WriteRegStr SHCTX "${UNINSTKEY}" "MainBinaryName" "${MAINBINARYNAME}.exe"
 
   ; Registry information for add/remove programs
-  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "EDM — Edge Download Manager"
+  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "EDM — Evo Download Manager"
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\""
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "bytebldr"
