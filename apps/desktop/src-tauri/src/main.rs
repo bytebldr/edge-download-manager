@@ -267,14 +267,19 @@ fn main() {
 
     // Startup crash recovery: Reset interrupted 'Downloading' or 'Probing' tasks to 'Paused'
     if let Ok(records) = store.list_all_downloads() {
+        let mut recovered = 0usize;
         for r in records {
             if r.state == DownloadState::Downloading || r.state == DownloadState::Probing {
                 let _ = store.update_download_state(
                     r.id,
                     DownloadState::Paused,
-                    Some("Interrupted by application shutdown"),
+                    Some("Interrupted (power/app closed) — ready to resume"),
                 );
+                recovered += 1;
             }
+        }
+        if recovered > 0 {
+            tracing::info!("Recovered {} interrupted download(s) to Paused state", recovered);
         }
     }
 
@@ -770,6 +775,7 @@ fn main() {
                         }
                         "quit" => {
                             let state = app.state::<AppState>();
+                            let _ = state.store.checkpoint();
                             trigger_graceful_quit(app.clone(), state.inner().clone());
                         }
                         _ => {}
