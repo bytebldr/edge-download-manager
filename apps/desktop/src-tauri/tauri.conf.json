@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "EDM — Edge Download Manager v0.0.28",
+        "title": "EDM — Evo Download Manager v0.1.0",
         "url": "index.html",
         "width": 950,
         "height": 660,
@@ -26,11 +26,13 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com https://github.com ws://127.0.0.1:* http://127.0.0.1:*;"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://api.github.com https://github.com ws://127.0.0.1:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';"
     }
   },
   "bundle": {
     "active": true,
+    "publisher": "bytebldr",
+    "copyright": "Copyright (c) 2026 bytebldr (GPL-3.0-only)",
     "targets": [
       "nsis"
     ],

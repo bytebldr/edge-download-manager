@@ -93,30 +93,23 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
 }
 
 pub fn open_file(save_dir: &str, filename: &str) {
-    let file_path = PathBuf::from(save_dir).join(filename);
-    edm_core::security::open_file_safely(&file_path);
+    if let Err(e) = secure_open_file(Path::new(save_dir), filename, "completed") {
+        tracing::warn!("Failed to open file securely: {}", e);
+    }
 }
 
 pub fn open_folder(save_dir: &str, filename: &str) {
-    let save_path = Path::new(save_dir);
-    if let Err(e) = secure_open_folder(save_path, filename) {
+    if let Err(e) = secure_open_folder(Path::new(save_dir), filename) {
         tracing::warn!("Failed to open folder securely: {}", e);
-        let _ = std::process::Command::new("explorer.exe")
-            .arg(save_dir)
-            .spawn();
     }
 }
 
-pub fn secure_open_file(
-    save_dir: &std::path::Path,
-    filename: &str,
-    status: &str,
-) -> Result<(), String> {
-    if status != "completed" {
-        return Err("Cannot open file: download is not completed".into());
-    }
-
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+fn validate_and_contain_path(save_dir: &Path, filename: &str) -> Result<PathBuf, String> {
+    if filename.is_empty()
+        || filename.contains("..")
+        || filename.contains('/')
+        || filename.contains('\\')
+    {
         return Err("Invalid file path".into());
     }
 
@@ -136,30 +129,58 @@ pub fn secure_open_file(
         return Err("Access denied: path traversal detected".into());
     }
 
-    open::that(&canonical_target).map_err(|e| format!("Failed to open file: {}", e))?;
-    Ok(())
+    Ok(canonical_target)
+}
+
+pub fn secure_open_file(
+    save_dir: &std::path::Path,
+    filename: &str,
+    status: &str,
+) -> Result<(), String> {
+    if status != "completed" {
+        return Err("Cannot open file: download is not completed".into());
+    }
+
+    let canonical_target = validate_and_contain_path(save_dir, filename)?;
+    let target_str = canonical_target.to_string_lossy();
+
+    if edm_core::security::is_safe_to_open_directly(&target_str) {
+        open::that(&canonical_target).map_err(|e| format!("Failed to open file: {}", e))?;
+        Ok(())
+    } else {
+        // Do not directly execute hazardous/executable file types (.exe, .bat, .ps1, .vbs, etc.)
+        secure_open_folder(save_dir, filename)
+    }
 }
 
 pub fn secure_open_folder(save_dir: &std::path::Path, filename: &str) -> Result<(), String> {
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+    if filename.is_empty()
+        || filename.contains("..")
+        || filename.contains('/')
+        || filename.contains('\\')
+    {
         return Err("Invalid file path".into());
     }
 
     let target = save_dir.join(filename);
     if !target.exists() {
-        if save_dir.exists() {
-            open::that(save_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
-            return Ok(());
-        }
-        return Err("Directory does not exist".into());
+        let canonical_dir = save_dir
+            .canonicalize()
+            .map_err(|_| "Directory does not exist".to_string())?;
+        open::that(&canonical_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
+        return Ok(());
     }
+
+    let canonical_target = validate_and_contain_path(save_dir, filename)?;
 
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let display_path = canonical_target.to_string_lossy();
+        let clean_path = display_path.strip_prefix(r"\\?\").unwrap_or(&display_path);
         let mut cmd = std::process::Command::new("explorer");
-        let arg = format!("/select,\"{}\"", target.display());
+        let arg = format!("/select,\"{}\"", clean_path);
         cmd.raw_arg(&arg);
         cmd.creation_flags(CREATE_NO_WINDOW);
         let _ = cmd
@@ -170,7 +191,10 @@ pub fn secure_open_folder(save_dir: &std::path::Path, filename: &str) -> Result<
 
     #[cfg(not(windows))]
     {
-        open::that(save_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
+        let canonical_dir = save_dir
+            .canonicalize()
+            .map_err(|e| format!("Cannot resolve dir: {}", e))?;
+        open::that(&canonical_dir).map_err(|e| format!("Failed to open directory: {}", e))?;
         Ok(())
     }
 }
