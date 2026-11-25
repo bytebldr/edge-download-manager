@@ -185,6 +185,7 @@ async fn benchmark_baseline_vs_adaptive() {
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let t1 = Instant::now();

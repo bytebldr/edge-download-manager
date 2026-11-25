@@ -23,6 +23,35 @@ pub fn execute_download(
     referer: Option<String>,
     user_agent: Option<String>,
 ) -> Result<(Uuid, bool), String> {
+    execute_download_with_selected_files(
+        state,
+        id,
+        url,
+        filename,
+        save_dir,
+        max_connections,
+        size_total,
+        cookies,
+        referer,
+        user_agent,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_download_with_selected_files(
+    state: &AppState,
+    id: Uuid,
+    url: String,
+    filename: Option<String>,
+    save_dir: Option<PathBuf>,
+    max_connections: Option<u32>,
+    size_total: Option<u64>,
+    cookies: Option<String>,
+    referer: Option<String>,
+    user_agent: Option<String>,
+    selected_files: Option<Vec<usize>>,
+) -> Result<(Uuid, bool), String> {
     let lc = state.lifecycle.clone();
     state.rt_handle.spawn(async move {
         lc.record_activity().await;
@@ -579,6 +608,7 @@ pub fn execute_download(
         cookies,
         referer: referer.clone(),
         user_agent,
+        selected_files,
     };
 
     let engine = state.engine.clone();

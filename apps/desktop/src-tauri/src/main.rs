@@ -865,6 +865,7 @@ fn main() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             probe_url,
+            inspect_torrent_files,
             start_download,
             pause_download,
             resume_download,

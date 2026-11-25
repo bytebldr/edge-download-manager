@@ -172,6 +172,7 @@ async fn test_adaptive_download_full_integrity() {
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let completed_path = engine.download(task, None).await.expect("download failed");
@@ -213,6 +214,7 @@ async fn test_single_stream_fallback_norange() {
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let completed_path = engine
@@ -326,6 +328,7 @@ async fn test_cancellation_and_persistence() {
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let res = engine.download(task, None).await;
@@ -368,6 +371,7 @@ async fn test_bandwidth_limiter() {
         cookies: None,
         referer: None,
         user_agent: None,
+        selected_files: None,
     };
 
     let t0 = std::time::Instant::now();

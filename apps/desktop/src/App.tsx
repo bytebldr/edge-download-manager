@@ -756,7 +756,8 @@ export default function App() {
     customFilename?: string,
     customCategory?: string,
     customConns?: number,
-    customSaveDir?: string
+    customSaveDir?: string,
+    selectedFiles?: number[]
   ) => {
     const targetUrl = customUrl || "";
     if (!targetUrl.trim()) return;
@@ -833,6 +834,7 @@ export default function App() {
       filename: name,
       saveDir: targetDir,
       maxConnections: conns,
+      selectedFiles,
     });
 
     const isQueued = backendRes?.status === "queued";
@@ -2462,8 +2464,8 @@ export default function App() {
       <AddDownloadModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        onAdd={(url, filename, category, conns, saveDir) => {
-          handleAddDownload(url, filename, category, conns, saveDir);
+        onAdd={(url, filename, category, conns, saveDir, selectedFiles) => {
+          handleAddDownload(url, filename, category, conns, saveDir, selectedFiles);
         }}
         settings={settings}
       />

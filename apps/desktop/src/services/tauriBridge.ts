@@ -155,11 +155,43 @@ export async function tauriProbeUrl(url: string): Promise<BackendProbeResult> {
   };
 }
 
+export interface TorrentFileEntry {
+  index: number;
+  path: string;
+  size_bytes: number;
+}
+
+export interface TorrentInspectionResult {
+  name: string;
+  total_bytes: number;
+  files: TorrentFileEntry[];
+}
+
+export async function tauriInspectTorrentFiles(
+  url: string,
+  saveDir?: string
+): Promise<TorrentInspectionResult> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<TorrentInspectionResult>("inspect_torrent_files", {
+      url,
+      saveDir: saveDir || null,
+      save_dir: saveDir || null,
+    });
+  }
+  return {
+    name: "Simulated Torrent",
+    total_bytes: 0,
+    files: [],
+  };
+}
+
 export async function tauriStartDownload(params: {
   url: string;
   filename?: string;
   saveDir?: string;
   maxConnections?: number;
+  selectedFiles?: number[];
 }): Promise<{ status: string; id: string }> {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -170,6 +202,8 @@ export async function tauriStartDownload(params: {
       save_dir: params.saveDir,
       maxConnections: params.maxConnections,
       max_connections: params.maxConnections,
+      selectedFiles: params.selectedFiles,
+      selected_files: params.selectedFiles,
     });
   }
 
@@ -178,6 +212,8 @@ export async function tauriStartDownload(params: {
     id: Date.now().toString(),
   };
 }
+
+export const tauriAddDownload = tauriStartDownload;
 
 export async function tauriPauseDownload(id: string): Promise<void> {
   if (isTauri()) {

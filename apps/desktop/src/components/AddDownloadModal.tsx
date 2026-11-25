@@ -1,15 +1,36 @@
 import React, { useState } from "react";
-import { X, CheckCircle2, FolderOpen, FileCode } from "lucide-react";
+import { X, CheckCircle2, FolderOpen, FileCode, Search, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { backdropVariants, modalVariants } from "../utils/motion";
 import { EdmSettings } from "../types/settings";
-import { isTauri, tauriProbeUrl, tauriSelectDownloadDirectory, tauriSelectTorrentFile } from "../services/tauriBridge";
+import {
+  isTauri,
+  TorrentInspectionResult,
+  tauriInspectTorrentFiles,
+  tauriProbeUrl,
+  tauriSelectDownloadDirectory,
+  tauriSelectTorrentFile,
+} from "../services/tauriBridge";
 
 interface AddDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (url: string, filename: string, category: string, connections: number, saveDir: string) => void;
+  onAdd: (
+    url: string,
+    filename: string,
+    category: string,
+    connections: number,
+    saveDir: string,
+    selectedFiles?: number[]
+  ) => void;
   settings: EdmSettings;
+}
+
+function formatTorrentBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
@@ -30,6 +51,15 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     size: string;
     finalUrl: string;
   } | null>(null);
+  const [isInspectingTorrent, setIsInspectingTorrent] = useState(false);
+  const [torrentInfo, setTorrentInfo] = useState<TorrentInspectionResult | null>(null);
+  const [torrentInspectError, setTorrentInspectError] = useState<string | null>(null);
+  const [selectedFileIndices, setSelectedFileIndices] = useState<Set<number>>(new Set());
+
+  const trimmedUrl = urlInput.trim();
+  const lowerUrl = trimmedUrl.toLowerCase();
+  const isTorrentTarget =
+    lowerUrl.startsWith("magnet:") || lowerUrl.split("?")[0].endsWith(".torrent");
 
   const detectCategoryName = (fname: string): string => {
     const ext = fname.split(".").pop()?.toLowerCase() || "";
@@ -65,12 +95,18 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     setUrlInput("");
     setFileNameInput("");
     setProbeResult(null);
+    setTorrentInfo(null);
+    setTorrentInspectError(null);
+    setSelectedFileIndices(new Set());
     setAddSaveDir("");
     onClose();
   };
 
   const handleUrlInputChange = (val: string) => {
     setUrlInput(val);
+    setTorrentInfo(null);
+    setTorrentInspectError(null);
+    setSelectedFileIndices(new Set());
     if (!val.trim()) {
       setFileNameInput("");
       setProbeResult(null);
@@ -124,6 +160,30 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     }
   };
 
+  const handleInspectTorrent = async (targetUrlOverride?: string) => {
+    const target = (targetUrlOverride ?? urlInput).trim();
+    if (!target) return;
+    setIsInspectingTorrent(true);
+    setTorrentInspectError(null);
+    setProbeResult(null);
+    try {
+      const info = await tauriInspectTorrentFiles(target, currentDestination);
+      setTorrentInfo(info);
+      setSelectedFileIndices(new Set(info.files.map((f) => f.index)));
+      if (info.name && (!fileNameInput.trim() || target.toLowerCase().startsWith("magnet:"))) {
+        setFileNameInput(info.name);
+      }
+    } catch (e: any) {
+      setTorrentInfo(null);
+      setSelectedFileIndices(new Set());
+      setTorrentInspectError(
+        typeof e === "string" ? e : e?.message || "Failed to inspect torrent metadata"
+      );
+    } finally {
+      setIsInspectingTorrent(false);
+    }
+  };
+
   const handleBrowseAddDir = async () => {
     try {
       const chosen = await tauriSelectDownloadDirectory(currentDestination);
@@ -143,20 +203,53 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
         const name = chosen.split(/[\\/]/).pop() || "";
         setFileNameInput(name);
         setAddCategory("Compressed");
+        void handleInspectTorrent(chosen);
       }
     } catch (err) {
       console.warn("Failed to select torrent file:", err);
     }
   };
 
+  const toggleTorrentFile = (index: number) => {
+    setSelectedFileIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const selectAllTorrentFiles = () => {
+    if (!torrentInfo) return;
+    setSelectedFileIndices(new Set(torrentInfo.files.map((f) => f.index)));
+  };
+
+  const selectNoTorrentFiles = () => {
+    setSelectedFileIndices(new Set());
+  };
+
+  const selectedFilesList = torrentInfo
+    ? torrentInfo.files.filter((f) => selectedFileIndices.has(f.index))
+    : [];
+  const selectedTotalBytes = selectedFilesList.reduce((acc, f) => acc + f.size_bytes, 0);
+  const noFilesSelected = Boolean(torrentInfo && torrentInfo.files.length > 0 && selectedFileIndices.size === 0);
+
   const handleSubmit = () => {
-    if (!urlInput.trim()) return;
+    if (!trimmedUrl || noFilesSelected) return;
+    const selectedIndices =
+      torrentInfo && torrentInfo.files.length > 0
+        ? Array.from(selectedFileIndices).sort((a, b) => a - b)
+        : undefined;
     onAdd(
-      urlInput.trim(),
+      trimmedUrl,
       fileNameInput.trim(),
       effectiveCategory,
       addConnections,
-      currentDestination
+      currentDestination,
+      selectedIndices
     );
     resetState();
   };
@@ -216,13 +309,26 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                     onChange={(e) => handleUrlInputChange(e.target.value)}
                     className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none"
                   />
-                  <button
-                    onClick={handleProbe}
-                    disabled={isProbing || !urlInput.trim() || urlInput.startsWith("magnet:") || urlInput.endsWith(".torrent")}
-                    className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer"
-                  >
-                    {isProbing ? "Probing..." : "Probe Server"}
-                  </button>
+                  {isTorrentTarget ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleInspectTorrent()}
+                      disabled={isInspectingTorrent || !trimmedUrl}
+                      className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>{isInspectingTorrent ? "Looking up..." : "Look up"}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleProbe}
+                      disabled={isProbing || !trimmedUrl}
+                      className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer shrink-0"
+                    >
+                      {isProbing ? "Probing..." : "Probe Server"}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -246,6 +352,75 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                   </div>
                   <div className="text-[11px] text-[var(--text-secondary)] font-mono">
                     Size: {probeResult.size} • Accept-Ranges: bytes • Sparse Pre-allocation Ready
+                  </div>
+                </div>
+              )}
+
+              {torrentInspectError && (
+                <div className="p-3 rounded-xl card-3d border border-red-500/40 text-xs flex items-start gap-2 text-red-400">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="break-words">{torrentInspectError}</span>
+                </div>
+              )}
+
+              {torrentInfo && torrentInfo.files.length > 0 && (
+                <div className="p-3 rounded-xl card-3d border border-[var(--border-subtle)] text-xs space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-[var(--text-primary)] truncate">
+                      {torrentInfo.name || "Torrent Contents"}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={selectAllTorrentFiles}
+                        className="text-[11px] font-medium text-[var(--accent)] hover:underline cursor-pointer"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-[var(--text-muted)]">•</span>
+                      <button
+                        type="button"
+                        onClick={selectNoTorrentFiles}
+                        className="text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:underline cursor-pointer"
+                      >
+                        Select none
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                    {torrentInfo.files.map((file) => {
+                      const checked = selectedFileIndices.has(file.index);
+                      return (
+                        <label
+                          key={file.index}
+                          className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleTorrentFile(file.index)}
+                              className="accent-[var(--accent)] cursor-pointer shrink-0"
+                            />
+                            <span className="text-[11px] text-[var(--text-primary)] truncate font-mono" title={file.path}>
+                              {file.path}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-[var(--text-secondary)] font-mono shrink-0">
+                            {formatTorrentBytes(file.size_bytes)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pt-1 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--text-secondary)] font-mono">
+                    <span>
+                      Selected: {selectedFilesList.length} {selectedFilesList.length === 1 ? "file" : "files"},{" "}
+                      {(selectedTotalBytes / (1024 * 1024)).toFixed(1)} MB
+                    </span>
+                    <span>Total: {formatTorrentBytes(torrentInfo.total_bytes)}</span>
                   </div>
                 </div>
               )}
@@ -315,7 +490,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!urlInput.trim()}
+                disabled={!trimmedUrl || noFilesSelected}
                 className="btn-primary-3d px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 cursor-pointer"
               >
                 Start Download

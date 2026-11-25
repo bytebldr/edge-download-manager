@@ -5,9 +5,27 @@ use tauri::{command, State};
 use uuid::Uuid;
 
 use crate::os::{open_file, open_folder};
-use crate::services::download_manager::{execute_download, remove_download_task};
+use crate::services::download_manager::{execute_download_with_selected_files, remove_download_task};
 use crate::services::extension_bridge::handle_extension_message;
 use crate::state::AppState;
+
+#[command]
+pub async fn inspect_torrent_files(
+    url: String,
+    save_dir: Option<String>,
+) -> Result<edm_core::packs::bittorrent::TorrentInspectionResult, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("URL or torrent path cannot be empty".into());
+    }
+    crate::os::validate_url_security(trimmed)?;
+    let dir = save_dir
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    edm_core::packs::bittorrent::BitTorrentPack::inspect_torrent(trimmed, &dir).await
+}
 
 #[command]
 pub async fn start_download(
@@ -16,10 +34,11 @@ pub async fn start_download(
     filename: Option<String>,
     save_dir: Option<String>,
     max_connections: Option<u32>,
+    selected_files: Option<Vec<usize>>,
 ) -> Result<serde_json::Value, String> {
     let id = Uuid::new_v4();
     let save_path = save_dir.map(PathBuf::from);
-    let (download_id, is_started) = execute_download(
+    let (download_id, is_started) = execute_download_with_selected_files(
         &state,
         id,
         url,
@@ -30,6 +49,7 @@ pub async fn start_download(
         None,
         None,
         None,
+        selected_files,
     )?;
 
     Ok(serde_json::json!({
