@@ -2,6 +2,7 @@ use super::dispatch::handle_ws_connection;
 use super::http::handle_http_token_request;
 use super::manager::WsManager;
 use super::types::{ACTIVE_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS, WS_BIND_ADDR};
+#[cfg(test)]
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ struct ConnectionGuard;
 impl ConnectionGuard {
     fn try_acquire() -> Option<Self> {
         ACTIVE_CONNECTIONS
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 if current < MAX_CONCURRENT_CONNECTIONS {
                     Some(current + 1)
                 } else {
