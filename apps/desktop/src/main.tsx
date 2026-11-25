@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { LifecycleApp, resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
+import { tauriWindowClose } from "./services/tauriBridge";
 import "./styles/theme.css";
 
 const TrayFlyout = React.lazy(() => import("./components/TrayFlyout"));
@@ -118,7 +119,7 @@ function Root() {
       <LifecycleApp
         route={lifecycleRoute}
         onDone={() => {
-          import("./services/tauriBridge").then((m) => m.tauriWindowClose());
+          tauriWindowClose();
         }}
       />
     );

@@ -74,7 +74,7 @@ console.log(`[bump-version] Syncing version to: ${targetVersion}`);
 // 2. apps/desktop/src-tauri/tauri.conf.json
 tauriConf.version = targetVersion;
 if (tauriConf.app?.windows?.[0]?.title) {
-  tauriConf.app.windows[0].title = `EDM — Edge Download Manager v${targetVersion}`;
+  tauriConf.app.windows[0].title = `EDM — Evo Download Manager v${targetVersion}`;
 }
 fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n", "utf-8");
 console.log(`  ✓ Updated apps/desktop/src-tauri/tauri.conf.json`);

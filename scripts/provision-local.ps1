@@ -49,7 +49,7 @@ Write-Host "Created Start Menu shortcut at $startMenu"
 # Windows Settings Metadata
 $uninstKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EDM'
 if (!(Test-Path $uninstKey)) { New-Item -Path $uninstKey -Force | Out-Null }
-Set-ItemProperty -Path $uninstKey -Name 'DisplayName' -Value 'EDM — Edge Download Manager'
+Set-ItemProperty -Path $uninstKey -Name 'DisplayName' -Value 'EDM — Evo Download Manager'
 Set-ItemProperty -Path $uninstKey -Name 'DisplayIcon' -Value (Join-Path $targetDir 'EDM.exe')
 Set-ItemProperty -Path $uninstKey -Name 'DisplayVersion' -Value '0.0.14'
 Set-ItemProperty -Path $uninstKey -Name 'Publisher' -Value 'bytebldr'

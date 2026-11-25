@@ -450,7 +450,7 @@ pub fn execute_download(
         .unwrap_or(3) as usize;
 
     let active_count = {
-        let tasks = state.tasks.lock().unwrap();
+        let tasks = crate::lock_unpoisoned(&state.tasks);
         tasks
             .values()
             .filter(|h| !h.cancelled.load(Ordering::Relaxed))
@@ -520,7 +520,7 @@ pub fn execute_download(
         telemetry: telemetry_store.clone(),
     };
 
-    state.tasks.lock().unwrap().insert(id_str.clone(), handle);
+    crate::lock_unpoisoned(&state.tasks).insert(id_str.clone(), handle);
 
     if let Some(sz) = effective_size {
         if let Err(e) = edm_core::security::check_disk_space(&save_path, sz) {
@@ -593,7 +593,7 @@ pub fn execute_download(
     let url_fin = url.clone();
     let referer_fin = referer.clone();
     let power_ctrl = state.power_countdown.clone();
-    let app_handle_opt = state.app_handle.lock().unwrap().clone();
+    let app_handle_opt = crate::lock_unpoisoned(&state.app_handle).clone();
     let state_drain = state.clone();
 
     state.rt_handle.spawn(async move {
@@ -611,7 +611,7 @@ pub fn execute_download(
             // Low-overhead throttled database persistence (every 1.5s or >= 1MB delta)
             let prev_bytes = last_db_bytes.load(Ordering::Relaxed);
             let should_update_db = {
-                let mut inst = last_db_time.lock().unwrap();
+                let mut inst = crate::lock_unpoisoned(&last_db_time);
                 if inst.elapsed() >= std::time::Duration::from_millis(1500)
                     || telem.downloaded_bytes.saturating_sub(prev_bytes) >= 1024 * 1024
                 {
@@ -628,7 +628,7 @@ pub fn execute_download(
 
             // Low-overhead throttled WebSocket progress broadcast (at most every 250ms)
             let should_update_ws = {
-                let mut inst = last_ws_time.lock().unwrap();
+                let mut inst = crate::lock_unpoisoned(&last_ws_time);
                 if inst.elapsed() >= std::time::Duration::from_millis(250) {
                     *inst = std::time::Instant::now();
                     true
@@ -797,7 +797,7 @@ pub fn execute_download(
         }
 
         // Evict active task handle and telemetry buffers from live memory
-        tasks_map.lock().unwrap().remove(&ws_id_cb);
+        crate::lock_unpoisoned(&tasks_map).remove(&ws_id_cb);
 
         if let Ok(guard) = state_drain.app_handle.lock() {
             if let Some(ref handle) = *guard {
@@ -833,7 +833,7 @@ pub fn try_start_next_queued(state: &AppState) {
         .max(1) as usize;
 
     let active_count = {
-        let tasks = state.tasks.lock().unwrap();
+        let tasks = crate::lock_unpoisoned(&state.tasks);
         tasks
             .values()
             .filter(|h| !h.cancelled.load(Ordering::Relaxed))
@@ -892,7 +892,7 @@ pub async fn remove_download_task(
 ) -> Result<(), String> {
     // 1. Cancel and evict in-memory active task
     {
-        let mut tasks = state.tasks.lock().unwrap();
+        let mut tasks = crate::lock_unpoisoned(&state.tasks);
         if let Some(t) = tasks.remove(id_str) {
             t.cancelled.store(true, Ordering::SeqCst);
         }

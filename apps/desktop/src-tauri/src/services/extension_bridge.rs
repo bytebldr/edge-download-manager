@@ -46,7 +46,7 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
 
             let mut agg_speed: u64 = 0;
             {
-                let tasks = state.tasks.lock().unwrap();
+                let tasks = crate::lock_unpoisoned(&state.tasks);
                 for r in &records {
                     if r.state == DownloadState::Downloading {
                         if let Some(h) = tasks.get(&r.id.to_string()) {
@@ -83,7 +83,7 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
             let mut completed_count = 0;
             let mut aggregate_speed = 0u64;
 
-            let tasks = state.tasks.lock().unwrap();
+            let tasks = crate::lock_unpoisoned(&state.tasks);
 
             for r in records {
                 let is_active = r.state == DownloadState::Downloading;
@@ -177,7 +177,7 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
                 let mut connections = r.connections;
                 let mut eta_seconds = None;
                 if r.state == DownloadState::Downloading {
-                    let tasks = state.tasks.lock().unwrap();
+                    let tasks = crate::lock_unpoisoned(&state.tasks);
                     if let Some(h) = tasks.get(&id.to_string()) {
                         if let Ok(lock) = h.telemetry.lock() {
                             if let Some(ref telem) = *lock {
@@ -233,7 +233,7 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
 
         ExtensionMessage::PauseDownload { id } => {
             {
-                let mut tasks = state.tasks.lock().unwrap();
+                let mut tasks = crate::lock_unpoisoned(&state.tasks);
                 if let Some(task) = tasks.remove(&id.to_string()) {
                     task.cancelled.store(true, Ordering::Relaxed);
                 }
@@ -264,7 +264,7 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
 
         ExtensionMessage::CancelDownload { id } => {
             {
-                let mut tasks = state.tasks.lock().unwrap();
+                let mut tasks = crate::lock_unpoisoned(&state.tasks);
                 if let Some(task) = tasks.remove(&id.to_string()) {
                     task.cancelled.store(true, Ordering::Relaxed);
                 }

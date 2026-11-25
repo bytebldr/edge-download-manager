@@ -40,43 +40,43 @@ pub fn get_user_extension_dir() -> Result<PathBuf, String> {
 pub const EMBEDDED_EXTENSION_FILES: &[(&str, &[u8])] = &[
     (
         "manifest.json",
-        include_bytes!("../../../../../extension/manifest.json"),
+        include_bytes!("../../../../../extension/dist/chromium/manifest.json"),
     ),
     (
         "background.js",
-        include_bytes!("../../../../../extension/background.js"),
+        include_bytes!("../../../../../extension/dist/chromium/background.js"),
     ),
     (
         "content.js",
-        include_bytes!("../../../../../extension/content.js"),
+        include_bytes!("../../../../../extension/dist/chromium/content.js"),
     ),
     (
         "popup.html",
-        include_bytes!("../../../../../extension/popup.html"),
+        include_bytes!("../../../../../extension/dist/chromium/popup.html"),
     ),
     (
         "popup.js",
-        include_bytes!("../../../../../extension/popup.js"),
+        include_bytes!("../../../../../extension/dist/chromium/popup.js"),
     ),
     (
         "popup.css",
-        include_bytes!("../../../../../extension/popup.css"),
+        include_bytes!("../../../../../extension/dist/chromium/popup.css"),
     ),
     (
         "options.html",
-        include_bytes!("../../../../../extension/options.html"),
+        include_bytes!("../../../../../extension/dist/chromium/options.html"),
     ),
     (
         "options.js",
-        include_bytes!("../../../../../extension/options.js"),
+        include_bytes!("../../../../../extension/dist/chromium/options.js"),
     ),
     (
         "hashes.json",
-        include_bytes!("../../../../../extension/hashes.json"),
+        include_bytes!("../../../../../extension/dist/chromium/hashes.json"),
     ),
     (
         "logo.png",
-        include_bytes!("../../../../../extension/logo.png"),
+        include_bytes!("../../../../../extension/dist/chromium/logo.png"),
     ),
 ];
 

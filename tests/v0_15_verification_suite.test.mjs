@@ -9,16 +9,14 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 
 // ---------------------------------------------------------
-// TEST 1: Version Parity Check (All 7 targets at 0.0.15)
+// TEST 1: Version Parity Check (All 7 targets match Cargo.toml)
 // ---------------------------------------------------------
-test("1. Version synchronization parity across all targets (v0.0.15)", () => {
-  const expected = "0.0.15";
-
+test("1. Version synchronization parity across all targets", () => {
   // 1. Root Cargo.toml
   const cargoToml = fs.readFileSync(path.join(rootDir, "Cargo.toml"), "utf8");
-  const cargoVerMatch = cargoToml.match(/version\s*=\s*"([^"]+)"/);
+  const cargoVerMatch = cargoToml.match(/\[workspace\.package\][\s\S]*?version\s*=\s*"([^"]+)"/);
   assert.ok(cargoVerMatch, "Root Cargo.toml version match");
-  assert.equal(cargoVerMatch[1], expected, "Cargo.toml version");
+  const expected = cargoVerMatch[1];
 
   // 2. Tauri conf
   const tauriConf = JSON.parse(
@@ -74,8 +72,12 @@ test("2. Extension Name is strictly 'EDM' (Bug 9)", () => {
     const content = JSON.parse(fs.readFileSync(m, "utf8"));
     assert.equal(content.name, "EDM", `${path.basename(m)} name must be strictly 'EDM'`);
     assert.ok(
-      !content.name.includes("Edge Download Manager"),
-      `${path.basename(m)} name must not include 'Edge Download Manager'`
+      content.name !== "Edge Download Manager" && !content.name.includes("Edge Download Manager"),
+      `${path.basename(m)} name must not be or include 'Edge Download Manager'`
+    );
+    assert.ok(
+      content.name !== "Evo Download Manager" && !content.name.includes("Evo Download Manager"),
+      `${path.basename(m)} name must not be or include 'Evo Download Manager'`
     );
   }
 });
@@ -128,7 +130,7 @@ test("4. 'OTA' text removed across entire application UI (Bug 5)", () => {
 // TEST 5: Dedicated Reinstall & Repair UI exists (Bug 4)
 // ---------------------------------------------------------
 test("5. Dedicated Reinstall & Repair UI (#repair / --repair) (Bug 4)", () => {
-  const repairWizardPath = path.join(
+  const repairWizardBarrelPath = path.join(
     rootDir,
     "apps",
     "desktop",
@@ -136,7 +138,18 @@ test("5. Dedicated Reinstall & Repair UI (#repair / --repair) (Bug 4)", () => {
     "components",
     "RepairWizard.tsx"
   );
-  assert.ok(fs.existsSync(repairWizardPath), "RepairWizard.tsx must exist");
+  assert.ok(fs.existsSync(repairWizardBarrelPath), "components/RepairWizard.tsx must exist");
+
+  const repairWizardPath = path.join(
+    rootDir,
+    "apps",
+    "desktop",
+    "src",
+    "lifecycle",
+    "wizards",
+    "RepairWizard.tsx"
+  );
+  assert.ok(fs.existsSync(repairWizardPath), "lifecycle/wizards/RepairWizard.tsx must exist");
 
   const repairContent = fs.readFileSync(repairWizardPath, "utf8");
   assert.ok(
@@ -156,12 +169,19 @@ test("5. Dedicated Reinstall & Repair UI (#repair / --repair) (Bug 4)", () => {
     "Must have explicit non-destructive badge"
   );
 
+  const lifecycleAppTsx = fs.readFileSync(
+    path.join(rootDir, "apps", "desktop", "src", "lifecycle", "LifecycleApp.tsx"),
+    "utf8"
+  );
+  assert.ok(lifecycleAppTsx.includes("RepairWizard"), "LifecycleApp.tsx must mount RepairWizard");
+  assert.ok(lifecycleAppTsx.includes("#repair"), "LifecycleApp.tsx must support #repair route");
+
   const mainTsx = fs.readFileSync(
     path.join(rootDir, "apps", "desktop", "src", "main.tsx"),
     "utf8"
   );
-  assert.ok(mainTsx.includes("RepairWizard"), "main.tsx must mount RepairWizard");
-  assert.ok(mainTsx.includes("#repair"), "main.tsx must support #repair route");
+  assert.ok(mainTsx.includes("LifecycleApp"), "main.tsx must mount LifecycleApp");
+  assert.ok(mainTsx.includes("resolveLifecycleRoute"), "main.tsx must resolve lifecycle routes");
 });
 
 // ---------------------------------------------------------
