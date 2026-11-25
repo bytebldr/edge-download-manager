@@ -983,3 +983,73 @@ window.addEventListener("popstate", () => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
+// 7. BATCH LINK GRABBER (collect_page_links)
+// ─────────────────────────────────────────────────────────────
+export interface CollectedPageLink {
+  url: string;
+  text: string;
+  ext: string;
+}
+
+function extractLinkExtension(rawUrl: string): string {
+  const lower = rawUrl.toLowerCase();
+  if (lower.startsWith("magnet:")) return "magnet";
+  try {
+    const pathname = new URL(rawUrl).pathname;
+    const lastSeg = pathname.split("/").pop() || "";
+    const dotIdx = lastSeg.lastIndexOf(".");
+    if (dotIdx > 0 && dotIdx < lastSeg.length - 1) {
+      const ext = lastSeg.slice(dotIdx).toLowerCase();
+      if (/^\.[a-z0-9]{1,8}$/.test(ext)) return ext;
+    }
+  } catch {
+    // Ignore malformed URLs
+  }
+  return "";
+}
+
+function collectPageLinks(): CollectedPageLink[] {
+  const seen = new Set<string>();
+  const results: CollectedPageLink[] = [];
+  const elements = document.querySelectorAll<HTMLElement>(
+    "a[href], video[src], audio[src], source[src]"
+  );
+
+  elements.forEach((el) => {
+    const rawUrl =
+      el instanceof HTMLAnchorElement
+        ? el.href
+        : (el as HTMLMediaElement | HTMLSourceElement).src || el.getAttribute("src") || "";
+    const url = rawUrl.trim();
+    if (!url || seen.has(url)) return;
+    if (!/^(https?:\/\/|magnet:)/i.test(url)) return;
+
+    seen.add(url);
+    const text = (
+      el.textContent ||
+      el.getAttribute("title") ||
+      el.getAttribute("aria-label") ||
+      ""
+    )
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 120);
+
+    results.push({
+      url,
+      text,
+      ext: extractLinkExtension(url),
+    });
+  });
+
+  return results;
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.action === "collect_page_links") {
+    sendResponse(collectPageLinks());
+    return true;
+  }
+});
+
