@@ -376,7 +376,7 @@ pub fn execute_download_with_selected_files(
 
     let mut config = AdaptiveConfig::default();
     if let Some(conns) = max_connections {
-        config.max_connections = conns;
+        config.max_connections = conns.clamp(1, 64);
     }
 
     // UI-01: Apply persistent settings from store (connections, segmentation, retries, proxy)
@@ -431,6 +431,8 @@ pub fn execute_download_with_selected_files(
             }
         }
     }
+
+    config.max_connections_per_host = config.max_connections;
 
     let ext = final_clean_name
         .split('.')

@@ -1226,15 +1226,15 @@ export default function SettingsPage({
                     <input
                       type="range"
                       min={1}
-                      max={32}
+                      max={64}
                       value={settings.downloads.maxConnectionsPerFile}
                       onChange={(e) => update("downloads", { maxConnectionsPerFile: Number(e.target.value) })}
                       className="w-full accent-[var(--accent)] cursor-pointer"
                     />
                     <div className="flex justify-between text-[10px] text-[var(--text-muted)] font-mono">
                       <span>1 Stream</span>
-                      <span>16 Streams</span>
                       <span>32 Streams</span>
+                      <span>64 Streams</span>
                     </div>
                   </div>
                 </div>

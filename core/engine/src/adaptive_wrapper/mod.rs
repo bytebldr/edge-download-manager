@@ -48,7 +48,7 @@ impl AdaptiveWrapper {
                     execution: PreFlightExecution::SingleStream(task.clone()),
                     chunk_strategy: ChunkingStrategy::StandardAdaptive {
                         initial_chunk_size: 4 * 1024 * 1024,
-                        max_connections: task.config.max_connections.clamp(1, 32) as usize,
+                        max_connections: task.config.max_connections.clamp(1, 64) as usize,
                     },
                     expected_size: None,
                     expected_hash: None,
