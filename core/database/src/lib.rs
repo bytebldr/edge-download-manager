@@ -359,6 +359,9 @@ impl Store {
         &self,
         segments: &[SegmentRecord],
     ) -> std::result::Result<(), StoreError> {
+        if segments.is_empty() {
+            return Ok(());
+        }
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
         for s in segments {
@@ -367,6 +370,8 @@ impl Store {
                 INSERT INTO segments (download_id, idx, start, "end", pos, state, retries)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 ON CONFLICT(download_id, idx) DO UPDATE SET
+                    start = excluded.start,
+                    "end" = excluded."end",
                     pos = excluded.pos,
                     state = excluded.state,
                     retries = excluded.retries
@@ -382,6 +387,10 @@ impl Store {
                 ],
             )?;
         }
+        tx.execute(
+            "DELETE FROM segments WHERE download_id = ?1 AND idx >= ?2",
+            params![segments[0].download_id.to_string(), segments.len() as i64],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -1033,5 +1042,94 @@ mod tests {
 
         store.delete_segments(dl1.id).unwrap();
         assert!(store.get_segments(dl1.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_save_segment_positions_updates_bounds_and_prunes_stale_indices() {
+        let store = Store::open_in_memory().expect("failed to open in memory store");
+        let id = Uuid::new_v4();
+        let record = DownloadRecord {
+            id,
+            url: "https://example.com/archive.bin".into(),
+            final_url: None,
+            filename: "archive.bin".into(),
+            save_dir: "C:\\Downloads".into(),
+            category: "General".into(),
+            state: DownloadState::Downloading,
+            size_total: Some(1000),
+            size_done: 0,
+            resumable: true,
+            etag: None,
+            last_modified: None,
+            content_type: None,
+            referer: None,
+            user_agent: None,
+            connections: 3,
+            created_at: Utc::now(),
+            error_msg: None,
+        };
+        store.insert_download(&record).unwrap();
+
+        // Initial 3 segments
+        store
+            .save_segment_positions(&[
+                SegmentRecord {
+                    download_id: id,
+                    idx: 0,
+                    start: 0,
+                    end: 299,
+                    pos: 100,
+                    state: "downloading".into(),
+                    retries: 0,
+                },
+                SegmentRecord {
+                    download_id: id,
+                    idx: 1,
+                    start: 300,
+                    end: 599,
+                    pos: 400,
+                    state: "downloading".into(),
+                    retries: 1,
+                },
+                SegmentRecord {
+                    download_id: id,
+                    idx: 2,
+                    start: 600,
+                    end: 999,
+                    pos: 700,
+                    state: "downloading".into(),
+                    retries: 0,
+                },
+            ])
+            .unwrap();
+
+        // Consolidated into 2 segments with updated start/end/pos
+        store
+            .save_segment_positions(&[
+                SegmentRecord {
+                    download_id: id,
+                    idx: 0,
+                    start: 0,
+                    end: 499,
+                    pos: 500,
+                    state: "completed".into(),
+                    retries: 0,
+                },
+                SegmentRecord {
+                    download_id: id,
+                    idx: 1,
+                    start: 500,
+                    end: 999,
+                    pos: 750,
+                    state: "paused".into(),
+                    retries: 2,
+                },
+            ])
+            .unwrap();
+
+        let segs = store.get_segments(id).unwrap();
+        assert_eq!(segs.len(), 2);
+        assert_eq!((segs[0].start, segs[0].end, segs[0].pos), (0, 499, 500));
+        assert_eq!((segs[1].start, segs[1].end, segs[1].pos, segs[1].retries), (500, 999, 750, 2));
     }
 }

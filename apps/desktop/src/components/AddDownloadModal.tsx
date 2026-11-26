@@ -52,12 +52,20 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   onOpenBatchImport,
   settings,
 }) => {
+  const getDefaultConnectionsOption = (): number => {
+    if (settings.downloads.segmentedDownloads === "disabled") return 1;
+    if (settings.downloads.autoAdaptiveStreams !== false) return 0;
+    const ceiling = settings.downloads.maxConnectionsPerFile;
+    if (ceiling === 1 || ceiling === 16 || ceiling === 32 || ceiling === 64) {
+      return ceiling;
+    }
+    return 0;
+  };
+
   const [urlInput, setUrlInput] = useState("");
   const [fileNameInput, setFileNameInput] = useState("");
   const [addCategory, setAddCategory] = useState("auto");
-  const [addConnections, setAddConnections] = useState<number>(
-    settings.downloads.maxConnectionsPerFile || 8
-  );
+  const [addConnections, setAddConnections] = useState<number>(getDefaultConnectionsOption);
   const [addSaveDir, setAddSaveDir] = useState<string>("");
   const [isProbing, setIsProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<{
@@ -111,6 +119,17 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   const currentDestination = addSaveDir || getAutoDestination(effectiveCategory);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setAddConnections(getDefaultConnectionsOption());
+    }
+  }, [
+    isOpen,
+    settings.downloads.autoAdaptiveStreams,
+    settings.downloads.maxConnectionsPerFile,
+    settings.downloads.segmentedDownloads,
+  ]);
+
   const resetState = () => {
     setUrlInput("");
     setFileNameInput("");
@@ -123,6 +142,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     setMediaProbeInfo(null);
     setMediaProbeError(null);
     setAddSaveDir("");
+    setAddConnections(getDefaultConnectionsOption());
     onClose();
   };
 
@@ -553,16 +573,17 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">TCP Worker Streams</label>
+                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Stream Scaling</label>
                   <select
                     value={String(addConnections)}
                     onChange={(e) => setAddConnections(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-lg input-3d text-[var(--text-primary)] focus:outline-none cursor-pointer"
                   >
-                    <option value="8">8 Parallel Streams (Recommended)</option>
-                    <option value="16">16 Parallel Streams (Fast)</option>
-                    <option value="32">32 Parallel Streams (Maximum)</option>
-                    <option value="1">1 Single Stream (Strict)</option>
+                    <option value="0">Auto (Adaptive — Recommended)</option>
+                    <option value="1">Single Stream (Strict Compatibility)</option>
+                    <option value="16">16 Max</option>
+                    <option value="32">32 Max</option>
+                    <option value="64">64 Max</option>
                   </select>
                 </div>
               </div>

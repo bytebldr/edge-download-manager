@@ -615,6 +615,7 @@ impl YtDlpPack {
                     retry_count: 0,
                 }],
                 updated_at: Utc::now(),
+                ..Default::default()
             });
         }
 
@@ -720,6 +721,7 @@ impl YtDlpPack {
                                                 retry_count: 0,
                                             }],
                                             updated_at: Utc::now(),
+                                            ..Default::default()
                                         });
                                     }
                                 }
@@ -776,6 +778,7 @@ impl YtDlpPack {
                                             retry_count: 0,
                                         }],
                                         updated_at: Utc::now(),
+                                        ..Default::default()
                                     });
                                 }
                             } else if line.starts_with("EDM_PROG:") {
@@ -889,6 +892,7 @@ impl YtDlpPack {
                                                 retry_count: 0,
                                             }],
                                             updated_at: Utc::now(),
+                                            ..Default::default()
                                         });
                                     }
                                 }
@@ -955,6 +959,7 @@ impl YtDlpPack {
                                         retry_count: 0,
                                     }],
                                     updated_at: Utc::now(),
+                                    ..Default::default()
                                 });
                             }
                         }
@@ -1061,6 +1066,7 @@ impl YtDlpPack {
                 phase: Some("Completed".to_string()),
                 workers: vec![],
                 updated_at: Utc::now(),
+                ..Default::default()
             });
         }
 

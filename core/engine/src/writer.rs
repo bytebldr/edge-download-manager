@@ -13,6 +13,10 @@ pub enum WriterError {
     Io(#[from] io::Error),
     #[error("File already exists: {0}")]
     AlreadyExists(String),
+    #[error("Writer is already closed")]
+    Closed,
+    #[error("Writer lock poisoned")]
+    LockPoisoned,
 }
 
 #[derive(Clone)]
@@ -65,7 +69,7 @@ impl FileWriter {
 
                 let handle = file.as_raw_handle();
                 let mut bytes_returned = 0u32;
-                let _ = DeviceIoControl(
+                let ok = DeviceIoControl(
                     handle as isize,
                     FSCTL_SET_SPARSE,
                     std::ptr::null(),
@@ -75,6 +79,13 @@ impl FileWriter {
                     &mut bytes_returned,
                     std::ptr::null_mut(),
                 );
+                if ok == 0 {
+                    tracing::warn!(
+                        "FSCTL_SET_SPARSE failed on {:?} ({}); continuing with standard set_len",
+                        part_path,
+                        io::Error::last_os_error()
+                    );
+                }
             }
             file.set_len(size)?;
         }
@@ -88,68 +99,65 @@ impl FileWriter {
     }
 
     pub fn write_at(&self, offset: u64, data: &[u8]) -> Result<(), WriterError> {
+        let guard = self.file.read().map_err(|_| WriterError::LockPoisoned)?;
+        let file = guard.as_ref().ok_or(WriterError::Closed)?;
         if data.is_empty() {
             return Ok(());
         }
-        let guard = self.file.read().unwrap();
-        if let Some(ref file) = *guard {
-            #[cfg(windows)]
-            {
-                let mut written = 0;
-                while written < data.len() {
-                    let n = file.seek_write(&data[written..], offset + written as u64)?;
-                    if n == 0 {
-                        return Err(WriterError::Io(io::Error::new(
-                            io::ErrorKind::WriteZero,
-                            "failed to write whole buffer",
-                        )));
-                    }
-                    written += n;
+
+        #[cfg(windows)]
+        {
+            let mut written = 0;
+            while written < data.len() {
+                let n = file.seek_write(&data[written..], offset.saturating_add(written as u64))?;
+                if n == 0 {
+                    return Err(WriterError::Io(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "failed to write whole buffer",
+                    )));
                 }
+                written += n;
             }
+        }
 
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::FileExt;
-                file.write_all_at(data, offset)?;
-            }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileExt;
+            file.write_all_at(data, offset)?;
+        }
 
-            #[cfg(not(any(windows, unix)))]
-            {
-                use std::io::{Seek, SeekFrom};
-                let mut file_ref = &*file;
-                (&file_ref).seek(SeekFrom::Start(offset))?;
-                (&file_ref).write_all(data)?;
-            }
+        #[cfg(not(any(windows, unix)))]
+        {
+            use std::io::{Seek, SeekFrom};
+            let mut file_ref = &*file;
+            (&file_ref).seek(SeekFrom::Start(offset))?;
+            (&file_ref).write_all(data)?;
         }
 
         Ok(())
     }
 
     pub fn flush(&self) -> Result<(), WriterError> {
-        let guard = self.file.write().unwrap();
-        if let Some(ref file) = *guard {
-            file.sync_data()?;
-        }
+        let guard = self.file.write().map_err(|_| WriterError::LockPoisoned)?;
+        let file = guard.as_ref().ok_or(WriterError::Closed)?;
+        file.sync_data()?;
         Ok(())
     }
 
     /// Explicitly close and release the file handle immediately
     pub fn close(&self) {
-        if let Ok(mut guard) = self.file.write() {
-            let _ = guard.take();
-        }
+        let mut guard = self.file.write().unwrap_or_else(|p| p.into_inner());
+        let _ = guard.take();
     }
 
     pub fn reset(&self) -> Result<(), WriterError> {
-        let guard = self.file.write().unwrap();
-        if let Some(ref file) = *guard {
-            file.set_len(0)?;
-            if let Some(size) = self.total_size {
-                file.set_len(size)?;
-            }
-            file.sync_data()?;
+        let guard = self.file.write().map_err(|_| WriterError::LockPoisoned)?;
+        let file = guard.as_ref().ok_or(WriterError::Closed)?;
+        file.set_len(0)?;
+        if let Some(size) = self.total_size {
+            file.set_len(size)?;
         }
+        file.sync_data()?;
         Ok(())
     }
 
@@ -158,8 +166,10 @@ impl FileWriter {
 
         // Close file handle by taking Option<File> and dropping it immediately to release Windows file lock
         {
-            let mut guard = self.file.write().unwrap();
-            let _ = guard.take();
+            let mut guard = self.file.write().map_err(|_| WriterError::LockPoisoned)?;
+            if guard.take().is_none() {
+                return Err(WriterError::Closed);
+            }
         }
 
         if self.final_path.exists() {
@@ -173,7 +183,7 @@ impl FileWriter {
         #[cfg(windows)]
         if let Some(source_url) = referer_or_url {
             let zone_stream_path = format!("{}:Zone.Identifier", self.final_path.to_string_lossy());
-            if let Ok(mut zone_file) = File::create(&zone_stream_path) {
+            if let Ok(mut zone_file) = File::create(&zone_path_str(&zone_stream_path)) {
                 let _ = writeln!(
                     zone_file,
                     "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl={}",
@@ -184,6 +194,11 @@ impl FileWriter {
 
         Ok(self.final_path.clone())
     }
+}
+
+#[cfg(windows)]
+fn zone_path_str(s: &str) -> &str {
+    s
 }
 
 #[cfg(test)]
@@ -200,6 +215,21 @@ mod tests {
         assert!(temp_dir.exists());
 
         // Cleanup
+        drop(writer);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_write_after_close_returns_error() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("edm_test_close_{}", uuid::Uuid::new_v4()));
+        let writer = FileWriter::new(&temp_dir, "closed.bin", Some(64)).unwrap();
+        writer.close();
+        assert!(matches!(
+            writer.write_at(0, b"abc"),
+            Err(WriterError::Closed)
+        ));
+        assert!(matches!(writer.flush(), Err(WriterError::Closed)));
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

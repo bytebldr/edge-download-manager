@@ -2,6 +2,22 @@
 
 All notable changes to **Evo Download Manager (EDM)** are documented in this file.
 
+## [v0.1.1] - 2026-11-26
+
+### 🚀 Auto-Adaptive Engine & High-Density UI De-Box Release
+- **Auto-Adaptive Concurrency Engine**: Replaced static stream configuration with an autonomous, self-tuning controller (`core/engine/src/adaptive`). Starts lean at 4 streams, monitors network latency, throughput derivatives, and error signals, and dynamically scales up to 64 streams without manual user configuration.
+- **HTTP/2 ALPN & Adaptive Multiplexing**: Enabled `http2` transport negotiation in `reqwest`; throttles HTTP/2 connections to 6 streams per host to avoid server stream resets while scaling HTTP/1.1 connections up to 64.
+- **Pipelined Disk Writer & 64 MiB Zero-Copy Buffer**: Implemented `PipelinedWriterHandle` with a 64 MiB global byte-budget semaphore, zero-copy `Bytes` chunks, Windows sparse file preallocation (`set_len` fallback), and synchronous coalesced write-behind I/O on background threads.
+- **Linearizable Write Window & Speculative Tail Hedging**: Implemented lock-free write window reservation before chunk ingestion to eliminate disk stall aborts. Added speculative tail hedging to duplicate the slowest remaining worker when the file is >= 95% complete.
+- **Crash-Safe Segment Resumption & ETag Invariants**: Upgraded SQLite segment storage (`edm-store`) to update byte boundaries on conflict and prune stale indices. Enforced RFC 9110 §13.1.5 strong ETag checks on `If-Range` to guarantee byte integrity on resume.
+- **Monotonic Clocks & Resilient Worker Lifecycle**: Replaced wall-clock intervals with monotonic `Instant` tracking across workers; added request timeouts, randomized retry backoff, RFC 9110 `Retry-After` parsing on 429/503, and graceful `join_all().await` drain on cancel.
+- **Frameless UI De-Box & Unified Surface**: Softened dark chassis from `#000000` to `#09090B`, unified header (`h-14`) and footer (`h-8`) outside route transitions, and removed harsh box-like borders across sidebar and action rails.
+- **Complete Light Mode Re-engineering**: Eliminated all muddy gray `rgba(0,0,0,...)` gradients and hard black borders. Replaced with clean, crisp, theme-adaptive CSS tokens with WCAG AA compliance across all text labels and badges.
+- **Discrete Settings Experience**: Overhauled `SettingsPage` from continuous scrollspy to a focused single-section view with compact `w-48` navigation rail, hairline dividers, and flush swatch pills.
+- **Accessible Focus Rings & Typography**: Restored visible `:focus-visible` outline rings across all interactive controls and decoupled `.tabular-nums` from monospace fonts for proportional UI typography.
+
+---
+
 ## [v0.1.0] - 2026-11-25
 
 ### 🚀 Architectural Improvements, Security Hardening & Core Parity Release

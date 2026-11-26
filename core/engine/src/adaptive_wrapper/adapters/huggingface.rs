@@ -69,8 +69,8 @@ impl AdaptiveWrapperAdapter for HuggingFaceAdapter {
         Ok(PreFlightPlan {
             execution: PreFlightExecution::SingleStream(accelerated_task),
             chunk_strategy: ChunkingStrategy::StandardAdaptive {
-                initial_chunk_size: 8 * 1024 * 1024,
-                max_connections: task.config.max_connections.clamp(2, 32) as usize,
+                initial_chunk_size: task.config.min_chunk_size,
+                max_connections: task.config.max_connections.clamp(1, 64) as usize,
             },
             expected_size: None,
             expected_hash,

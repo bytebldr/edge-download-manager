@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use edm_core::adaptive::{AdaptiveConfig, AdaptiveDownloadTask, AdaptiveEngine, AdaptiveTelemetry};
-use edm_core::{DownloadTask, Engine, Probe};
+use edm_core::Probe;
 use edm_store::Store;
 use reqwest::Client;
 use std::io::{stdout, Write};
@@ -63,77 +63,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             adaptive,
         } => {
             let store = Store::open_in_memory()?;
+            let engine = AdaptiveEngine::new(store);
+            let clamped = connections.clamp(1, 64);
+
+            let config = if adaptive {
+                AdaptiveConfig {
+                    max_connections: clamped,
+                    max_connections_per_host: clamped,
+                    ..AdaptiveConfig::default()
+                }
+            } else {
+                AdaptiveConfig {
+                    auto_scale: false,
+                    initial_connections: clamped,
+                    min_connections: clamped,
+                    max_connections: clamped,
+                    max_connections_per_host: clamped,
+                    ..AdaptiveConfig::default()
+                }
+            };
+
+            let task = AdaptiveDownloadTask {
+                id: Uuid::new_v4(),
+                url: url.clone(),
+                filename: "download".into(),
+                save_dir: output_dir,
+                config,
+                limiter: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+                cookies: None,
+                referer: None,
+                user_agent: None,
+                selected_files: None,
+                torrent_power: None,
+            };
+
+            let telemetry_cb = Arc::new(|telem: AdaptiveTelemetry| {
+                let speed_mbps = telem.instant_throughput_bps as f64 / 1_000_000.0;
+                let speed_mbs = speed_mbps / 8.0;
+                let eta_str = telem
+                    .eta_seconds
+                    .map(|s| format!("{}s", s))
+                    .unwrap_or_else(|| "--".into());
+
+                print!(
+                    "\rProgress: {:>5.1}% | Speed: {:>5.1} MB/s | Streams: {:>2} [{:<10}] | ETA: {:>4} | {}",
+                    telem.progress_pct,
+                    speed_mbs,
+                    telem.active_connections,
+                    telem.mode.as_str(),
+                    eta_str,
+                    telem.decision_reason
+                );
+                let _ = stdout().flush();
+            });
 
             if adaptive {
-                let engine = AdaptiveEngine::new(store);
-                let config = AdaptiveConfig {
-                    max_connections: connections,
-                    ..AdaptiveConfig::default()
-                };
-
-                let task = AdaptiveDownloadTask {
-                    id: Uuid::new_v4(),
-                    url: url.clone(),
-                    filename: "download".into(),
-                    save_dir: output_dir,
-                    config,
-                    limiter: None,
-                    cancelled: Arc::new(AtomicBool::new(false)),
-                    cookies: None,
-                    referer: None,
-                    user_agent: None,
-                    selected_files: None,
-                    torrent_power: None,
-                };
-
-                let telemetry_cb = Arc::new(|telem: AdaptiveTelemetry| {
-                    let speed_mbps = telem.instant_throughput_bps as f64 / 1_000_000.0;
-                    let speed_mbs = speed_mbps / 8.0;
-                    let eta_str = telem
-                        .eta_seconds
-                        .map(|s| format!("{}s", s))
-                        .unwrap_or_else(|| "--".into());
-
-                    print!(
-                        "\rProgress: {:>5.1}% | Speed: {:>5.1} MB/s | Streams: {:>2} [{:<10}] | ETA: {:>4} | {}",
-                        telem.progress_pct,
-                        speed_mbs,
-                        telem.active_connections,
-                        telem.mode.as_str(),
-                        eta_str,
-                        telem.decision_reason
-                    );
-                    let _ = stdout().flush();
-                });
-
                 println!("Starting Adaptive Download for {}", url);
-                let saved_path = engine.download(task, Some(telemetry_cb)).await?;
-                println!("\nDownloaded successfully to: {:?}", saved_path);
             } else {
-                let engine = Engine::new(store);
-                let task = DownloadTask {
-                    id: Uuid::new_v4(),
-                    url: url.clone(),
-                    filename: "download".into(),
-                    save_dir: output_dir,
-                    connections,
-                    cancelled: Arc::new(AtomicBool::new(false)),
-                };
-
-                let progress = Arc::new(|done, total: Option<u64>| {
-                    if let Some(tot) = total {
-                        let pct = (done as f64 / tot as f64) * 100.0;
-                        print!("\rProgress: {:.1}% ({}/{} bytes)", pct, done, tot);
-                    } else {
-                        print!("\rProgress: {} bytes", done);
-                    }
-                    let _ = stdout().flush();
-                });
-
-                println!("Starting Static Download for {}", url);
-                let saved_path = engine.download(task, Some(progress)).await?;
-                println!("\nSaved to: {:?}", saved_path);
+                println!("Starting Fixed-Concurrency Download ({} streams) for {}", clamped, url);
             }
+            let saved_path = engine.download(task, Some(telemetry_cb)).await?;
+            println!("\nDownloaded successfully to: {:?}", saved_path);
         }
         Commands::Verify {
             file_a,

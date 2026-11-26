@@ -110,6 +110,7 @@ impl FfmpegSupervisor {
                                 retry_count: 0,
                             }],
                             updated_at: Utc::now(),
+                            ..Default::default()
                         });
                     }
                 }

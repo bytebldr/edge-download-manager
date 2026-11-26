@@ -21,6 +21,8 @@ impl AdaptiveWrapperAdapter for FtpAdapter {
         let mut clean_task = task.clone();
         // Clamp concurrent FTP sockets to 3 to prevent server 421 IP lockouts
         clean_task.config.max_connections = clean_task.config.max_connections.clamp(1, 3);
+        let ftp_max_conns = clean_task.config.max_connections as usize;
+        let min_chunk_size = clean_task.config.min_chunk_size;
 
         Ok(PreFlightPlan {
             execution: PreFlightExecution::DirectProtocol {
@@ -28,8 +30,8 @@ impl AdaptiveWrapperAdapter for FtpAdapter {
                 custom_metadata: HashMap::new(),
             },
             chunk_strategy: ChunkingStrategy::StandardAdaptive {
-                initial_chunk_size: 2 * 1024 * 1024,
-                max_connections: 3,
+                initial_chunk_size: min_chunk_size,
+                max_connections: ftp_max_conns,
             },
             expected_size: None,
             expected_hash: None,

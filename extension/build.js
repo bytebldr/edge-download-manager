@@ -67,7 +67,7 @@ function copyCommonAssets(targetDir, includeYtMain) {
 
 function computeHashes(targetDir, manifestVersion, filesList) {
   const hashes = {
-    version: manifestVersion || '0.1.0',
+    version: manifestVersion || '0.1.1',
     generated_at: new Date().toISOString(),
     files: {}
   };

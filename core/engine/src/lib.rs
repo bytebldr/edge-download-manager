@@ -19,7 +19,8 @@ pub mod writer;
 
 pub use adaptive::{
     AccelerationMode, AdaptiveConfig, AdaptiveDecision, AdaptiveDownloadTask, AdaptiveEngine,
-    AdaptiveTelemetry, TelemetryCallback, WorkScheduler, WorkerStatus, WorkerTelemetry,
+    AdaptiveTelemetry, PipelinedWriterHandle, PipelinedWriterTx, TelemetryCallback,
+    TransportProtocol, WorkScheduler, WorkerStatus, WorkerTelemetry, WriteChunk,
 };
 pub use adaptive_wrapper::AdaptiveWrapper;
 pub use batch::expand_batch_pattern;

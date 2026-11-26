@@ -2,12 +2,12 @@ import type { CategoryRule } from "../types/settings";
 
 export const APP_NAME = "EDM";
 export const APP_SUBTITLE = "Evo Download Manager";
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.1.1";
 
 export const DOWNLOADS_STORAGE_KEY = "edm_downloads_v1";
 export const DISMISSED_UPDATE_VERSION_KEY = "edm_dismissed_update_version";
 
-export const DEFAULT_MAX_CONNECTIONS = 8;
+export const DEFAULT_MAX_CONNECTIONS = 32;
 export const DEFAULT_FALLBACK_SIZE_BYTES = 100_000_000;
 export const BACKEND_SYNC_INTERVAL_MS = 800;
 export const TELEMETRY_TICK_INTERVAL_MS = 250;

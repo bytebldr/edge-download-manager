@@ -19,13 +19,8 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
-  Wifi,
   Compass,
-  Gauge,
   Activity,
-  ArrowDown,
-  ArrowUp,
-  Settings,
   RotateCcw,
   Image,
   CalendarClock,
@@ -35,9 +30,9 @@ import SetupWizard from "./components/SetupWizard";
 import { RefreshLinkModal } from "./components/RefreshLinkModal";
 import { PowerCountdownModal } from "./components/PowerCountdownModal";
 import { AddDownloadModal } from "./components/AddDownloadModal";
-import { SpeedLimiterModal } from "./components/SpeedLimiterModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
 import { AppToolbar } from "./components/AppToolbar";
+import { StatusFooter } from "./components/StatusFooter";
 import { DownloadContextMenu } from "./components/DownloadContextMenu";
 import {
   DOWNLOADS_STORAGE_KEY,
@@ -236,7 +231,6 @@ export default function App() {
   const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
-  const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteModalDontAsk, setDeleteModalDontAsk] = useState<boolean>(false);
   const [speedLimit, setSpeedLimit] = useState<string>("Unlimited");
@@ -445,7 +439,12 @@ export default function App() {
             url: p,
             filename: fname,
             saveDir: settings.downloads.defaultDirectory,
-            maxConnections: 8,
+            maxConnections:
+              settings.downloads.segmentedDownloads === "disabled"
+                ? 1
+                : settings.downloads.autoAdaptiveStreams !== false
+                ? 0
+                : settings.downloads.maxConnectionsPerFile,
           });
         }
       }
@@ -768,7 +767,26 @@ export default function App() {
       if (!proceed) return;
     }
 
-    const conns = customConns || settings.downloads.maxConnectionsPerFile || DEFAULT_MAX_CONNECTIONS;
+    const isSingleStream =
+      customConns === 1 ||
+      (customConns === undefined &&
+        (settings.downloads.segmentedDownloads === "disabled" ||
+          (settings.downloads.autoAdaptiveStreams === false &&
+            settings.downloads.maxConnectionsPerFile === 1)));
+    const ceilingConns = isSingleStream
+      ? 1
+      : customConns && customConns > 0
+      ? customConns
+      : settings.downloads.maxConnectionsPerFile || DEFAULT_MAX_CONNECTIONS;
+    const initialConns = isSingleStream ? 1 : Math.min(4, ceilingConns);
+    const backendMaxConnections =
+      customConns !== undefined
+        ? customConns
+        : settings.downloads.segmentedDownloads === "disabled"
+        ? 1
+        : settings.downloads.autoAdaptiveStreams !== false
+        ? 0
+        : settings.downloads.maxConnectionsPerFile;
     const finalCategory = (customCategory && customCategory !== "auto") ? (customCategory as DownloadItem["category"]) : categoryName;
 
     // Intelligent Categorization: if user didn't explicitly pick a custom save directory,
@@ -797,7 +815,7 @@ export default function App() {
       url: targetUrl,
       filename: name,
       saveDir: targetDir,
-      maxConnections: conns,
+      maxConnections: backendMaxConnections,
       selectedFiles,
     });
 
@@ -806,10 +824,10 @@ export default function App() {
 
     const initialWorkers: WorkerInfo[] = isQueued
       ? []
-      : Array.from({ length: conns }).map((_, idx) => {
-          const chunkBytes = Math.floor(realTotal / conns);
+      : Array.from({ length: initialConns }).map((_, idx) => {
+          const chunkBytes = Math.floor(realTotal / initialConns);
           const start = idx * chunkBytes;
-          const end = idx === conns - 1 ? realTotal : (idx + 1) * chunkBytes;
+          const end = idx === initialConns - 1 ? realTotal : (idx + 1) * chunkBytes;
           return {
             idx: idx + 1,
             start,
@@ -828,7 +846,7 @@ export default function App() {
       sizeDone: 0,
       speed: "0 B/s",
       eta: isQueued ? "Queued" : "Connecting...",
-      connections: isQueued ? 0 : conns,
+      connections: isQueued ? 0 : initialConns,
       state: isQueued ? "queued" : "downloading",
       progress: 0,
       url: targetUrl,
@@ -1310,7 +1328,6 @@ export default function App() {
         }
         setIsAddModalOpen(false);
         setIsInspectorOpen(false);
-        setIsLimiterOpen(false);
         setSelectedDownload(null);
         setSelectedIds([]);
         return;
@@ -1503,6 +1520,27 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden text-sm bg-[var(--bg-chassis)] text-[var(--text-primary)]">
+      {/* ─────────────────────────────────────────────────────────────
+          1. PERSISTENT WINDOW HEADER & TOP COMMAND DECK
+      ────────────────────────────────────────────────────────────── */}
+      <AppToolbar
+        activeView={activeView}
+        onBackToDownloads={() => {
+          setActiveView("downloads");
+          window.location.hash = "";
+        }}
+        selectedCount={selectedIds.length}
+        onResumeSelected={resumeSelected}
+        onPauseSelected={pauseSelected}
+        onStopSelected={stopSelected}
+        onDeleteSelected={deleteSelected}
+        onAddUrl={() => setIsAddModalOpen(true)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
+
       <AnimatePresence mode="wait">
         {activeView === "settings" ? (
           <motion.div
@@ -1511,7 +1549,7 @@ export default function App() {
             initial="initial"
             animate="animate"
             exit="exit"
-            className="flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full"
+            className="flex-1 flex flex-col min-h-0 overflow-hidden w-full"
           >
             <SettingsPage
               settings={settings}
@@ -1536,33 +1574,17 @@ export default function App() {
             initial="initial"
             animate="animate"
             exit="exit"
-            className="flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full"
+            className="flex-1 flex flex-col min-h-0 overflow-hidden w-full"
           >
-            {/* ─────────────────────────────────────────────────────────────
-                1. WINDOW HEADER & TOP COMMAND DECK
-            ────────────────────────────────────────────────────────────── */}
-            <AppToolbar
-              selectedCount={selectedIds.length}
-              onResumeSelected={resumeSelected}
-              onPauseSelected={pauseSelected}
-              onStopSelected={stopSelected}
-              onDeleteSelected={deleteSelected}
-              onAddUrl={() => setIsAddModalOpen(true)}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-            />
-
       {/* ─────────────────────────────────────────────────────────────
           2. WORKSPACE BODY: SIDEBAR + MAIN CONTENT AREA
       ────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
-        {/* Left Navigation Spine (EDM Modern Aesthetic - Permanently Minimized Icon Rail) */}
-        <aside className="w-14 sidebar-3d flex flex-col shrink-0 select-none py-2.5 overflow-hidden">
-          <div className="space-y-2 px-2 flex flex-col items-center">
+        {/* Left Navigation Spine (Flat Ghost Icon Rail) */}
+        <aside className="w-14 bg-[var(--bg-sidebar)] border-r border-[var(--border-dim)] flex flex-col shrink-0 select-none py-2.5 overflow-hidden">
+          <div className="space-y-2 w-full flex flex-col items-center">
             {/* Status Filters */}
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 w-full">
               {[
                 { id: "all", label: "All Tasks", count: downloads.length, icon: Compass },
                 {
@@ -1599,32 +1621,37 @@ export default function App() {
                 const Icon = item.icon;
                 const isActive = statusFilter === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    onClick={() => setStatusFilter(item.id)}
-                    title={`${item.label} (${item.count})`}
-                    className={`w-8 h-8 mx-auto relative flex items-center justify-center rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
-                      isActive
-                        ? "sidebar-item-active-3d text-[var(--accent)] font-semibold shadow-sm"
-                        : "sidebar-item-inactive-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {item.count > 0 && item.id === "downloading" && (
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                  <div key={item.id} className="relative w-full flex items-center justify-center">
+                    {isActive && (
+                      <span className="absolute left-0 w-0.5 h-4 rounded-r bg-[var(--accent)]" />
                     )}
-                    {item.count > 0 && item.id === "failed" && (
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-rose-400" />
-                    )}
-                  </button>
+                    <button
+                      onClick={() => setStatusFilter(item.id)}
+                      title={`${item.label} (${item.count})`}
+                      aria-label={`${item.label} (${item.count})`}
+                      className={`w-9 h-8 relative flex items-center justify-center rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer ${
+                        isActive
+                          ? "bg-[var(--accent)]/10 text-[var(--accent)] font-semibold"
+                          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {item.count > 0 && item.id === "downloading" && (
+                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                      )}
+                      {item.count > 0 && item.id === "failed" && (
+                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      )}
+                    </button>
+                  </div>
                 );
               })}
             </div>
 
-            <div className="w-5 h-[1px] bg-[var(--border-subtle)] my-0.5" />
+            <div className="w-6 h-[1px] bg-[var(--border-dim)] my-0.5" />
 
             {/* Categories */}
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 w-full">
               {[
                 { id: "all", label: "All Categories", icon: FolderOpen, color: "" },
                 ...settings.categories
@@ -1640,18 +1667,29 @@ export default function App() {
                 const Icon = item.icon;
                 const isActive = categoryFilter === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    onClick={() => setCategoryFilter(item.id)}
-                    title={item.label}
-                    className={`w-8 h-8 mx-auto flex items-center justify-center rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
-                      isActive
-                        ? "sidebar-item-active-3d text-[var(--accent)] font-semibold shadow-sm"
-                        : "sidebar-item-inactive-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    }`}
-                  >
-                    <Icon className={`w-3.5 h-3.5 ${item.color || "text-[var(--text-muted)]"}`} />
-                  </button>
+                  <div key={item.id} className="relative w-full flex items-center justify-center">
+                    {isActive && (
+                      <span className="absolute left-0 w-0.5 h-4 rounded-r bg-[var(--accent)]" />
+                    )}
+                    <button
+                      onClick={() => setCategoryFilter(item.id)}
+                      title={item.label}
+                      aria-label={item.label}
+                      className={`group w-9 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer ${
+                        isActive
+                          ? "bg-[var(--accent)]/10 text-[var(--accent)] font-semibold"
+                          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                      }`}
+                    >
+                      <Icon
+                        className={`w-3.5 h-3.5 transition-colors ${
+                          isActive
+                            ? item.color || "text-[var(--accent)]"
+                            : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+                        }`}
+                      />
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -2156,108 +2194,32 @@ export default function App() {
           )}
         </main>
       </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. FULL-WIDTH INTEGRATED BOTTOM STATUS BAR (With Speed Limiter)
-      ────────────────────────────────────────────────────────────── */}
-      <footer className="h-11 px-3 sm:px-4 footer-3d flex items-center justify-between text-xs shrink-0 select-none gap-2 w-full z-20">
-        {/* Left: Settings Button + Speed Limiter Controller + Selected Task Quick Readout */}
-        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-          {/* Settings Trigger placed immediately to the left of Speed Throttle */}
-          <button
-            onClick={() => setActiveView("settings")}
-            className="h-7 px-2.5 rounded-md text-[11px] sm:text-xs font-medium btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-            title="Settings & Preferences (Ctrl+,)"
-          >
-            <Settings className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 icon-3d" />
-            <span className="hidden xs:inline">Settings</span>
-          </button>
-
-          <button
-            onClick={() => setIsSchedulerOpen(true)}
-            className="h-7 px-2.5 rounded-md text-[11px] sm:text-xs font-medium btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-            title="Download Queues & Scheduler"
-          >
-            <CalendarClock className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 icon-3d" />
-            <span className="hidden sm:inline">Scheduler</span>
-          </button>
-
-          {/* Speed Limiter Dial (Opens upward from status bar) */}
-          <div className="relative shrink-0">
-            <button
-              onClick={() => setIsLimiterOpen(!isLimiterOpen)}
-              className="h-7 px-2.5 rounded-md text-[11px] sm:text-xs font-medium btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-              title="Global Bandwidth Limiter"
-            >
-              <Gauge className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 icon-3d" />
-              <span>Limit: {speedLimit}</span>
-              <ChevronDown
-                className={`w-3 h-3 text-[var(--text-muted)] shrink-0 transition-transform ${
-                  isLimiterOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            <SpeedLimiterModal
-              isOpen={isLimiterOpen}
-              speedLimit={speedLimit}
-              onSelect={handleSpeedLimitChange}
-              onClose={() => setIsLimiterOpen(false)}
-            />
-          </div>
-
-          <div className="h-5 w-[1px] bg-[var(--border-subtle)] shrink-0" />
-
-          {/* Selected Task Quick Readout */}
-          <div className="flex items-center gap-2 text-[var(--text-secondary)] min-w-0 truncate">
-            {activeSelectedDownload ? (
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 truncate">
-                <span className="font-semibold text-[var(--text-primary)] truncate max-w-[100px] sm:max-w-xs">
-                  {activeSelectedDownload.name}
-                </span>
-                <span className="text-[var(--text-muted)]">•</span>
-                <span className="font-mono tabular-nums text-[var(--accent)] whitespace-nowrap">
-                  {activeSelectedDownload.progress}%
-                </span>
-                <span className="text-[var(--text-muted)] hidden xs:inline">•</span>
-                <span className="hidden xs:inline whitespace-nowrap">
-                  {activeSelectedDownload.state === "downloading"
-                    ? (activeSelectedDownload.connections || 0)
-                    : 0}{" "}
-                  Active Threads
-                </span>
-              </div>
-            ) : (
-              <span className="text-[var(--text-muted)] truncate">No download selected</span>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Aggregate Network Telemetry */}
-        <div className="flex items-center gap-2 sm:gap-4 font-mono tabular-nums text-xs shrink-0">
-          <div className="flex items-center gap-1 text-emerald-400 font-semibold whitespace-nowrap">
-            <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>{totalSpeedDisplay}</span>
-          </div>
-          <div className={`hidden sm:flex items-center gap-1 whitespace-nowrap ${totalUploadSpeedDisplay !== "0 B/s" ? "text-[#818CF8] font-semibold" : "text-[var(--text-muted)]"}`}>
-            <ArrowUp className="w-3.5 h-3.5" />
-            <span>{totalUploadSpeedDisplay}</span>
-          </div>
-          <div className="hidden md:block text-[var(--text-muted)]">|</div>
-          <div className="hidden md:flex text-[var(--text-secondary)] items-center gap-1 whitespace-nowrap">
-            <Cpu className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>{totalActiveThreads} Active Threads</span>
-          </div>
-          <div className="hidden lg:block text-[var(--text-muted)]">|</div>
-          <div className="hidden lg:flex text-[var(--text-secondary)] items-center gap-1 whitespace-nowrap">
-            <Wifi className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>Session: {formatBytes(totalSessionBytes)}</span>
-          </div>
-        </div>
-      </footer>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3. PERSISTENT INTEGRATED BOTTOM STATUS BAR
+      ────────────────────────────────────────────────────────────── */}
+      <StatusFooter
+        activeView={activeView}
+        onToggleView={() => {
+          if (activeView === "settings") {
+            setActiveView("downloads");
+            window.location.hash = "";
+          } else {
+            setActiveView("settings");
+          }
+        }}
+        onOpenScheduler={() => setIsSchedulerOpen(true)}
+        speedLimit={speedLimit}
+        onSpeedLimitChange={handleSpeedLimitChange}
+        selectedDownload={activeSelectedDownload}
+        totalSpeed={totalSpeedDisplay}
+        totalUploadSpeed={totalUploadSpeedDisplay}
+        activeThreads={totalActiveThreads}
+        totalSessionBytes={totalSessionBytes}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           4. MODAL DIALOGS & OVERLAYS (Modular Components)

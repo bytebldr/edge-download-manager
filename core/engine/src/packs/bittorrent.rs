@@ -364,6 +364,7 @@ impl BitTorrentPack {
                             phase: Some("Resolving".to_string()),
                             workers: Vec::new(),
                             updated_at: Utc::now(),
+                            ..Default::default()
                         });
                     }
                 }
@@ -737,6 +738,7 @@ impl BitTorrentPack {
                     phase: current_phase,
                     workers,
                     updated_at: Utc::now(),
+                    ..Default::default()
                 });
             }
 

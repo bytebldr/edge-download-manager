@@ -248,6 +248,7 @@ impl PackExecutor {
                         retry_count: 0,
                     }],
                     updated_at: Utc::now(),
+                    ..Default::default()
                 });
             }
         }
@@ -520,6 +521,7 @@ impl PackExecutor {
                     phase: Some("Downloading".to_string()),
                     workers: vec![],
                     updated_at: Utc::now(),
+                    ..Default::default()
                 });
             }
         }

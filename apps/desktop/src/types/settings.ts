@@ -39,6 +39,7 @@ export interface EdmSettings {
     temporaryDirectory: string;
     maxActiveDownloads: number;
     globalSpeedLimitBytesPerSecond: number | null; // null = unlimited
+    autoAdaptiveStreams?: boolean;
     maxConnectionsPerFile: number;
     totalConnectionsLimit: number;
     segmentedDownloads: "automatic" | "disabled" | "aggressive";
@@ -140,7 +141,8 @@ export const defaultSettings: EdmSettings = {
     temporaryDirectory: "",
     maxActiveDownloads: 3,
     globalSpeedLimitBytesPerSecond: null,
-    maxConnectionsPerFile: 6,
+    autoAdaptiveStreams: true,
+    maxConnectionsPerFile: 32,
     totalConnectionsLimit: 32,
     segmentedDownloads: "automatic",
     maxSegments: 8,
@@ -311,12 +313,21 @@ export function loadSettings(): EdmSettings {
       if (picCat) categories.push(picCat);
     }
 
+    // Migrate legacy static default (6 streams, no autoAdaptiveStreams flag) to Auto-Adaptive ceiling 32
+    const migratedDownloads = { ...defaultSettings.downloads, ...parsed.downloads };
+    if (
+      parsed.downloads?.autoAdaptiveStreams === undefined &&
+      parsed.downloads?.maxConnectionsPerFile === 6
+    ) {
+      migratedDownloads.maxConnectionsPerFile = 32;
+    }
+
     // Deep merge to ensure all new fields in defaultSettings are present
     return {
       ...defaultSettings,
       ...parsed,
       general: { ...defaultSettings.general, ...parsed.general },
-      downloads: { ...defaultSettings.downloads, ...parsed.downloads },
+      downloads: migratedDownloads,
       storage: { ...defaultSettings.storage, ...parsed.storage },
       browser: { ...defaultSettings.browser, ...parsed.browser },
       network: { ...defaultSettings.network, ...parsed.network },

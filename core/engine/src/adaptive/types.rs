@@ -2,6 +2,25 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportProtocol {
+    #[default]
+    Http1,
+    Http2,
+    Http3,
+}
+
+impl TransportProtocol {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Http1 => "HTTP/1.1",
+            Self::Http2 => "HTTP/2",
+            Self::Http3 => "HTTP/3",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccelerationMode {
@@ -24,6 +43,22 @@ impl AccelerationMode {
     }
 }
 
+fn default_auto_scale() -> bool {
+    true
+}
+
+fn default_request_timeout() -> Duration {
+    Duration::from_secs(20)
+}
+
+fn default_enable_hedged_requests() -> bool {
+    true
+}
+
+fn default_max_hedged_workers() -> u32 {
+    2
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdaptiveConfig {
     pub initial_connections: u32,
@@ -37,22 +72,34 @@ pub struct AdaptiveConfig {
     pub throughput_drop_threshold: f64, // e.g. -5% (-0.05)
     pub stall_timeout: Duration,        // e.g. 8s
     pub max_worker_retries: u32,
+    #[serde(default = "default_auto_scale")]
+    pub auto_scale: bool,
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout: Duration,
+    #[serde(default = "default_enable_hedged_requests")]
+    pub enable_hedged_requests: bool,
+    #[serde(default = "default_max_hedged_workers")]
+    pub max_hedged_workers: u32,
 }
 
 impl Default for AdaptiveConfig {
     fn default() -> Self {
         Self {
-            initial_connections: 8,
+            initial_connections: 4,
             min_connections: 1,
-            max_connections: 16,
-            max_connections_per_host: 16,
-            min_chunk_size: 1024 * 1024, // 1 MiB
+            max_connections: 32,
+            max_connections_per_host: 32,
+            min_chunk_size: 512 * 1024, // 512 KiB
             sample_interval: Duration::from_millis(250),
-            cooldown_duration: Duration::from_secs(20), // 20s hysteresis window
-            throughput_gain_threshold: 0.10,            // +10% sustained gain required
-            throughput_drop_threshold: -0.15,           // -15% hysteresis against transient jitter
+            cooldown_duration: Duration::from_secs(4),
+            throughput_gain_threshold: 0.10, // +10% sustained gain required
+            throughput_drop_threshold: -0.15, // -15% hysteresis against transient jitter
             stall_timeout: Duration::from_secs(8),
             max_worker_retries: 5,
+            auto_scale: true,
+            request_timeout: Duration::from_secs(20),
+            enable_hedged_requests: true,
+            max_hedged_workers: 2,
         }
     }
 }
@@ -104,6 +151,40 @@ pub struct AdaptiveTelemetry {
     pub phase: Option<String>,
     pub workers: Vec<WorkerTelemetry>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub negotiated_protocol: String,
+    #[serde(default)]
+    pub hedged_requests_won: u32,
+    #[serde(default)]
+    pub coalesced_write_ops: u64,
+}
+
+impl Default for AdaptiveTelemetry {
+    fn default() -> Self {
+        Self {
+            download_id: String::new(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            progress_pct: 0.0,
+            instant_throughput_bps: 0,
+            rolling_throughput_bps: 0,
+            upload_throughput_bps: 0,
+            uploaded_bytes: 0,
+            active_connections: 0,
+            target_connections: 0,
+            live_workers: 0,
+            max_allowed_connections: 0,
+            mode: AccelerationMode::Auto,
+            eta_seconds: None,
+            decision_reason: String::new(),
+            phase: None,
+            workers: Vec::new(),
+            updated_at: Utc::now(),
+            negotiated_protocol: String::new(),
+            hedged_requests_won: 0,
+            coalesced_write_ops: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -49,27 +49,38 @@ pub(super) fn read_max_active_downloads(settings_val: Option<&serde_json::Value>
         .max(1) as usize
 }
 
-/// Build `AdaptiveConfig`, proxy, timeout, concurrency, and torrent power settings.
-pub(super) fn build_execution_config(
-    state: &AppState,
+/// Resolve `AdaptiveConfig`, proxy, and request timeout from `app_settings` and per-download overrides.
+pub(super) fn resolve_adaptive_and_network(
     settings_val: Option<&serde_json::Value>,
     max_connections: Option<u32>,
-    is_p2p_or_torrent: bool,
-) -> ExecutionConfig {
+) -> (AdaptiveConfig, Option<reqwest::Proxy>, u64) {
     let mut adaptive = AdaptiveConfig::default();
-    if let Some(conns) = max_connections {
-        adaptive.max_connections = conns.clamp(1, 64);
-    }
+    let mut auto_adaptive_streams = true;
+    let mut settings_ceiling = adaptive.max_connections.clamp(1, 64);
+    let mut single_stream_setting = false;
 
     let mut proxy: Option<reqwest::Proxy> = None;
     let mut req_timeout_secs = 45u64;
 
     if let Some(settings) = settings_val {
         if let Some(dl) = settings.get("downloads") {
-            if max_connections.is_none() {
-                if let Some(conns) = dl.get("maxConnectionsPerFile").and_then(|v| v.as_u64()) {
-                    adaptive.max_connections = (conns.clamp(1, 64)) as u32;
+            let has_auto_flag = dl.get("autoAdaptiveStreams").is_some();
+            if let Some(auto_flag) = dl.get("autoAdaptiveStreams").and_then(|v| v.as_bool()) {
+                auto_adaptive_streams = auto_flag;
+            }
+            if let Some(seg) = dl.get("segmentedDownloads").and_then(|v| v.as_str()) {
+                if seg == "disabled" {
+                    single_stream_setting = true;
                 }
+            }
+            if let Some(conns) = dl.get("maxConnectionsPerFile").and_then(|v| v.as_u64()) {
+                let raw = conns as u32;
+                // Migrate legacy un-migrated SQLite settings (6 without autoAdaptiveStreams) to ceiling 32
+                settings_ceiling = if !has_auto_flag && raw == 6 {
+                    32
+                } else {
+                    raw.clamp(1, 64)
+                };
             }
             if let Some(min_mb) = dl
                 .get("minFileSizeForSegmentationMb")
@@ -111,7 +122,75 @@ pub(super) fn build_execution_config(
         }
     }
 
+    match max_connections {
+        // Explicit Single-Stream Compatibility override
+        Some(1) => {
+            adaptive.auto_scale = false;
+            adaptive.initial_connections = 1;
+            adaptive.min_connections = 1;
+            adaptive.max_connections = 1;
+        }
+        // Explicit Auto (Adaptive) mode from UI
+        Some(0) => {
+            let ceiling = settings_ceiling.clamp(1, 64);
+            if ceiling == 1 {
+                adaptive.auto_scale = false;
+                adaptive.initial_connections = 1;
+                adaptive.min_connections = 1;
+                adaptive.max_connections = 1;
+            } else {
+                adaptive.auto_scale = true;
+                adaptive.initial_connections = 4.min(ceiling);
+                adaptive.min_connections = 1;
+                adaptive.max_connections = ceiling;
+            }
+        }
+        // Per-download upper ceiling override (e.g. 16, 32, 64)
+        Some(conns) => {
+            let ceiling = conns.clamp(1, 64);
+            adaptive.auto_scale = auto_adaptive_streams && !single_stream_setting;
+            adaptive.min_connections = if adaptive.auto_scale { 1 } else { ceiling };
+            adaptive.initial_connections = if adaptive.auto_scale {
+                4.min(ceiling)
+            } else {
+                ceiling
+            };
+            adaptive.max_connections = ceiling;
+        }
+        // Default / background tasks: inherit global settings
+        None => {
+            if single_stream_setting || settings_ceiling == 1 {
+                adaptive.auto_scale = false;
+                adaptive.initial_connections = 1;
+                adaptive.min_connections = 1;
+                adaptive.max_connections = 1;
+            } else if auto_adaptive_streams {
+                adaptive.auto_scale = true;
+                adaptive.initial_connections = 4.min(settings_ceiling);
+                adaptive.min_connections = 1;
+                adaptive.max_connections = settings_ceiling;
+            } else {
+                adaptive.auto_scale = false;
+                adaptive.initial_connections = settings_ceiling;
+                adaptive.min_connections = settings_ceiling;
+                adaptive.max_connections = settings_ceiling;
+            }
+        }
+    }
+
     adaptive.max_connections_per_host = adaptive.max_connections;
+    (adaptive, proxy, req_timeout_secs)
+}
+
+/// Build `AdaptiveConfig`, proxy, timeout, concurrency, and torrent power settings.
+pub(super) fn build_execution_config(
+    state: &AppState,
+    settings_val: Option<&serde_json::Value>,
+    max_connections: Option<u32>,
+    is_p2p_or_torrent: bool,
+) -> ExecutionConfig {
+    let (adaptive, proxy, req_timeout_secs) =
+        resolve_adaptive_and_network(settings_val, max_connections);
 
     let torrent_power = if is_p2p_or_torrent {
         state
@@ -488,5 +567,63 @@ fn resolve_filename_conflict(
                 Ok(auto_rename(save_path, clean_name))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_default_auto_adaptive_starts_at_4_with_ceiling_32() {
+        let (cfg, _, _) = resolve_adaptive_and_network(None, None);
+        assert!(cfg.auto_scale);
+        assert_eq!(cfg.initial_connections, 4);
+        assert_eq!(cfg.min_connections, 1);
+        assert_eq!(cfg.max_connections, 32);
+        assert_eq!(cfg.max_connections_per_host, 32);
+    }
+
+    #[test]
+    fn test_legacy_settings_6_streams_migrates_to_auto_32() {
+        let legacy = json!({
+            "downloads": {
+                "maxConnectionsPerFile": 6
+            }
+        });
+        let (cfg, _, _) = resolve_adaptive_and_network(Some(&legacy), None);
+        assert!(cfg.auto_scale);
+        assert_eq!(cfg.initial_connections, 4);
+        assert_eq!(cfg.max_connections, 32);
+        assert_eq!(cfg.max_connections_per_host, 32);
+    }
+
+    #[test]
+    fn test_explicit_auto_0_and_64_max_and_single_stream_1() {
+        let settings = json!({
+            "downloads": {
+                "autoAdaptiveStreams": true,
+                "maxConnectionsPerFile": 48
+            }
+        });
+
+        let (auto_cfg, _, _) = resolve_adaptive_and_network(Some(&settings), Some(0));
+        assert!(auto_cfg.auto_scale);
+        assert_eq!(auto_cfg.initial_connections, 4);
+        assert_eq!(auto_cfg.max_connections, 48);
+
+        let (cap64_cfg, _, _) = resolve_adaptive_and_network(Some(&settings), Some(64));
+        assert!(cap64_cfg.auto_scale);
+        assert_eq!(cap64_cfg.initial_connections, 4);
+        assert_eq!(cap64_cfg.max_connections, 64);
+        assert_eq!(cap64_cfg.max_connections_per_host, 64);
+
+        let (single_cfg, _, _) = resolve_adaptive_and_network(Some(&settings), Some(1));
+        assert!(!single_cfg.auto_scale);
+        assert_eq!(single_cfg.initial_connections, 1);
+        assert_eq!(single_cfg.min_connections, 1);
+        assert_eq!(single_cfg.max_connections, 1);
+        assert_eq!(single_cfg.max_connections_per_host, 1);
     }
 }

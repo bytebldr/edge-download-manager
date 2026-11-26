@@ -2,6 +2,7 @@ use crate::sanitizer::Sanitizer;
 use reqwest::header::{ACCEPT_ENCODING, RANGE};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -12,6 +13,8 @@ pub enum ProbeError {
     Status(u16),
     #[error("Invalid URL")]
     InvalidUrl,
+    #[error("Probe request timed out")]
+    Timeout,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +36,8 @@ pub struct ProbeResult {
 pub struct Probe;
 
 impl Probe {
+    pub const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+
     pub async fn probe_url(client: &Client, url: &str) -> Result<ProbeResult, ProbeError> {
         Self::probe_url_with_headers(client, url, None, None, None).await
     }
@@ -43,6 +48,25 @@ impl Probe {
         cookies: Option<&str>,
         referer: Option<&str>,
         user_agent: Option<&str>,
+    ) -> Result<ProbeResult, ProbeError> {
+        Self::probe_url_with_headers_timeout(
+            client,
+            url,
+            cookies,
+            referer,
+            user_agent,
+            Self::PROBE_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn probe_url_with_headers_timeout(
+        client: &Client,
+        url: &str,
+        cookies: Option<&str>,
+        referer: Option<&str>,
+        user_agent: Option<&str>,
+        request_timeout: Duration,
     ) -> Result<ProbeResult, ProbeError> {
         // Try HEAD first
         let mut head_req = client.head(url).header(ACCEPT_ENCODING, "identity");
@@ -56,10 +80,10 @@ impl Probe {
             head_req = head_req.header(reqwest::header::USER_AGENT, u);
         }
 
-        let head_resp = head_req.send().await;
+        let head_resp = tokio::time::timeout(request_timeout, head_req.send()).await;
 
         let (resp, tested_range_directly) = match head_resp {
-            Ok(r) if r.status().is_success() => (r, false),
+            Ok(Ok(r)) if r.status().is_success() => (r, false),
             _ => {
                 // Fallback to GET with Range: bytes=0-0
                 let mut get_req = client
@@ -76,7 +100,9 @@ impl Probe {
                     get_req = get_req.header(reqwest::header::USER_AGENT, u);
                 }
 
-                let r = get_req.send().await?;
+                let r = tokio::time::timeout(request_timeout, get_req.send())
+                    .await
+                    .map_err(|_| ProbeError::Timeout)??;
                 (r, true)
             }
         };
@@ -188,7 +214,8 @@ impl Probe {
                 range_test = range_test.header(reqwest::header::USER_AGENT, u);
             }
 
-            if let Ok(rt_resp) = range_test.send().await {
+            if let Ok(Ok(rt_resp)) = tokio::time::timeout(request_timeout, range_test.send()).await
+            {
                 if rt_resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
                     resumable = true;
                     if size_total.is_none() {
@@ -301,9 +328,12 @@ impl Probe {
             "https://www.youtube.com/oembed?url={}&format=json",
             urlencoding::encode(url)
         );
-        let resp = client.get(&oembed_url).send().await.ok()?;
+        let resp = tokio::time::timeout(Self::PROBE_TIMEOUT, client.get(&oembed_url).send())
+            .await
+            .ok()?
+            .ok()?;
         if resp.status().is_success() {
-            if let Ok(text) = resp.text().await {
+            if let Ok(Ok(text)) = tokio::time::timeout(Self::PROBE_TIMEOUT, resp.text()).await {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                     if let Some(title) = json.get("title").and_then(|v| v.as_str()) {
                         let clean = Sanitizer::sanitize_filename(&format!("{}.mp4", title));
@@ -385,5 +415,39 @@ impl Probe {
             }
         }
         filename
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_probe_timeout_returns_timeout_error_on_hung_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+
+        // Accept connections and hold them open without sending any HTTP response
+        let _server = tokio::spawn(async move {
+            let mut sockets = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                sockets.push(socket);
+            }
+        });
+
+        let client = Client::new();
+        let url = format!("http://{}/hung.bin", addr);
+        let res = Probe::probe_url_with_headers_timeout(
+            &client,
+            &url,
+            None,
+            None,
+            None,
+            Duration::from_millis(80),
+        )
+        .await;
+
+        assert!(matches!(res, Err(ProbeError::Timeout)));
     }
 }
