@@ -1,7 +1,10 @@
 use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures_util::StreamExt;
-use reqwest::header::{ACCEPT_ENCODING, AUTHORIZATION, COOKIE, IF_RANGE, LAST_MODIFIED, LOCATION, RANGE, REFERER, RETRY_AFTER, USER_AGENT};
+use reqwest::header::{
+    ACCEPT_ENCODING, AUTHORIZATION, COOKIE, IF_RANGE, LAST_MODIFIED, LOCATION, RANGE, REFERER,
+    RETRY_AFTER, USER_AGENT,
+};
 use reqwest::{Client, Response, StatusCode, Version};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -336,7 +339,8 @@ impl AdaptiveWorker {
     }
 
     pub fn mark_activity(&self) {
-        self.last_activity_ms.store(epoch_ms_now(), Ordering::Relaxed);
+        self.last_activity_ms
+            .store(epoch_ms_now(), Ordering::Relaxed);
     }
 
     pub fn is_stalled(&self, timeout_secs: u64) -> bool {
@@ -379,7 +383,8 @@ impl AdaptiveWorker {
                 let post_end = self.end.load(Ordering::SeqCst);
                 if next_pos.saturating_sub(1) > post_end {
                     let clamped_len = if cur_pos <= post_end {
-                        (post_end.saturating_sub(cur_pos).saturating_add(1)).min(want as u64) as usize
+                        (post_end.saturating_sub(cur_pos).saturating_add(1)).min(want as u64)
+                            as usize
                     } else {
                         0
                     };
@@ -453,7 +458,9 @@ impl AdaptiveWorker {
                 idx: self.idx,
                 bytes_read: allowed as u64,
                 range_start: write_offset,
-                range_end: write_offset.saturating_add(allowed as u64).saturating_sub(1),
+                range_end: write_offset
+                    .saturating_add(allowed as u64)
+                    .saturating_sub(1),
             })
             .await;
 
@@ -602,10 +609,7 @@ impl AdaptiveWorker {
             // fall back to Last-Modified when ETag is absent or weak.
             let strong_etag = self.etag.as_deref().and_then(|tag| {
                 let trimmed = tag.trim();
-                if trimmed.is_empty()
-                    || trimmed.starts_with("W/")
-                    || trimmed.starts_with("w/")
-                {
+                if trimmed.is_empty() || trimmed.starts_with("W/") || trimmed.starts_with("w/") {
                     None
                 } else {
                     Some(trimmed)
@@ -656,7 +660,10 @@ impl AdaptiveWorker {
                     "Download link expired (HTTP {}). Please refresh URL to resume.",
                     status.as_u16()
                 );
-                warn!("Worker {} encountered HTTP {}: {}", self.idx, status, err_msg);
+                warn!(
+                    "Worker {} encountered HTTP {}: {}",
+                    self.idx, status, err_msg
+                );
                 self.set_status(WorkerStatus::Failed);
                 let _ = event_tx
                     .send(AdaptiveWorkerEvent::Failed {
@@ -702,7 +709,10 @@ impl AdaptiveWorker {
                 retries += 1;
                 self.retry_count.store(retries, Ordering::Relaxed);
                 if retries >= max_retries {
-                    let err_msg = format!("HTTP {} Rate Limited / Unavailable by Host", status.as_u16());
+                    let err_msg = format!(
+                        "HTTP {} Rate Limited / Unavailable by Host",
+                        status.as_u16()
+                    );
                     self.set_status(WorkerStatus::Failed);
                     let _ = event_tx
                         .send(AdaptiveWorkerEvent::Failed {
@@ -863,8 +873,11 @@ impl AdaptiveWorker {
                                 retries += 1;
                                 self.retry_count.store(retries, Ordering::Relaxed);
                                 drop(_host_permit);
-                                if sleep_or_cancel(&self.cancelled, jittered_backoff(self.idx, retries))
-                                    .await
+                                if sleep_or_cancel(
+                                    &self.cancelled,
+                                    jittered_backoff(self.idx, retries),
+                                )
+                                .await
                                 {
                                     return;
                                 }
@@ -1051,7 +1064,10 @@ mod tests {
         assert!(parsed >= Duration::from_secs(38) && parsed <= Duration::from_secs(45));
 
         let far_future = (Utc::now() + chrono::Duration::seconds(500)).to_rfc2822();
-        assert_eq!(parse_retry_after(&far_future), Some(Duration::from_secs(120)));
+        assert_eq!(
+            parse_retry_after(&far_future),
+            Some(Duration::from_secs(120))
+        );
 
         let past = "Wed, 21 Oct 2015 07:28:00 GMT";
         assert_eq!(parse_retry_after(past), Some(Duration::from_secs(1)));

@@ -1130,6 +1130,9 @@ mod tests {
         let segs = store.get_segments(id).unwrap();
         assert_eq!(segs.len(), 2);
         assert_eq!((segs[0].start, segs[0].end, segs[0].pos), (0, 499, 500));
-        assert_eq!((segs[1].start, segs[1].end, segs[1].pos, segs[1].retries), (500, 999, 750, 2));
+        assert_eq!(
+            (segs[1].start, segs[1].end, segs[1].pos, segs[1].retries),
+            (500, 999, 750, 2)
+        );
     }
 }

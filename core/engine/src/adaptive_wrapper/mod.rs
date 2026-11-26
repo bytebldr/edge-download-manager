@@ -34,7 +34,8 @@ impl AdaptiveWrapper {
                 let max_conns = (*max_connections as u32).clamp(1, 64);
                 task.config.max_connections = max_conns;
                 task.config.max_connections_per_host = task.config.max_connections;
-                task.config.initial_connections = task.config.initial_connections.clamp(1, max_conns);
+                task.config.initial_connections =
+                    task.config.initial_connections.clamp(1, max_conns);
                 task.config.min_connections = task.config.min_connections.clamp(1, max_conns);
                 if max_conns == 1 {
                     task.config.auto_scale = false;
@@ -50,7 +51,8 @@ impl AdaptiveWrapper {
                 let max_conns = (*max_connections as u32).clamp(1, 64);
                 task.config.max_connections = max_conns;
                 task.config.max_connections_per_host = task.config.max_connections;
-                task.config.initial_connections = task.config.initial_connections.clamp(1, max_conns);
+                task.config.initial_connections =
+                    task.config.initial_connections.clamp(1, max_conns);
                 task.config.min_connections = task.config.min_connections.clamp(1, max_conns);
                 if max_conns == 1 {
                     task.config.auto_scale = false;

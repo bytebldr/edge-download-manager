@@ -73,7 +73,12 @@ pub struct PipelinedWriterTx {
 
 impl PipelinedWriterTx {
     fn check_alive(&self) -> io::Result<()> {
-        if let Some(err) = self.shared_error.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+        if let Some(err) = self
+            .shared_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+        {
             return Err(err.to_io_error());
         }
         if self.cancelled.load(Ordering::Acquire) {
@@ -95,7 +100,10 @@ impl PipelinedWriterTx {
             return Ok(());
         }
 
-        let permit_count = data.len().min(self.max_buffered_bytes).min(u32::MAX as usize) as u32;
+        let permit_count = data
+            .len()
+            .min(self.max_buffered_bytes)
+            .min(u32::MAX as usize) as u32;
         let permit = self
             .byte_budget
             .clone()
@@ -141,7 +149,10 @@ impl PipelinedWriterTx {
         match rx.await {
             Ok(res) => res,
             Err(_) => Err(self.check_alive().err().unwrap_or_else(|| {
-                io::Error::new(io::ErrorKind::BrokenPipe, "pipeline writer stopped before flush ack")
+                io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "pipeline writer stopped before flush ack",
+                )
             })),
         }
     }
@@ -229,12 +240,7 @@ impl PipelinedWriterHandle {
         let writer_thread = std::thread::Builder::new()
             .name("edm-pipeline-writer".into())
             .spawn(move || -> io::Result<()> {
-                let res = writer_loop(
-                    file,
-                    &mut receiver,
-                    &thread_cancelled,
-                    &thread_ops,
-                );
+                let res = writer_loop(file, &mut receiver, &thread_cancelled, &thread_ops);
                 if let Err(ref err) = res {
                     let mut guard = thread_error.lock().unwrap_or_else(|p| p.into_inner());
                     if guard.is_none() {
@@ -461,7 +467,14 @@ fn apply_writer_cmd(
             if !data.is_empty() {
                 // Guard against duplicate exact-offset writes overwriting longer staged slices.
                 if staging.contains_key(&offset) {
-                    flush_staging(file, staging, staging_bytes, scratch, permits, coalesced_ops)?;
+                    flush_staging(
+                        file,
+                        staging,
+                        staging_bytes,
+                        scratch,
+                        permits,
+                        coalesced_ops,
+                    )?;
                 }
                 *staging_bytes = staging_bytes.saturating_add(data.len());
                 staging.insert(offset, data);
@@ -528,7 +541,8 @@ fn writer_loop(
             if cancelled.load(Ordering::Acquire) {
                 staging.clear();
                 permits.clear();
-                let abort_err = io::Error::new(io::ErrorKind::Interrupted, "pipeline writer aborted");
+                let abort_err =
+                    io::Error::new(io::ErrorKind::Interrupted, "pipeline writer aborted");
                 fail_pending_flushes(pending_flushes, &abort_err);
                 return Ok(());
             }

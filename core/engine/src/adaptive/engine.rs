@@ -165,9 +165,7 @@ impl AdaptiveEngine {
                 break;
             }
 
-            if !use_get_range
-                && matches!(resp.status().as_u16(), 400 | 403 | 405 | 501)
-            {
+            if !use_get_range && matches!(resp.status().as_u16(), 400 | 403 | 405 | 501) {
                 use_get_range = true;
                 continue;
             }
@@ -1318,12 +1316,11 @@ impl AdaptiveEngine {
         let hedged_won = scheduler.hedged_requests_won();
         let url_for_zone = task.url.clone();
         drop(writer_tx);
-        let final_path = tokio::task::spawn_blocking(move || {
-            writer_handle.finish(Some(&url_for_zone))
-        })
-        .await
-        .map_err(|e| format!("File finalization task failed: {}", e))?
-        .map_err(|e| format!("Failed to finalize file: {}", e))?;
+        let final_path =
+            tokio::task::spawn_blocking(move || writer_handle.finish(Some(&url_for_zone)))
+                .await
+                .map_err(|e| format!("File finalization task failed: {}", e))?
+                .map_err(|e| format!("Failed to finalize file: {}", e))?;
 
         if let Some(tot) = total_size {
             let check_path = final_path.clone();
@@ -1656,7 +1653,10 @@ mod tests {
         let mut h = HashMap::new();
         h.insert("Set-Cookie".to_string(), "session=secret123".to_string());
         h.insert("Authorization".to_string(), "Bearer tok".to_string());
-        h.insert("Content-Type".to_string(), "application/octet-stream".to_string());
+        h.insert(
+            "Content-Type".to_string(),
+            "application/octet-stream".to_string(),
+        );
         let r = redact_headers(&h);
         assert_eq!(r.get("Set-Cookie"), Some(&"[REDACTED]"));
         assert_eq!(r.get("Authorization"), Some(&"[REDACTED]"));
@@ -1708,9 +1708,21 @@ mod tests {
             assert_eq!(seg.idx, i as u32);
         }
         assert_eq!((segs[0].start, segs[0].end, segs[0].pos), (0, 999, 1000));
-        assert_eq!((segs[1].start, segs[1].end, segs[1].pos), (2000, 2499, 2500));
-        assert_eq!((segs[2].start, segs[2].end, segs[2].pos), (2500, 2999, 2500));
-        assert_eq!((segs[3].start, segs[3].end, segs[3].pos), (1000, 1999, 1000));
-        assert_eq!((segs[4].start, segs[4].end, segs[4].pos), (3000, 3999, 3000));
+        assert_eq!(
+            (segs[1].start, segs[1].end, segs[1].pos),
+            (2000, 2499, 2500)
+        );
+        assert_eq!(
+            (segs[2].start, segs[2].end, segs[2].pos),
+            (2500, 2999, 2500)
+        );
+        assert_eq!(
+            (segs[3].start, segs[3].end, segs[3].pos),
+            (1000, 1999, 1000)
+        );
+        assert_eq!(
+            (segs[4].start, segs[4].end, segs[4].pos),
+            (3000, 3999, 3000)
+        );
     }
 }

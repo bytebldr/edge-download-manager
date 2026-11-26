@@ -760,16 +760,39 @@ mod tests {
         controller.last_adjustment = start;
 
         let t1 = start + Duration::from_secs(4);
-        let d1 = controller.evaluate_sample_at(t1, 4_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d1, AdaptiveDecision::ScaleUp { from: 32, to: 48, .. }));
+        let d1 =
+            controller.evaluate_sample_at(t1, 4_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d1,
+            AdaptiveDecision::ScaleUp {
+                from: 32,
+                to: 48,
+                ..
+            }
+        ));
 
         let t2 = t1 + Duration::from_secs(4);
-        let d2 = controller.evaluate_sample_at(t2, 8_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d2, AdaptiveDecision::ScaleUp { from: 48, to: 64, .. }));
+        let d2 =
+            controller.evaluate_sample_at(t2, 8_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d2,
+            AdaptiveDecision::ScaleUp {
+                from: 48,
+                to: 64,
+                ..
+            }
+        ));
 
         let t3 = t2 + Duration::from_secs(4);
-        let d3 = controller.evaluate_sample_at(t3, 14_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d3, AdaptiveDecision::HoldStable { connections: 64, .. }));
+        let d3 =
+            controller.evaluate_sample_at(t3, 14_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d3,
+            AdaptiveDecision::HoldStable {
+                connections: 64,
+                ..
+            }
+        ));
         assert_eq!(controller.stable_target(), 64);
     }
 
@@ -792,13 +815,21 @@ mod tests {
 
         // Probe 4 -> 6
         let t1 = start + Duration::from_secs(4);
-        let d1 = controller.evaluate_sample_at(t1, 10_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d1, AdaptiveDecision::ScaleUp { from: 4, to: 6, .. }));
+        let d1 =
+            controller.evaluate_sample_at(t1, 10_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d1,
+            AdaptiveDecision::ScaleUp { from: 4, to: 6, .. }
+        ));
 
         // +15% gain (< 25% per-connection throttle threshold): commits 6 and caps at H2 soft ceiling 6
         let t2 = t1 + Duration::from_secs(4);
-        let d2 = controller.evaluate_sample_at(t2, 16_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d2, AdaptiveDecision::HoldStable { connections: 6, .. }));
+        let d2 =
+            controller.evaluate_sample_at(t2, 16_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d2,
+            AdaptiveDecision::HoldStable { connections: 6, .. }
+        ));
         assert_eq!(controller.mode(), AccelerationMode::Stable);
         assert_eq!(controller.current_connections(), 6);
     }
@@ -829,7 +860,10 @@ mod tests {
             false,
             None,
         );
-        assert!(matches!(d_err, AdaptiveDecision::ScaleDown { from: 8, to: 6, .. }));
+        assert!(matches!(
+            d_err,
+            AdaptiveDecision::ScaleDown { from: 8, to: 6, .. }
+        ));
         assert_eq!(controller.mode(), AccelerationMode::Limited);
 
         // During backoff window: remains Limited
@@ -841,7 +875,10 @@ mod tests {
             false,
             None,
         );
-        assert!(matches!(d_hold, AdaptiveDecision::HoldStable { connections: 6, .. }));
+        assert!(matches!(
+            d_hold,
+            AdaptiveDecision::HoldStable { connections: 6, .. }
+        ));
         assert_eq!(controller.mode(), AccelerationMode::Limited);
 
         // Once backoff expires (15s): recovers Limited -> Auto
@@ -853,7 +890,10 @@ mod tests {
             false,
             None,
         );
-        assert!(matches!(d_rec, AdaptiveDecision::HoldStable { connections: 6, .. }));
+        assert!(matches!(
+            d_rec,
+            AdaptiveDecision::HoldStable { connections: 6, .. }
+        ));
         assert_eq!(controller.mode(), AccelerationMode::Auto);
 
         // HTTP 429 also recovers cleanly after Retry-After window
@@ -899,25 +939,49 @@ mod tests {
 
         // Baseline + Probe #1 (8 -> 12)
         let t1 = start + Duration::from_secs(4);
-        let d1 = controller.evaluate_sample_at(t1, 1_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d1, AdaptiveDecision::ScaleUp { from: 8, to: 12, .. }));
+        let d1 =
+            controller.evaluate_sample_at(t1, 1_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d1,
+            AdaptiveDecision::ScaleUp {
+                from: 8,
+                to: 12,
+                ..
+            }
+        ));
 
         // Probe #1 fails (flat throughput) -> reverts to 8, preserves BBR Probe reason, stays Optimizing
         let t2 = t1 + Duration::from_secs(4);
-        let d2 = controller.evaluate_sample_at(t2, 1_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d2, AdaptiveDecision::HoldStable { connections: 8, .. }));
+        let d2 =
+            controller.evaluate_sample_at(t2, 1_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d2,
+            AdaptiveDecision::HoldStable { connections: 8, .. }
+        ));
         assert!(controller.status_reason().contains("BBR Probe:"));
         assert_eq!(controller.mode(), AccelerationMode::Optimizing);
 
         // After widened cooldown (8s), must launch a REAL Probe #2 (8 -> 12), NOT lock Stable without probing!
         let t3 = t2 + Duration::from_secs(8);
-        let d3 = controller.evaluate_sample_at(t3, 1_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d3, AdaptiveDecision::ScaleUp { from: 8, to: 12, .. }));
+        let d3 =
+            controller.evaluate_sample_at(t3, 1_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d3,
+            AdaptiveDecision::ScaleUp {
+                from: 8,
+                to: 12,
+                ..
+            }
+        ));
 
         // Probe #2 also fails -> now locks Stable at 8
         let t4 = t3 + Duration::from_secs(8);
-        let d4 = controller.evaluate_sample_at(t4, 1_000_000, Duration::from_secs(1), 0, false, None);
-        assert!(matches!(d4, AdaptiveDecision::HoldStable { connections: 8, .. }));
+        let d4 =
+            controller.evaluate_sample_at(t4, 1_000_000, Duration::from_secs(1), 0, false, None);
+        assert!(matches!(
+            d4,
+            AdaptiveDecision::HoldStable { connections: 8, .. }
+        ));
         assert_eq!(controller.mode(), AccelerationMode::Stable);
     }
 

@@ -39,7 +39,8 @@ impl RangeSet {
 
         // Count how many consecutive ranges starting at `idx` overlap or are adjacent to [start, end].
         let merge_limit = end.saturating_add(1);
-        let merge_count = self.ranges[idx..].partition_point(|&(r_start, _)| r_start <= merge_limit);
+        let merge_count =
+            self.ranges[idx..].partition_point(|&(r_start, _)| r_start <= merge_limit);
 
         if merge_count == 0 {
             self.ranges.insert(idx, (start, end));

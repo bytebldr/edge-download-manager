@@ -509,11 +509,7 @@ impl WorkScheduler {
                     && (s == WorkerStatus::Connecting
                         || s == WorkerStatus::Downloading
                         || s == WorkerStatus::Stalled)
-                    && self
-                        .runtime
-                        .get(&w.idx)
-                        .and_then(|rt| rt.hedged_for)
-                        == Some(victim_idx)
+                    && self.runtime.get(&w.idx).and_then(|rt| rt.hedged_for) == Some(victim_idx)
             })
     }
 
@@ -535,7 +531,11 @@ impl WorkScheduler {
         if self.active_hedged_count() >= self.max_hedged_workers {
             return None;
         }
-        if self.active_count() >= self.target_connections.saturating_add(self.max_hedged_workers) {
+        if self.active_count()
+            >= self
+                .target_connections
+                .saturating_add(self.max_hedged_workers)
+        {
             return None;
         }
 
@@ -1058,9 +1058,11 @@ mod tests {
                     }
                 }
 
-                if let Some((victim_idx, _)) =
-                    scheduler.find_best_steal_candidate(2 * scheduler.min_chunk_size, u64::MAX, None)
-                {
+                if let Some((victim_idx, _)) = scheduler.find_best_steal_candidate(
+                    2 * scheduler.min_chunk_size,
+                    u64::MAX,
+                    None,
+                ) {
                     if let Some((new_start, new_end)) =
                         scheduler.claim_next_range(victim_idx, scheduler.min_chunk_size)
                     {
@@ -1237,7 +1239,9 @@ mod tests {
         w2_raw.set_status(WorkerStatus::Downloading);
         let w2 = Arc::new(w2_raw);
 
-        scheduler.workers.extend([w0.clone(), w1.clone(), w2.clone()]);
+        scheduler
+            .workers
+            .extend([w0.clone(), w1.clone(), w2.clone()]);
         assert!(scheduler.should_retire_worker(1));
         assert_eq!(scheduler.active_count(), 3);
 
@@ -1335,9 +1339,13 @@ mod tests {
         }
 
         let dir = tempfile::tempdir().unwrap();
-        let writer_handle =
-            crate::adaptive::pipeline_writer::PipelinedWriterHandle::new(dir.path(), "stall_skip.bin", Some(20_001), 16)
-                .unwrap();
+        let writer_handle = crate::adaptive::pipeline_writer::PipelinedWriterHandle::new(
+            dir.path(),
+            "stall_skip.bin",
+            Some(20_001),
+            16,
+        )
+        .unwrap();
         let writer_tx = writer_handle.writer();
         let (tx, mut rx) = mpsc::channel(8);
 

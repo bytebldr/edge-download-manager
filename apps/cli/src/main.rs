@@ -121,7 +121,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if adaptive {
                 println!("Starting Adaptive Download for {}", url);
             } else {
-                println!("Starting Fixed-Concurrency Download ({} streams) for {}", clamped, url);
+                println!(
+                    "Starting Fixed-Concurrency Download ({} streams) for {}",
+                    clamped, url
+                );
             }
             let saved_path = engine.download(task, Some(telemetry_cb)).await?;
             println!("\nDownloaded successfully to: {:?}", saved_path);
