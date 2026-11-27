@@ -694,10 +694,20 @@ function injectYoutubePillIfNeeded() {
         ${iconSvg}
       </div>
       <div class="edm-yt-item-text" style="flex: 1 1 0%; min-width: 0; max-width: 228px; overflow: hidden; box-sizing: border-box;">
-        <span class="edm-yt-item-title" title="${title}" style="display: block; font-size: 12px; font-weight: 600; color: #f4f4f5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 228px;">${title}</span>
-        <span class="edm-yt-item-subtitle" title="${subtitle}" style="display: block; font-size: 10px; color: #8fa0be; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 228px; margin-top: 1px;">${subtitle}</span>
+        <span class="edm-yt-item-title" style="display: block; font-size: 12px; font-weight: 600; color: #f4f4f5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 228px;"></span>
+        <span class="edm-yt-item-subtitle" style="display: block; font-size: 10px; color: #8fa0be; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 228px; margin-top: 1px;"></span>
       </div>
     `;
+    const titleEl = item.querySelector(".edm-yt-item-title") as HTMLSpanElement | null;
+    if (titleEl) {
+      titleEl.textContent = title;
+      titleEl.title = title;
+    }
+    const subtitleEl = item.querySelector(".edm-yt-item-subtitle") as HTMLSpanElement | null;
+    if (subtitleEl) {
+      subtitleEl.textContent = subtitle;
+      subtitleEl.title = subtitle;
+    }
 
     item.addEventListener("click", (e) => {
       e.stopPropagation();

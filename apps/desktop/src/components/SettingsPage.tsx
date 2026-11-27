@@ -1,8 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Moon,
-  Sun,
-  Laptop,
   Sliders,
   Download,
   Upload,
@@ -11,7 +8,6 @@ import {
   Globe,
   Clock,
   ShieldCheck,
-  Cpu,
   Info,
   RotateCcw,
   Search,
@@ -24,12 +20,7 @@ import {
   CheckCircle2,
   X,
   Package,
-  Layers,
   Sparkles,
-  Share2,
-  Film,
-  Server,
-  Radio,
   Copy,
   Check,
   Key,
@@ -46,17 +37,20 @@ import {
   openFolderDialog,
   tauriGetSystemUserDirs,
   tauriGetDiskFreeSpace,
-  tauriSetAutostart,
   DiskFreeSpace,
   UpdateCheckResult,
   OtaProgress,
 } from "../services/tauriBridge";
 import { EdmSettings, defaultSettings, saveSettings } from "../types/settings";
-import { FEATURE_PACKS } from "../types/featurePacks";
 import { formatBytes } from "../utils/format";
-import { useI18n, type Locale } from "../features/i18n";
+import { useI18n } from "../features/i18n";
 import { RoutingAndCategoryPanel } from "../features/routing";
-import { AutomationPanel } from "../features/automation";
+import { Tooltip } from "./Tooltip";
+import { Select } from "./Select";
+import { GeneralSettingsTab } from "./settings/GeneralSettingsTab";
+import { PacksSettingsTab } from "./settings/PacksSettingsTab";
+import { AutomationSettingsTab } from "./settings/AutomationSettingsTab";
+import { EngineSettingsTab } from "./settings/EngineSettingsTab";
 import { motion } from "motion/react";
 import { springs } from "../utils/motion";
 import type { DownloadItem } from "../App";
@@ -543,34 +537,39 @@ export default function SettingsPage({
               className="w-48 sm:w-64 h-8 pl-8 pr-7 rounded-lg text-xs bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors truncate"
             />
             {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                aria-label="Clear search"
-                title="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              <Tooltip content="Clear search" side="bottom" className="!absolute right-2 top-1/2 -translate-y-1/2">
+                <button
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer flex items-center justify-center"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
             )}
           </div>
 
-          <button
-            onClick={resetCurrentSection}
-            className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-amber-400 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
-            title="Reset active category to factory defaults"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Reset</span>
-          </button>
+          <Tooltip content="Reset active section to defaults" side="bottom">
+            <button
+              onClick={resetCurrentSection}
+              aria-label="Reset active category to factory defaults"
+              className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-amber-400 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Reset</span>
+            </button>
+          </Tooltip>
 
-          <button
-            onClick={handleExport}
-            className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
-            title="Export settings JSON"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
+          <Tooltip content="Export settings JSON" side="bottom" align="end">
+            <button
+              onClick={handleExport}
+              aria-label="Export settings JSON"
+              className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -631,290 +630,15 @@ export default function SettingsPage({
               SECTION 1: GENERAL & INTERFACE
           ══════════════════════════════════════════════════════════ */}
           {isSectionVisible("general") && (
-            <section id="section-general" className="space-y-5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-[var(--accent)]" />
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">General &amp; Interface</h2>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Configure visual appearance, theme modes, language localization, and system startup lifecycle.
-                </p>
-              </div>
-
-              {/* Theme & Palette */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] divide-y divide-[var(--border-dim)]">
-                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-primary)] block">Theme Mode</label>
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      High-contrast dark theme or system automatic synchronization.
-                    </span>
-                  </div>
-                  <div className="inline-flex rounded-lg p-0.5 bg-[var(--bg-chassis)] border border-[var(--border-dim)] gap-0.5 shrink-0">
-                    {[
-                      { id: "dark" as const, label: "Dark", icon: Moon },
-                      { id: "light" as const, label: "Light", icon: Sun },
-                      { id: "system" as const, label: "System", icon: Laptop },
-                    ].map((m) => {
-                      const Icon = m.icon;
-                      const isSel = settings.general.theme === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => update("general", { theme: m.id })}
-                          className={`py-1 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
-                            isSel
-                              ? "bg-[var(--accent)] text-[var(--accent-on)] font-semibold"
-                              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04]"
-                          }`}
-                        >
-                          <Icon className="w-3.5 h-3.5" />
-                          <span>{m.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Accent Color Palettes */}
-                <div className="p-4 space-y-2.5">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                      Accent Color Palette
-                    </label>
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      Select your preferred accent tone across progress indicators, buttons, and telemetry.
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-0.5">
-                    {paletteOptions.map((p) => {
-                      const isSel = settings.general.palette === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => update("general", { palette: p.id as any })}
-                          className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            isSel
-                              ? "border-[var(--accent)] bg-[var(--accent-badge-bg)] text-[var(--text-primary)] font-semibold"
-                              : "border-[var(--border-dim)] bg-transparent text-[var(--text-secondary)] hover:border-[var(--border-subtle)] hover:text-[var(--text-primary)]"
-                          }`}
-                        >
-                          <span
-                            className="w-3.5 h-3.5 rounded-full shrink-0"
-                            style={{ backgroundColor: p.color }}
-                          />
-                          <span className="text-[11px] whitespace-nowrap">{p.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* UI Style / Density */}
-                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-primary)] block">UI Density &amp; Visual Spacing</label>
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      Configure row padding and information visual density.
-                    </span>
-                  </div>
-                  <div className="inline-flex rounded-lg p-0.5 bg-[var(--bg-chassis)] border border-[var(--border-dim)] gap-0.5 shrink-0">
-                    {[
-                      { id: "pro" as const, label: "Pro Density" },
-                      { id: "compact" as const, label: "Compact" },
-                      { id: "modern" as const, label: "Comfortable" },
-                    ].map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => update("general", { uiStyle: s.id })}
-                        className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors cursor-pointer ${
-                          settings.general.uiStyle === s.id
-                            ? "bg-[var(--accent)] text-[var(--accent-on)] font-semibold"
-                            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04]"
-                        }`}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Language Selector */}
-                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-primary)] block">Language</label>
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      Interface language and text direction (RTL supported for Arabic).
-                    </span>
-                  </div>
-                  <select
-                    aria-label="Language"
-                    value={locale}
-                    onChange={(e) => setLocale(e.target.value as Locale)}
-                    className="h-8 px-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] cursor-pointer shrink-0"
-                  >
-                    {availableLocales.map((loc) => (
-                      <option key={loc.code} value={loc.code}>
-                        {loc.nativeLabel} ({loc.label})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Startup & Lifecycle Options */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] divide-y divide-[var(--border-dim)]">
-                <div className="px-4 py-3">
-                  <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                    System &amp; Background Lifecycle
-                  </label>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                    Control system tray residence, auto-start behavior, and memory-saving listener sleep.
-                  </p>
-                </div>
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Launch at Windows Startup</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Open EDM automatically when signing into Windows.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.launchAtStartup}
-                    onChange={(e) => {
-                      const val = e.target.checked;
-                      update("general", { launchAtStartup: val });
-                      tauriSetAutostart(val);
-                    }}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                {settings.general.launchAtStartup && (
-                  <div className="px-4 py-3 pl-8 flex items-center justify-between gap-4 bg-white/[0.01]">
-                    <div>
-                      <span className="font-medium text-xs text-[var(--text-primary)] block">Start Minimized</span>
-                      <span className="text-[11px] text-[var(--text-muted)]">Launch directly into the notification tray without opening the window.</span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={settings.general.startMinimized}
-                      onChange={(e) => update("general", { startMinimized: e.target.checked })}
-                      className="edm-checkbox"
-                    />
-                  </div>
-                )}
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Minimize to System Tray</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Closing the window keeps downloads active in the background.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.minimizeToTray}
-                    onChange={(e) => update("general", { minimizeToTray: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Auto-Restore Unfinished Downloads</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Automatically resume paused or incomplete tasks upon launch.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.restoreDownloadsOnLaunch}
-                    onChange={(e) => update("general", { restoreDownloadsOnLaunch: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Confirm Before Exit</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Prompt for confirmation if active downloads are transferring.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.confirmBeforeExit}
-                    onChange={(e) => update("general", { confirmBeforeExit: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Keep Engine Awake</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Prevent EDM from dropping into listener sleep and releasing WebView2 RAM.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.keepAwake ?? false}
-                    onChange={(e) => update("general", { keepAwake: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Idle Exit Timeout</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Completely exit background processes after a period of inactivity.</span>
-                  </div>
-                  <select
-                    value={
-                      settings.general.idleExitMinutes === null || settings.general.idleExitMinutes === undefined
-                        ? "never"
-                        : String(settings.general.idleExitMinutes)
-                    }
-                    disabled={settings.general.keepAwake}
-                    onChange={(e) => {
-                      const val = e.target.value === "never" ? null : parseInt(e.target.value, 10);
-                      update("general", { idleExitMinutes: val });
-                    }}
-                    className="h-8 px-2.5 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer disabled:opacity-40 shrink-0"
-                  >
-                    <option value="never">Never (Stay in Listener Sleep)</option>
-                    <option value="0">Immediately after Listener Sleep</option>
-                    <option value="5">After 5 minutes idle</option>
-                    <option value="15">After 15 minutes idle (Default)</option>
-                    <option value="30">After 30 minutes idle</option>
-                    <option value="60">After 60 minutes idle</option>
-                  </select>
-                </div>
-
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Show Connection Stream Boundaries</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Render subtle boundary indicators for parallel workers on progress tracks.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.general.showConnectionBoundaries ?? false}
-                    onChange={(e) => update("general", { showConnectionBoundaries: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </div>
-
-                <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="font-medium text-xs text-[var(--text-primary)] block">Download Deletion Policy</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">Choose default behavior when removing downloads from your list.</span>
-                  </div>
-                  <select
-                    value={settings.general.deletePreference || "always_ask"}
-                    onChange={(e) => handleSettingChange("general", "deletePreference", e.target.value)}
-                    className="h-8 px-2.5 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer shrink-0"
-                  >
-                    <option value="always_ask">Always ask (show confirmation modal)</option>
-                    <option value="list_only">Remove from list only (always keep files on disk)</option>
-                    <option value="delete_file">Delete file and remove from list (Recycle Bin / fallback)</option>
-                  </select>
-                </div>
-              </div>
-            </section>
+            <GeneralSettingsTab
+              settings={settings}
+              update={update}
+              handleSettingChange={handleSettingChange}
+              paletteOptions={paletteOptions}
+              locale={locale}
+              setLocale={setLocale}
+              availableLocales={availableLocales}
+            />
           )}
 
           {/* ═════════════════════════════════════════════════════════
@@ -1055,14 +779,16 @@ export default function SettingsPage({
                             className="w-full h-8 pl-8 pr-2.5 rounded-lg text-xs font-mono bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
                           />
                         </div>
-                        <button
-                          onClick={handleBrowseFolder}
-                          className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
-                          title="Choose folder"
-                        >
-                          <FolderOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
-                          <span>Browse</span>
-                        </button>
+                        <Tooltip content="Choose folder" side="top" align="end">
+                          <button
+                            onClick={handleBrowseFolder}
+                            aria-label="Choose folder"
+                            className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-transparent hover:bg-white/[0.05] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
+                            <span>Browse</span>
+                          </button>
+                        </Tooltip>
                       </div>
 
                       <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] font-mono pt-0.5">
@@ -1126,6 +852,24 @@ export default function SettingsPage({
 
               {/* Multi-Stream Concurrency & Segment Acceleration */}
               <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] divide-y divide-[var(--border-dim)]">
+                {/* Ask Before Download Toggle */}
+                <div className="px-4 py-3 flex items-center justify-between gap-4 border-b border-[var(--border-dim)]">
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-xs text-[var(--text-primary)] block">
+                      Ask before starting captured downloads
+                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)] block">
+                      Show the Add Download confirmation dialog when a download link is captured from the browser. When disabled, downloads start immediately.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.downloads.askBeforeDownload ?? true}
+                    onChange={(e) => update("downloads", { askBeforeDownload: e.target.checked })}
+                    className="edm-checkbox shrink-0"
+                  />
+                </div>
+
                 {/* Auto-Adaptive Engine Toggle */}
                 <div className="px-4 py-3 flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
@@ -1300,23 +1044,27 @@ export default function SettingsPage({
                               <span className="truncate flex-1 font-mono text-[11px]" title={cat.destinationDirectory || "Inherit default"}>
                                 {cat.destinationDirectory || "(Inherit default)"}
                               </span>
-                              <button
-                                onClick={() => handleBrowseCategoryFolder(cat.id, cat.destinationDirectory)}
-                                className="p-1 rounded hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0 cursor-pointer"
-                                title="Browse folder..."
-                              >
-                                <FolderOpen className="w-3.5 h-3.5" />
-                              </button>
+                              <Tooltip content="Browse folder" side="top">
+                                <button
+                                  onClick={() => handleBrowseCategoryFolder(cat.id, cat.destinationDirectory)}
+                                  aria-label="Browse category folder"
+                                  className="p-1 rounded hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0 cursor-pointer"
+                                >
+                                  <FolderOpen className="w-3.5 h-3.5" />
+                                </button>
+                              </Tooltip>
                             </div>
                           </td>
                           <td className="py-2 px-3 w-14 text-right">
-                            <button
-                              onClick={() => handleDeleteCategory(cat.id)}
-                              className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
-                              title="Delete Rule"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <Tooltip content="Delete Rule" side="top" align="end">
+                              <button
+                                onClick={() => handleDeleteCategory(cat.id)}
+                                aria-label="Delete rule"
+                                className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </Tooltip>
                           </td>
                         </tr>
                       ))}
@@ -1349,60 +1097,16 @@ export default function SettingsPage({
                   </button>
                 </div>
               </div>
+
+              {/* Per-Category Concurrency & Bandwidth Policies */}
+              <RoutingAndCategoryPanel mode="categories" />
             </section>
           )}
 
           {/* ═════════════════════════════════════════════════════════
               SECTION 3: FEATURE PACKS & PROTOCOL ENGINES
           ══════════════════════════════════════════════════════════ */}
-          {isSectionVisible("packs") && (
-            <section id="section-packs" className="space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-[var(--accent)]" />
-                    <h2 className="text-sm font-semibold text-[var(--text-primary)]">Feature Packs &amp; Protocol Engines</h2>
-                  </div>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">
-                    Multi-protocol adapters, P2P swarm engines, stream demuxers, and accelerated mirror resolvers.
-                  </p>
-                </div>
-                <span className="text-xs font-medium text-[var(--text-muted)] shrink-0">
-                  {FEATURE_PACKS.length} Integrated Packs
-                </span>
-              </div>
-
-              {/* Feature Packs Grid (Proportional radii: outer rounded-xl 12px, padding p-2 8px -> inner rounded 4px) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {FEATURE_PACKS.map((pack) => (
-                  <div
-                    key={pack.id}
-                    className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] p-2 flex items-center justify-between gap-2.5 min-w-0"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="p-1.5 rounded bg-[var(--bg-chassis)] border border-[var(--border-dim)] shrink-0">
-                        {pack.id === "http_pack" && <Globe className="w-4 h-4 text-blue-400" />}
-                        {pack.id === "bittorrent_pack" && <Share2 className="w-4 h-4 text-emerald-400" />}
-                        {pack.id === "ftp_pack" && <Server className="w-4 h-4 text-amber-400" />}
-                        {pack.id === "ed2k_pack" && <Radio className="w-4 h-4 text-purple-400" />}
-                        {pack.id === "m3u8_pack" && <Film className="w-4 h-4 text-cyan-400" />}
-                        {pack.id === "ffmpeg_pack" && <Layers className="w-4 h-4 text-pink-400" />}
-                        {pack.id === "yt_dlp_pack" && <Sparkles className="w-4 h-4 text-rose-400" />}
-                        {pack.id === "github_pack" && <Package className="w-4 h-4 text-slate-300" />}
-                        {pack.id === "huggingface_pack" && <Cpu className="w-4 h-4 text-yellow-400" />}
-                      </div>
-                      <span className="text-xs font-medium text-[var(--text-primary)] truncate" title={pack.name}>
-                        {pack.name}
-                      </span>
-                    </div>
-                    <span className="shrink-0 font-mono text-[10px] font-medium text-[var(--accent-badge-text)] bg-[var(--accent-badge-bg)] px-1.5 py-0.5 rounded border border-[var(--accent-badge-border)]">
-                      v{pack.version}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          {isSectionVisible("packs") && <PacksSettingsTab />}
 
           {/* ═════════════════════════════════════════════════════════
               SECTION 4: NETWORK & BROWSER
@@ -1567,15 +1271,17 @@ export default function SettingsPage({
                       <label className="text-[10px] font-semibold text-[var(--text-muted)] uppercase block mb-1">
                         Protocol
                       </label>
-                      <select
+                      <Select
                         value={settings.network.proxyProtocol}
-                        onChange={(e) => update("network", { proxyProtocol: e.target.value as any })}
-                        className="w-full h-8 px-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)]"
-                      >
-                        <option value="socks5">SOCKS5</option>
-                        <option value="http">HTTP</option>
-                        <option value="https">HTTPS</option>
-                      </select>
+                        onChange={(val) => update("network", { proxyProtocol: val as any })}
+                        ariaLabel="Proxy Protocol"
+                        className="w-full"
+                        options={[
+                          { value: "socks5", label: "SOCKS5" },
+                          { value: "http", label: "HTTP" },
+                          { value: "https", label: "HTTPS" },
+                        ]}
+                      />
                     </div>
                     <div>
                       <label className="text-[10px] font-semibold text-[var(--text-muted)] uppercase block mb-1">
@@ -1603,7 +1309,7 @@ export default function SettingsPage({
                 )}
               </div>
 
-              <RoutingAndCategoryPanel />
+              <RoutingAndCategoryPanel mode="proxy" />
             </section>
           )}
 
@@ -1611,170 +1317,14 @@ export default function SettingsPage({
               SECTION 5: ALERTS & NOTIFICATIONS
           ══════════════════════════════════════════════════════════ */}
           {isSectionVisible("automation") && (
-            <section id="section-automation" className="space-y-5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-[var(--accent)]" />
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">Alerts &amp; Notifications</h2>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Configure desktop toast alerts and audio cues upon download completion.
-                </p>
-              </div>
-
-              {/* Desktop Notifications */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] divide-y divide-[var(--border-dim)]">
-                <div className="px-4 py-3">
-                  <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                    Notification &amp; Audio Alerts
-                  </label>
-                </div>
-
-                <label className="px-4 py-3 flex items-center justify-between gap-4 cursor-pointer group">
-                  <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
-                    Show OS desktop banner when a download finishes
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.notifications.downloadCompleted}
-                    onChange={(e) => update("notifications", { downloadCompleted: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </label>
-
-                <label className="px-4 py-3 flex items-center justify-between gap-4 cursor-pointer group">
-                  <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
-                    Play acoustic completion chime on success
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.notifications.playSound}
-                    onChange={(e) => update("notifications", { playSound: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </label>
-
-                <label className="px-4 py-3 flex items-center justify-between gap-4 cursor-pointer group">
-                  <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
-                    Warn when disk free space falls below threshold (&lt; 2 GB)
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.notifications.lowDiskSpace}
-                    onChange={(e) => update("notifications", { lowDiskSpace: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </label>
-              </div>
-
-              <AutomationPanel />
-            </section>
+            <AutomationSettingsTab settings={settings} update={update} />
           )}
 
           {/* ═════════════════════════════════════════════════════════
               SECTION 6: SECURITY & ENGINE
           ══════════════════════════════════════════════════════════ */}
           {isSectionVisible("engine") && (
-            <section id="section-engine" className="space-y-5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[var(--accent)]" />
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">Security &amp; Core Engine</h2>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Integrity checksum verification, Windows MOTW protection, and NTFS sparse file disk pre-allocation.
-                </p>
-              </div>
-
-              {/* Security */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] divide-y divide-[var(--border-dim)]">
-                <div className="px-4 py-3">
-                  <label className="text-xs font-semibold text-[var(--text-primary)] block">File Integrity &amp; MOTW</label>
-                </div>
-                <label className="px-4 py-3 flex items-center justify-between gap-4 cursor-pointer group">
-                  <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
-                    Automatically calculate and verify SHA-256 / MD5 checksums after transfer
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.security.verifyChecksums}
-                    onChange={(e) => update("security", { verifyChecksums: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </label>
-
-                <label className="px-4 py-3 flex items-center justify-between gap-4 cursor-pointer group">
-                  <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
-                    Warn and block unencrypted plain HTTP downloads
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.security.blockInsecureHttp}
-                    onChange={(e) => update("security", { blockInsecureHttp: e.target.checked })}
-                    className="edm-checkbox"
-                  />
-                </label>
-              </div>
-
-              {/* Engine Tuning */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] p-4 space-y-3">
-                <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                  High-Performance Engine Tuning
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-dim)]">
-                    <span className="text-xs font-semibold text-[var(--text-primary)] block">
-                      NTFS Sparse Allocation
-                    </span>
-                    <span className="text-[11px] text-[var(--text-muted)] mt-0.5 block">
-                      Instantly reserves cluster offsets with 0ms disk overhead and zero file fragmentation.
-                    </span>
-                    <span className="mt-2 inline-block text-[10px] font-mono text-emerald-400">
-                      FSCTL_SET_SPARSE Enabled
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-dim)]">
-                    <span className="text-xs font-semibold text-[var(--text-primary)] block">
-                      Flush-Before-Checkpoint
-                    </span>
-                    <span className="text-[11px] text-[var(--text-muted)] mt-0.5 block">
-                      Guarantees clean recovery without corruption during sudden system crashes or power outages.
-                    </span>
-                    <span className="mt-2 inline-block text-[10px] font-mono text-emerald-400">
-                      Crash-Consistent WAL
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Global Shortcuts Matrix */}
-              <div className="rounded-xl border border-[var(--border-dim)] bg-[var(--bg-card)] p-4 space-y-3">
-                <label className="text-xs font-semibold text-[var(--text-primary)] block">
-                  Keyboard Shortcuts Reference
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                  {[
-                    { key: "Ctrl + N", desc: "Add New URL" },
-                    { key: "Space", desc: "Pause / Resume" },
-                    { key: "Delete", desc: "Remove Task" },
-                    { key: "Ctrl + ,", desc: "Preferences" },
-                    { key: "Enter", desc: "Download Status" },
-                    { key: "Esc", desc: "Close / Back" },
-                  ].map((s) => (
-                    <div
-                      key={s.key}
-                      className="p-2 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-dim)] flex items-center justify-between font-mono"
-                    >
-                      <span className="text-[var(--text-muted)] text-[11px] font-sans">{s.desc}</span>
-                      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-card)] border border-[var(--border-dim)] text-[10px] text-[var(--accent-badge-text)] font-semibold">
-                        {s.key}
-                      </kbd>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
+            <EngineSettingsTab settings={settings} update={update} />
           )}
 
           {/* ═════════════════════════════════════════════════════════

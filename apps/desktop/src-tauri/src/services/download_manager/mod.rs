@@ -55,6 +55,36 @@ pub fn execute_download_with_selected_files(
     user_agent: Option<String>,
     selected_files: Option<Vec<usize>>,
 ) -> Result<(Uuid, bool), String> {
+    execute_download_with_options(
+        state,
+        id,
+        url,
+        filename,
+        save_dir,
+        max_connections,
+        size_total,
+        cookies,
+        referer,
+        user_agent,
+        selected_files,
+        false,
+    )
+}
+
+pub fn execute_download_with_options(
+    state: &AppState,
+    id: Uuid,
+    url: String,
+    filename: Option<String>,
+    save_dir: Option<PathBuf>,
+    max_connections: Option<u32>,
+    size_total: Option<u64>,
+    cookies: Option<String>,
+    referer: Option<String>,
+    user_agent: Option<String>,
+    selected_files: Option<Vec<usize>>,
+    queue_only: bool,
+) -> Result<(Uuid, bool), String> {
     let lc = state.lifecycle.clone();
     state.rt_handle.spawn(async move {
         lc.record_activity().await;
@@ -120,7 +150,7 @@ pub fn execute_download_with_selected_files(
             .count()
     };
 
-    if active_count >= exec_cfg.max_active_downloads {
+    if queue_only || active_count >= exec_cfg.max_active_downloads {
         let record = DownloadRecord {
             id,
             url: url.clone(),

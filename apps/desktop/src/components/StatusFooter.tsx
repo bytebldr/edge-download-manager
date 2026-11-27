@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from "react";
 import {
-  Settings,
   CalendarClock,
   Gauge,
   ChevronDown,
   ArrowDown,
   ArrowUp,
   Cpu,
-  Wifi,
-  ArrowLeft,
+  Infinity as InfinityIcon,
 } from "lucide-react";
 import { SpeedLimiterModal } from "./SpeedLimiterModal";
-import { formatBytes } from "../utils/format";
+import { Tooltip } from "./Tooltip";
 
 export interface StatusFooterProps {
   activeView: "downloads" | "settings";
@@ -35,20 +33,15 @@ export interface StatusFooterProps {
  * Slim native bottom status bar shared across Downloads and Settings views.
  */
 export const StatusFooter: React.FC<StatusFooterProps> = ({
-  activeView,
-  onToggleView,
   onOpenScheduler,
   speedLimit,
   onSpeedLimitChange,
-  selectedDownload,
   totalSpeed,
   totalUploadSpeed,
   activeThreads,
-  totalSessionBytes,
 }) => {
   const [isLimiterOpen, setIsLimiterOpen] = useState(false);
   const isThrottled = speedLimit !== "Unlimited";
-  const isSettings = activeView === "settings";
 
   useEffect(() => {
     if (!isLimiterOpen) return;
@@ -60,61 +53,48 @@ export const StatusFooter: React.FC<StatusFooterProps> = ({
   }, [isLimiterOpen]);
 
   return (
-    <footer className="h-8 px-2 sm:px-3 border-t border-[var(--border-dim)] bg-[var(--bg-header)] flex items-center justify-between text-[11px] shrink-0 select-none gap-2 w-full z-20">
-      {/* Left: Ghost status segments + Selected Task Quick Readout */}
+    <footer className="h-11 px-3 sm:px-4 footer-3d flex items-center justify-between text-xs shrink-0 select-none gap-2 w-full z-20">
+      {/* Left: Ghost status segments */}
       <div className="flex items-center h-full min-w-0">
-        <div className="flex items-center h-full divide-x divide-[var(--border-dim)] shrink-0">
-          <button
-            onClick={onToggleView}
-            className="btn-ghost h-full px-2.5 text-[11px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-            title={isSettings ? "Back to Downloads" : "Settings & Preferences (Ctrl+,)"}
-            aria-label={isSettings ? "Back to Downloads" : "Open Settings"}
-          >
-            {isSettings ? (
-              <>
-                <ArrowLeft className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                <span className="hidden xs:inline">Downloads</span>
-              </>
-            ) : (
-              <>
-                <Settings className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                <span className="hidden xs:inline">Settings</span>
-              </>
-            )}
-          </button>
+        <div className="flex items-center h-full gap-1 shrink-0">
+          <Tooltip content="Download Queues & Scheduler" side="top" align="start" className="h-full">
+            <button
+              onClick={onOpenScheduler}
+              className="group h-full px-2.5 text-xs font-medium inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.97] transition-[color,transform,filter] duration-150 focus:outline-none focus-visible:text-[var(--accent)]"
+              aria-label="Open Scheduler"
+            >
+              <CalendarClock className="w-4 h-4 stroke-[1.75] text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:drop-shadow-[0_0_6px_var(--accent)] transition-[color,filter] shrink-0" />
+              <span className="group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.22)] transition-[filter]">Scheduler</span>
+            </button>
+          </Tooltip>
 
-          <button
-            onClick={onOpenScheduler}
-            className="btn-ghost h-full px-2.5 text-[11px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-            title="Download Queues & Scheduler"
-            aria-label="Open Scheduler"
-          >
-            <CalendarClock className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-            <span className="hidden sm:inline">Scheduler</span>
-          </button>
+          <div className="h-4 w-px bg-[var(--border-dim)] mx-1 shrink-0" />
 
           {/* Speed Limiter Dial (Opens upward from status bar) */}
           <div className="relative h-full shrink-0">
-            <button
-              onClick={() => setIsLimiterOpen((prev) => !prev)}
-              className={`btn-ghost h-full px-2.5 text-[11px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
-                isThrottled ? "!text-[var(--accent)]" : ""
-              }`}
-              title="Global Bandwidth Limiter"
-              aria-label="Global Bandwidth Limiter"
-            >
-              <Gauge
-                className={`w-3.5 h-3.5 shrink-0 ${
-                  isThrottled ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
+            <Tooltip content="Global Bandwidth Limiter" side="top" className="h-full">
+              <button
+                onClick={() => setIsLimiterOpen((prev) => !prev)}
+                className={`group h-full px-2.5 text-xs font-medium inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer bg-transparent active:scale-[0.97] transition-[color,transform,filter] duration-150 focus:outline-none ${
+                  isThrottled
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
-              />
-              <span>Limit: {speedLimit}</span>
-              <ChevronDown
-                className={`w-3 h-3 text-[var(--text-muted)] shrink-0 transition-transform ${
-                  isLimiterOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
+                aria-label="Global Bandwidth Limiter"
+              >
+                {isThrottled ? (
+                  <Gauge className="w-4 h-4 stroke-[1.75] text-[var(--accent)] group-hover:drop-shadow-[0_0_6px_var(--accent)] transition-[filter] shrink-0" />
+                ) : (
+                  <InfinityIcon className="w-4 h-4 stroke-[1.75] text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:drop-shadow-[0_0_6px_var(--accent)] transition-[color,filter] shrink-0" />
+                )}
+                <span className="group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.22)] transition-[filter]">{speedLimit}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0 transition-transform ${
+                    isLimiterOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </Tooltip>
 
             <SpeedLimiterModal
               isOpen={isLimiterOpen}
@@ -124,59 +104,28 @@ export const StatusFooter: React.FC<StatusFooterProps> = ({
             />
           </div>
         </div>
-
-        <div className="h-4 w-px bg-[var(--border-dim)] mx-2 shrink-0" />
-
-        {/* Selected Task Quick Readout */}
-        <div className="flex items-center gap-2 text-[var(--text-secondary)] min-w-0 truncate">
-          {selectedDownload ? (
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 truncate">
-              <span className="font-semibold text-[var(--text-primary)] truncate max-w-[100px] sm:max-w-xs">
-                {selectedDownload.name}
-              </span>
-              <span className="text-[var(--text-muted)]">•</span>
-              <span className="font-mono tabular-nums text-[var(--accent)] whitespace-nowrap">
-                {selectedDownload.progress}%
-              </span>
-              <span className="text-[var(--text-muted)] hidden xs:inline">•</span>
-              <span className="hidden xs:inline whitespace-nowrap">
-                {selectedDownload.state === "downloading"
-                  ? selectedDownload.connections || 0
-                  : 0}{" "}
-                Active Threads
-              </span>
-            </div>
-          ) : (
-            <span className="text-[var(--text-muted)] truncate">No download selected</span>
-          )}
-        </div>
       </div>
 
       {/* Right: Aggregate Network Telemetry */}
-      <div className="flex items-center gap-2 sm:gap-3.5 font-mono tabular-nums text-[11px] shrink-0">
-        <div className="flex items-center gap-1 text-emerald-400 font-semibold whitespace-nowrap">
+      <div className="flex items-center gap-3 sm:gap-4 tabular-nums text-xs shrink-0">
+        <div className="flex items-center gap-1.5 text-[var(--accent)] font-semibold whitespace-nowrap">
           <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
           <span>{totalSpeed}</span>
         </div>
         <div
-          className={`hidden sm:flex items-center gap-1 whitespace-nowrap ${
+          className={`hidden sm:flex items-center gap-1.5 whitespace-nowrap ${
             totalUploadSpeed !== "0 B/s"
               ? "text-[#818CF8] font-semibold"
-              : "text-[var(--text-muted)]"
+              : "text-[var(--text-secondary)]"
           }`}
         >
-          <ArrowUp className="w-3.5 h-3.5" />
+          <ArrowUp className="w-3.5 h-3.5 text-[var(--text-muted)]" />
           <span>{totalUploadSpeed}</span>
         </div>
         <div className="hidden md:block text-[var(--border-subtle)]">|</div>
         <div className="hidden md:flex text-[var(--text-secondary)] items-center gap-1.5 whitespace-nowrap">
-          <Cpu className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          <span>{activeThreads} Active Threads</span>
-        </div>
-        <div className="hidden lg:block text-[var(--border-subtle)]">|</div>
-        <div className="hidden lg:flex text-[var(--text-secondary)] items-center gap-1.5 whitespace-nowrap">
-          <Wifi className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          <span>Session: {formatBytes(totalSessionBytes)}</span>
+          <Cpu className="w-4 h-4 stroke-[1.75] text-[var(--text-muted)]" />
+          <span>Active Threads: {activeThreads}</span>
         </div>
       </div>
     </footer>

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ExternalLink, Pause, Play, X } from "lucide-react";
+import { Tooltip } from "./Tooltip";
 import {
   BackendDownloadItem,
   isTauri,
   tauriCancelDownload,
   tauriListDownloads,
+  tauriLoadSettings,
   tauriPauseDownload,
   tauriResumeDownload,
 } from "../services/tauriBridge";
+import { loadSettings } from "../types/settings";
+import { applyFontFamily } from "../lib/fonts";
 
 const ACTIVE_STATES = new Set(["downloading", "probing", "queued", "verifying", "paused"]);
 
@@ -73,9 +77,37 @@ export default function TrayFlyout() {
   }, [sortedItems]);
 
   const refreshDownloads = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
     const list = await tauriListDownloads();
     if (!list) return;
     setItems(list.filter((d) => ACTIVE_STATES.has(d.state)));
+  }, []);
+
+  useEffect(() => {
+    const syncAppearance = async () => {
+      const local = loadSettings();
+      const remote = isTauri() ? await tauriLoadSettings().catch(() => null) : null;
+      const g = remote?.general ?? local.general;
+      const resolvedTheme =
+        g.theme === "system"
+          ? window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark"
+          : g.theme;
+      document.documentElement.setAttribute("data-theme", resolvedTheme);
+      document.documentElement.setAttribute("data-palette", g.palette || "blue");
+      applyFontFamily(g.fontFamily);
+    };
+    void syncAppearance();
+    const onSync = () => void syncAppearance();
+    window.addEventListener("focus", onSync);
+    window.addEventListener("storage", onSync);
+    return () => {
+      window.removeEventListener("focus", onSync);
+      window.removeEventListener("storage", onSync);
+    };
   }, []);
 
   useEffect(() => {
@@ -111,6 +143,20 @@ export default function TrayFlyout() {
   const handleTogglePause = async (item: BackendDownloadItem) => {
     setBusyId(item.id);
     try {
+      if (!isTauri()) {
+        setItems((prev) =>
+          prev.map((d) =>
+            d.id === item.id
+              ? {
+                  ...d,
+                  state: item.state === "paused" ? "downloading" : "paused",
+                  speed_bytes_per_sec: item.state === "paused" ? 8_800_000 : 0,
+                }
+              : d
+          )
+        );
+        return;
+      }
       if (item.state === "paused") {
         await tauriResumeDownload(item.id);
       } else {
@@ -125,6 +171,10 @@ export default function TrayFlyout() {
   const handleCancel = async (id: string) => {
     setBusyId(id);
     try {
+      if (!isTauri()) {
+        setItems((prev) => prev.filter((d) => d.id !== id));
+        return;
+      }
       await tauriCancelDownload(id);
       await refreshDownloads();
     } finally {
@@ -132,52 +182,61 @@ export default function TrayFlyout() {
     }
   };
 
+  const totalSpeedBps = useMemo(
+    () => items.reduce((sum, d) => sum + (d.state === "downloading" ? d.speed_bytes_per_sec || 0 : 0), 0),
+    [items]
+  );
+
+  const totalUploadBps = useMemo(
+    () => items.reduce((sum, d) => sum + (d.state === "downloading" ? (d as any).upload_bytes_per_sec || 0 : 0), 0),
+    [items]
+  );
+
   return (
     <div className="h-screen w-screen bg-transparent p-1.5 select-none">
-      <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[#0A0A0A]/95 text-[var(--text-primary)] shadow-[var(--shadow-depth)] backdrop-blur-xl"
-        style={{ boxShadow: "var(--shadow-inset-bevel), var(--shadow-depth)" }}
-      >
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-chassis)] text-[var(--text-primary)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.75)]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--border-dim)] px-3.5 py-2.5">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
-            <h1 className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)]">
-              Downloads in progress
+        <div className="header-3d flex items-center justify-between px-3.5 py-2.5 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/logo.png" alt="EDM" className="w-4 h-4 object-contain shrink-0 pointer-events-none" />
+            <h1 className="text-xs font-semibold tracking-tight text-[var(--text-primary)] truncate">
+              EDM
             </h1>
             {items.length > 0 && (
-              <span className="rounded-full bg-[var(--accent-badge-bg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent-badge-text)]">
-                {items.length}
+              <span className="text-[11px] font-medium tabular-nums text-[var(--text-muted)]">
+                ({items.length})
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => void hideFlyout()}
-            aria-label="Close tray flyout"
-            className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-white/10 hover:text-[var(--text-primary)]"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip content="Hide" side="bottom" align="end">
+            <button
+              type="button"
+              onClick={() => void hideFlyout()}
+              aria-label="Close tray flyout"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-primary)] cursor-pointer"
+            >
+              <X className="w-4 h-4 stroke-[1.75]" />
+            </button>
+          </Tooltip>
         </div>
 
-        {/* Active downloads list (up to 3 visible, scrollable if >3) */}
+        {/* Active downloads list (Edge-to-edge hairline rows) */}
         <div
           ref={listRef}
           onScroll={(e) => {
             const el = e.currentTarget;
             autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
           }}
-          className="flex-1 overflow-y-auto px-3 py-2 space-y-2 max-h-[210px]"
+          className="flex-1 overflow-y-auto divide-y divide-[var(--border-dim)]"
         >
           {sortedItems.length === 0 ? (
-            <div className="flex h-full min-h-[120px] flex-col items-center justify-center text-center px-4">
-              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-[var(--text-muted)]">
-                <ArrowDownToLine className="h-4 w-4" />
+            <div className="flex h-full min-h-[140px] flex-col items-center justify-center text-center px-4">
+              <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.04] border border-[var(--border-dim)] text-[var(--text-muted)]">
+                <ArrowDownToLine className="h-4 w-4 stroke-[1.75]" />
               </div>
-              <p className="text-xs font-medium text-[var(--text-secondary)]">No active downloads</p>
+              <p className="text-xs font-medium text-[var(--text-primary)]">No active downloads</p>
               <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                New downloads will appear here
+                New transfers will appear here
               </p>
             </div>
           ) : (
@@ -185,60 +244,98 @@ export default function TrayFlyout() {
               const total = item.size_total ?? 0;
               const pct = total > 0 ? Math.min(100, Math.round((item.size_done / total) * 100)) : 0;
               const isPaused = item.state === "paused";
+              const isDownloading = item.state === "downloading";
               const queuePos = queueOrder.get(item.id);
+              const isQueued = queuePos != null || item.state === "queued";
               const speed = item.speed_bytes_per_sec > 0 ? `${formatBytes(item.speed_bytes_per_sec)}/s` : "0 B/s";
               const meta = isPaused
-                ? `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · Paused`
-                : queuePos != null
-                  ? `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · Queued`
-                  : `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} · ${speed} · ${formatEta(item.eta_seconds)}`;
+                ? `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} • Paused`
+                : isQueued
+                  ? `${total > 0 ? formatBytes(total) : "?"} • Queued${queuePos ? ` #${queuePos}` : ""}`
+                  : `${formatBytes(item.size_done)} / ${total > 0 ? formatBytes(total) : "?"} • ${speed} • ${formatEta(item.eta_seconds)}`;
 
               return (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-[var(--border-dim)] bg-[var(--bg-card)] px-2.5 py-2 transition-colors hover:border-[var(--border-subtle)]"
+                  className="px-3.5 py-2.5 transition-colors hover:bg-white/[0.025]"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isDownloading
+                            ? "bg-[var(--accent)]"
+                            : isPaused
+                              ? "bg-amber-400"
+                              : "bg-zinc-500"
+                        }`}
+                      />
                       <span className="truncate text-xs font-medium text-[var(--text-primary)]" title={item.filename}>
                         {item.filename}
                       </span>
-                      {queuePos != null && (
-                        <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] tabular-nums">
-                          Queued #{queuePos}
-                        </span>
-                      )}
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={busyId === item.id}
-                        onClick={() => void handleTogglePause(item)}
-                        title={isPaused ? "Resume" : "Pause"}
-                        className="rounded p-1 text-[var(--text-secondary)] transition-colors hover:bg-white/10 hover:text-[var(--text-primary)] disabled:opacity-40"
-                      >
-                        {isPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === item.id}
-                        onClick={() => void handleCancel(item.id)}
-                        title="Cancel"
-                        className="rounded p-1 text-[var(--text-secondary)] transition-colors hover:bg-red-500/15 hover:text-[var(--danger)] disabled:opacity-40"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                    <div className="inline-flex shrink-0 items-center p-0.5 rounded-full bg-white/[0.03] border border-[var(--border-dim)]">
+                      <Tooltip content={isPaused ? "Resume" : isQueued ? "Start" : "Pause"} side="top">
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={() => void handleTogglePause(item)}
+                          aria-label={isPaused ? "Resume" : "Pause"}
+                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer ${
+                            isPaused
+                              ? "text-amber-400 hover:bg-amber-500/15"
+                              : isDownloading
+                                ? "text-[var(--accent)] hover:bg-[var(--accent)]/15"
+                                : "text-[var(--text-secondary)] hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
+                          }`}
+                        >
+                          {isPaused || isQueued ? (
+                            <Play className="w-3 h-3 stroke-[1.75]" />
+                          ) : (
+                            <Pause className="w-3 h-3 stroke-[1.75]" />
+                          )}
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Cancel" side="top" align="end">
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={() => void handleCancel(item.id)}
+                          aria-label="Cancel"
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:opacity-40 cursor-pointer"
+                        >
+                          <X className="w-3 h-3 stroke-[1.75]" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
-                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        isPaused ? "bg-[var(--warning)]" : "bg-[var(--accent)]"
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06] relative">
+                    {isQueued && pct === 0 ? (
+                      <div className="w-1/4 h-full rounded-full bg-gradient-to-r from-transparent via-zinc-400/70 to-transparent edm-queue-sweep" />
+                    ) : (
+                      <>
+                        <div
+                          className={`h-full rounded-full transition-[width,background-color] duration-200 ${
+                            isPaused ? "bg-amber-500/85" : "bg-[var(--accent)]"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                        {(isDownloading || isPaused) && pct < 100 && (
+                          <div
+                            className="absolute inset-y-0 right-0 overflow-hidden pointer-events-none"
+                            style={{ left: `${pct}%` }}
+                          >
+                            <div
+                              className={`w-1/3 h-full rounded-full bg-gradient-to-r from-transparent ${
+                                isPaused ? "via-amber-300/65" : "via-[var(--accent)]/60"
+                              } to-transparent edm-queue-sweep`}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--text-muted)] tabular-nums">
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--text-muted)] tabular-nums">
                     <span className="truncate">{meta}</span>
                     <span className="ml-2 shrink-0 font-medium text-[var(--text-secondary)]">{pct}%</span>
                   </div>
@@ -249,14 +346,22 @@ export default function TrayFlyout() {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[var(--border-dim)] p-2.5">
+        <div className="footer-3d flex items-center justify-between px-3.5 py-2.5 shrink-0">
+          <div className="flex items-center gap-3 text-[11px] font-medium tabular-nums text-[var(--text-secondary)]">
+            <span className={totalSpeedBps > 0 ? "text-[var(--accent)]" : "text-[var(--text-muted)]"}>
+              ↓ {totalSpeedBps > 0 ? `${formatBytes(totalSpeedBps)}/s` : "0 B/s"}
+            </span>
+            <span className={totalUploadBps > 0 ? "text-[#818CF8]" : "text-[var(--text-muted)]"}>
+              ↑ {totalUploadBps > 0 ? `${formatBytes(totalUploadBps)}/s` : "0 B/s"}
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => void handleOpenMain()}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--accent-on)] transition-colors hover:bg-[var(--accent-hover)] active:bg-[var(--accent-pressed)]"
+            className="h-7 px-3 rounded-lg bg-white/[0.06] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.1] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open EDM
+            <ExternalLink className="w-3.5 h-3.5 stroke-[1.75]" />
+            <span>Open EDM</span>
           </button>
         </div>
       </div>

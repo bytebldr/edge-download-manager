@@ -63,27 +63,33 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
     if let Some(host) = parsed.host() {
         match host {
             url::Host::Ipv4(ip) => {
-                if ip.is_link_local() {
-                    return Err("Security violation: Blocked access to link-local address".into());
+                if ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified() {
+                    return Err("Security violation: Blocked access to private or loopback IPv4 address".into());
                 }
             }
             url::Host::Ipv6(ip) => {
-                if ip.is_unicast_link_local() || format!("{}", ip) == "fd00:ec2::254" {
+                if ip.is_loopback()
+                    || ip.is_unicast_link_local()
+                    || ip.is_unspecified()
+                    || format!("{}", ip) == "fd00:ec2::254"
+                {
                     return Err(
-                        "Security violation: Blocked access to IPv6 metadata or link-local address"
+                        "Security violation: Blocked access to private, loopback, or metadata IPv6 address"
                             .into(),
                     );
                 }
             }
             url::Host::Domain(domain) => {
                 let h = domain.to_lowercase();
-                if h == "169.254.169.254"
+                if h == "localhost"
+                    || h.ends_with(".localhost")
+                    || h == "169.254.169.254"
                     || h == "metadata.google.internal"
                     || h == "instance-data"
                     || h.ends_with(".internal")
                 {
                     return Err(
-                        "Security violation: Blocked access to cloud metadata endpoint".into(),
+                        "Security violation: Blocked access to loopback or cloud metadata endpoint".into(),
                     );
                 }
             }
@@ -533,5 +539,25 @@ mod tests {
         }
         assert!(res.is_ok(), "Expected Ok but got: {:?}", res);
         assert!(!still_exists, "File should have been moved to recycle bin");
+    }
+
+    #[test]
+    fn test_validate_url_security_blocks_ssrf_and_unsafe_schemes() {
+        assert!(validate_url_security("http://127.0.0.1:14370/token").is_err());
+        assert!(validate_url_security("http://localhost:8998/api").is_err());
+        assert!(validate_url_security("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(validate_url_security("http://10.0.0.1/internal").is_err());
+        assert!(validate_url_security("http://192.168.1.1/admin").is_err());
+        assert!(validate_url_security("http://[::1]:8080/").is_err());
+        assert!(validate_url_security("javascript:alert(1)").is_err());
+        assert!(validate_url_security("https://example.com/archive.zip").is_ok());
+    }
+
+    #[test]
+    fn test_validate_and_contain_path_blocks_traversal() {
+        let base = std::env::temp_dir();
+        assert!(validate_and_contain_path(&base, "../evil.txt").is_err());
+        assert!(validate_and_contain_path(&base, "..\\evil.txt").is_err());
+        assert!(validate_and_contain_path(&base, "sub/file.txt").is_err());
     }
 }

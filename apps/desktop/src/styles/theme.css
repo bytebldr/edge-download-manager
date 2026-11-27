@@ -1,15 +1,16 @@
 @import "tailwindcss";
+@import "./fonts.css";
 
 @layer base {
   :root,
   [data-mode="dark"] {
     color-scheme: dark;
-    --bg-chassis: #09090B;
-    --bg-sidebar: #09090B;
-    --bg-header: #111114;
-    --bg-panel: #111114;
-    --bg-card: #16161A;
-    --bg-card-hover: #1D1D22;
+    --bg-chassis: #08070B;
+    --bg-sidebar: #08070B;
+    --bg-header: #0B0A10;
+    --bg-panel: #111017;
+    --bg-card: #121118;
+    --bg-card-hover: #181622;
     --bg-row-alt: rgba(255, 255, 255, 0.018);
     --bg-active: var(--accent-badge-bg);
     --border-dim: rgba(255, 255, 255, 0.06);
@@ -19,6 +20,9 @@
     --text-primary: #F4F4F5;
     --text-secondary: #A1A1AA;
     --text-muted: #8E8E98;
+    --btn-contrast-bg: #F4F4F5;
+    --btn-contrast-text: #09090B;
+    --btn-contrast-hover: #FFFFFF;
     --checkbox-bg: #141416;
     --checkbox-bg-hover: #1c1c20;
     --checkbox-border: #333338;
@@ -64,6 +68,9 @@
     --text-primary: #09090B;
     --text-secondary: #3F3F46;
     --text-muted: #52525B;
+    --btn-contrast-bg: #18181B;
+    --btn-contrast-text: #FAFAFA;
+    --btn-contrast-hover: #27272A;
     --checkbox-bg: #FFFFFF;
     --checkbox-bg-hover: #F8FAFC;
     --checkbox-border: #CBD5E1;
@@ -93,7 +100,6 @@
   }
 
   /* ── Accent Color Palettes ──────────────────────────── */
-  :root,
   [data-palette="blue"] {
     --accent: #2563EB;
     --accent-hover: #3B82F6;
@@ -209,7 +215,7 @@ button {
 body {
   background-color: var(--bg-chassis);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif);
   user-select: none;
   overflow: hidden;
   transition: background-color 0.2s ease, color 0.2s ease;
@@ -243,13 +249,15 @@ body {
 }
 
 .sidebar-3d {
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-dim);
+  background-color: var(--bg-header);
+  border-right: 1px solid var(--border-bottom-3d);
+  box-shadow: inset -1px 0 0 0 var(--bevel-bottom), var(--shadow-rail);
 }
 
 .footer-3d {
-  background-color: var(--bg-panel);
-  border-top: 1px solid var(--border-dim);
+  background: linear-gradient(180deg, var(--surface-grad-top) 0%, var(--surface-grad-mid) 50%, var(--surface-grad-bottom) 100%), var(--bg-header);
+  border-top: 1px solid var(--border-bottom-3d);
+  box-shadow: inset 0 1px 0 0 var(--bevel-top), inset 0 -1px 0 0 var(--bevel-bottom), var(--shadow-rail);
 }
 
 /* 3D Tactile Panels & Modals */
@@ -354,57 +362,42 @@ body {
 }
 
 /* ── 3D Tactile Download Task Box (Physical Slab/Card Row) ── */
+/* ── Edge-to-Edge Table Rows with Hairline Dividers & Single-Box Selection ── */
 .table-row-3d > td {
-  background: linear-gradient(180deg, var(--surface-grad-top) 0%, var(--surface-grad-mid) 50%, var(--surface-grad-bottom) 100%), var(--bg-card);
-  border-top: 1px solid var(--border-card-top);
-  border-bottom: 1px solid var(--border-bottom-3d);
-  box-shadow: inset 0 1px 0 0 var(--bevel-top), inset 0 -1px 0 0 var(--bevel-bottom);
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  background: transparent;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid var(--border-dim);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .table-row-3d > td:first-child {
-  border-left: 1px solid var(--border-card-top);
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
+  border-left: 1px solid transparent;
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
 }
 
 .table-row-3d > td:last-child {
-  border-right: 1px solid var(--border-card-top);
-  border-top-right-radius: 8px;
-  border-bottom-right-radius: 8px;
+  border-right: 1px solid transparent;
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
 }
 
 .table-row-3d:hover > td {
-  background: linear-gradient(180deg, var(--surface-grad-top) 0%, var(--surface-grad-mid) 50%, var(--surface-grad-bottom) 100%), var(--bg-card-hover);
-  border-top-color: var(--border-strong);
+  background: var(--bg-row-alt);
 }
 
-.table-row-3d:hover > td:first-child {
-  border-left-color: var(--border-strong);
-}
-
-.table-row-3d:hover > td:last-child {
-  border-right-color: var(--border-strong);
-}
-
-/* Selected State: Premium tactile depth without neon wash or clipped corner slivers */
 .table-row-3d.table-row-selected-3d > td {
-  background: linear-gradient(180deg, var(--surface-grad-top) 0%, var(--surface-grad-mid) 50%, var(--surface-grad-bottom) 100%), var(--bg-active);
-  border-top: 1px solid var(--accent-badge-border);
-  border-bottom: 1px solid var(--accent-badge-border);
-  box-shadow: inset 0 1px 0 0 var(--bevel-top), inset 0 -1px 0 0 var(--bevel-bottom);
+  background: var(--bg-active);
+  border-top-color: var(--accent-badge-border);
+  border-bottom-color: var(--accent-badge-border);
 }
 
 .table-row-3d.table-row-selected-3d > td:first-child {
-  border-left: 2px solid var(--accent);
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
+  border-left-color: var(--accent-badge-border);
 }
 
 .table-row-3d.table-row-selected-3d > td:last-child {
-  border-right: 1px solid var(--accent-badge-border);
-  border-top-right-radius: 8px;
-  border-bottom-right-radius: 8px;
+  border-right-color: var(--accent-badge-border);
 }
 
 .table-row-selected-3d {
@@ -652,6 +645,19 @@ input[type="checkbox"]:focus-visible {
   );
   background-size: 200% 100%;
   animation: edmShimmer 2.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes edmQueueSweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
+.edm-queue-sweep {
+  animation: edmQueueSweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 /* Micro-interaction interactive classes */

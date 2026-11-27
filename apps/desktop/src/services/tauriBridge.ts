@@ -1,4 +1,4 @@
-import { EdmSettings } from "../types/settings";
+import type { EdmSettings } from "../types/settings";
 
 // Safe dynamic check for Tauri v2 runtime
 export const isTauri = (): boolean => {
@@ -192,6 +192,7 @@ export async function tauriStartDownload(params: {
   saveDir?: string;
   maxConnections?: number;
   selectedFiles?: number[];
+  queueOnly?: boolean;
 }): Promise<{ status: string; id: string }> {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -204,11 +205,13 @@ export async function tauriStartDownload(params: {
       max_connections: params.maxConnections,
       selectedFiles: params.selectedFiles,
       selected_files: params.selectedFiles,
+      queueOnly: params.queueOnly,
+      queue_only: params.queueOnly,
     });
   }
 
   return {
-    status: "started",
+    status: params.queueOnly ? "queued" : "started",
     id: Date.now().toString(),
   };
 }

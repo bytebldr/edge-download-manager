@@ -381,6 +381,17 @@ fn main() {
                 None
             };
             let id = Uuid::new_v4();
+            if services::extension_bridge::should_ask_before_download(&create_state)
+                && services::extension_bridge::emit_prompt_add_download(
+                    &create_state,
+                    &cmd.url,
+                    cmd.filename.as_deref(),
+                    None,
+                )
+            {
+                let _ = cmd.resp_tx.send(Ok(id.to_string()));
+                continue;
+            }
             let res = execute_download(
                 &create_state,
                 id,

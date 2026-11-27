@@ -8,6 +8,50 @@ use crate::os::{open_file, open_folder};
 use crate::services::download_manager::execute_download;
 use crate::state::AppState;
 
+pub fn should_ask_before_download(state: &AppState) -> bool {
+    state
+        .store
+        .get_setting("app_settings")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("downloads")
+                .and_then(|d| d.get("askBeforeDownload"))
+                .and_then(|b| b.as_bool())
+        })
+        .unwrap_or(true)
+}
+
+pub fn emit_prompt_add_download(
+    state: &AppState,
+    url: &str,
+    filename: Option<&str>,
+    size: Option<u64>,
+) -> bool {
+    if let Ok(guard) = state.app_handle.lock() {
+        if let Some(ref handle) = *guard {
+            use tauri::{Emitter, Manager};
+            if let Some(win) = handle.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+            return handle
+                .emit(
+                    "prompt-add-download",
+                    serde_json::json!({
+                        "url": url,
+                        "filename": filename,
+                        "size": size,
+                    }),
+                )
+                .is_ok();
+        }
+    }
+    false
+}
+
 pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -> AppReply {
     match msg {
         ExtensionMessage::Ping => AppReply::Pong,
@@ -224,6 +268,12 @@ pub async fn handle_extension_message(msg: ExtensionMessage, state: &AppState) -
             size,
             ..
         } => {
+            if should_ask_before_download(state)
+                && emit_prompt_add_download(state, &url, filename.as_deref(), size)
+            {
+                return AppReply::Accepted { id: Uuid::new_v4() };
+            }
+
             let id = Uuid::new_v4();
             match execute_download(state, id, url, filename, None, None, size, None, None, None) {
                 Ok((id, _)) => AppReply::Accepted { id },
@@ -395,16 +445,26 @@ pub fn spawn_extension_bridge(state: AppState, rt_handle: tokio::runtime::Handle
                             ));
                         }
 
-                        // Guard 3: Origin check (only browser extensions or desktop local UI)
+                        // Guard 3: Strict Origin check (allowlisted browser extensions or Tauri WebView only)
                         if let Some(origin) = headers.get(axum::http::header::ORIGIN) {
                             if let Ok(o) = origin.to_str() {
-                                let is_chrome = o.starts_with("chrome-extension://")
-                                    && o.contains(crate::ws_server::EXTENSION_ID);
-                                let is_firefox = o.starts_with("moz-extension://");
-                                let is_local = o.starts_with("http://localhost:")
-                                    || o.starts_with("http://127.0.0.1:")
-                                    || o.starts_with("tauri://");
-                                if !is_chrome && !is_firefox && !is_local {
+                                let trimmed = o.trim().trim_end_matches('/');
+                                let is_chrome = trimmed
+                                    .strip_prefix("chrome-extension://")
+                                    .map(|rest| {
+                                        let ext_id = rest.split('/').next().unwrap_or(rest);
+                                        edm_ipc::extensions::CHROMIUM_ALLOWED_IDS.contains(&ext_id)
+                                    })
+                                    .unwrap_or(false);
+                                let is_firefox = trimmed.starts_with("moz-extension://")
+                                    && headers
+                                        .get("x-edm-extension-id")
+                                        .and_then(|v| v.to_str().ok())
+                                        == Some(edm_ipc::extensions::FIREFOX_GECKO_ID);
+                                let is_tauri = trimmed == "tauri://localhost"
+                                    || trimmed == "http://tauri.localhost"
+                                    || trimmed == "https://tauri.localhost";
+                                if !is_chrome && !is_firefox && !is_tauri {
                                     return Err((
                                         StatusCode::FORBIDDEN,
                                         "Forbidden: Untrusted Origin",
@@ -422,11 +482,19 @@ pub fn spawn_extension_bridge(state: AppState, rt_handle: tokio::runtime::Handle
                 CorsLayer::new()
                     .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
                         if let Ok(s) = origin.to_str() {
-                            s.starts_with("chrome-extension://")
-                                || s.starts_with("moz-extension://")
-                                || s.starts_with("http://localhost:")
-                                || s.starts_with("http://127.0.0.1:")
-                                || s.starts_with("tauri://")
+                            let trimmed = s.trim().trim_end_matches('/');
+                            let is_chrome = trimmed
+                                .strip_prefix("chrome-extension://")
+                                .map(|rest| {
+                                    let ext_id = rest.split('/').next().unwrap_or(rest);
+                                    edm_ipc::extensions::CHROMIUM_ALLOWED_IDS.contains(&ext_id)
+                                })
+                                .unwrap_or(false);
+                            let is_firefox = trimmed.starts_with("moz-extension://");
+                            let is_tauri = trimmed == "tauri://localhost"
+                                || trimmed == "http://tauri.localhost"
+                                || trimmed == "https://tauri.localhost";
+                            is_chrome || is_firefox || is_tauri
                         } else {
                             false
                         }

@@ -46,25 +46,21 @@ pub fn send_system_notification_internal(
             r#"<toast{launch_attr}><visual><binding template="ToastGeneric"><text>{escaped_title}</text><text>{escaped_message}</text></binding></visual>{action_xml}<audio src="ms-winsoundevent:Notification.Default" /></toast>"#
         );
 
-        let ps_script = format!(
-            r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+        let ps_script = r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
-$doc.LoadXml(@'
-{}
-'@)
+$doc.LoadXml($env:EDM_TOAST_XML)
 $toast = New-Object Windows.UI.Notifications.ToastNotification $doc
-try {{
+try {
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('com.edm.desktop').Show($toast)
-}} catch {{
-    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\WindowsPowerShell\v1.0\powershell.exe').Show($toast)
-}}
-"#,
-            xml_payload
-        );
+} catch {
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show($toast)
+}
+"#;
 
         let mut child = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", "-"])
+            .env("EDM_TOAST_XML", &xml_payload)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

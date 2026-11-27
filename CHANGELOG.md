@@ -2,6 +2,17 @@
 
 All notable changes to **Evo Download Manager (EDM)** are documented in this file.
 
+## [v0.1.2] - 2026-11-27
+
+### ✨ UI/UX Polish, Capture Confirmation, Security Hardening & Modularity Release
+- **Ask Before Download (Capture Confirmation Flow)**: Added `askBeforeDownload` toggle (enabled by default) in **Settings → Downloads & Storage**; captured browser downloads (over both HTTP bridge and WebSocket) now focus EDM and open the pre-filled **Add Download** dialog with **Add** (queue-only), **Download**, and **Cancel** actions.
+- **Redesigned Quick Tray, Extension Popup, Scheduler & Add Download Modal**: Unified the dark/light aesthetic across `#tray-flyout` (EDM branding, upload/download footer stats, live appearance sync), `extension` popup (grouped pills, crisp controls), **Queue Scheduler** (start/stop time windows, weekday selectors, and on-complete power actions + navbar quick-add button), and **Add New Download Task** modal.
+- **Typography & Font Propagation Fix**: Fixed root CSS variable and `applyFontFamily` propagation so selecting an interface font updates the entire app and tray flyout immediately.
+- **Security Hardening (Pre-Release Audit)**: Eliminated DOM XSS in `extension/src/content.ts`, locked down `:8998/api` Origin & CORS allowlists in `extension_bridge.rs`, moved PowerShell toast XML to `EDM_TOAST_XML` env var in `notifications.rs`, blocked loopback/private/unspecified SSRF targets in `validate_url_security`, and added SSRF + path-traversal unit tests.
+- **Modularization & Cleanup**: Split `SettingsPage.tsx` tabs into `apps/desktop/src/components/settings/`, broke the `settings.ts` ↔ `tauriBridge.ts` circular import, enforced `tsc --noEmit` in `extension` builds, removed unused root JS copies in `extension/`, and stripped all preview demo data.
+
+---
+
 ## [v0.1.1] - 2026-11-26
 
 ### 🚀 Auto-Adaptive Engine & High-Density UI De-Box Release

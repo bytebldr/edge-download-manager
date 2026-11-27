@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Select } from "../../components/Select";
 import {
   X,
   Film,
@@ -217,23 +218,16 @@ export const MediaStreamPickerModal: React.FC<MediaStreamPickerModalProps> = ({
                       Video Quality
                     </label>
                     {probeInfo.video_formats.length > 0 ? (
-                      <select
+                      <Select
                         value={selectedVideoId}
-                        onChange={(e) => setSelectedVideoId(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                      >
-                        {probeInfo.video_formats.map((fmt) => (
-                          <option key={fmt.format_id} value={fmt.format_id}>
-                            {fmt.resolution || "Video"} ({fmt.ext})
-                            {fmt.fps ? ` • ${fmt.fps}fps` : ""}
-                            {fmt.vcodec ? ` • ${fmt.vcodec}` : ""}
-                            {fmt.filesize ? ` • ${formatBytes(fmt.filesize)}` : ""}
-                            {!fmt.filesize && fmt.bandwidth
-                              ? ` • ${Math.round(fmt.bandwidth / 1000)} kbps`
-                              : ""}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSelectedVideoId}
+                        ariaLabel="Video Quality"
+                        className="w-full"
+                        options={probeInfo.video_formats.map((fmt) => ({
+                          value: fmt.format_id,
+                          label: `${fmt.resolution || "Video"} (${fmt.ext})${fmt.fps ? ` • ${fmt.fps}fps` : ""}${fmt.vcodec ? ` • ${fmt.vcodec}` : ""}${fmt.filesize ? ` • ${formatBytes(fmt.filesize)}` : !fmt.filesize && fmt.bandwidth ? ` • ${Math.round(fmt.bandwidth / 1000)} kbps` : ""}`,
+                        }))}
+                      />
                     ) : (
                       <p className="text-xs text-[var(--text-muted)]">No video tracks detected.</p>
                     )}
@@ -246,21 +240,19 @@ export const MediaStreamPickerModal: React.FC<MediaStreamPickerModalProps> = ({
                         <Volume2 className="w-3.5 h-3.5" />
                         Audio Track
                       </label>
-                      <select
+                      <Select
                         value={selectedAudioId}
-                        onChange={(e) => setSelectedAudioId(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                      >
-                        <option value="">Default / Embedded Audio</option>
-                        {probeInfo.audio_formats.map((aud) => (
-                          <option key={aud.format_id} value={aud.format_id}>
-                            {aud.language ? `${aud.language.toUpperCase()} • ` : ""}
-                            {aud.ext}
-                            {aud.acodec ? ` • ${aud.acodec}` : ""}
-                            {aud.bandwidth ? ` • ${Math.round(aud.bandwidth / 1000)} kbps` : ""}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSelectedAudioId}
+                        ariaLabel="Audio Track"
+                        className="w-full"
+                        options={[
+                          { value: "", label: "Default / Embedded Audio" },
+                          ...probeInfo.audio_formats.map((aud) => ({
+                            value: aud.format_id,
+                            label: `${aud.language ? `${aud.language.toUpperCase()} • ` : ""}${aud.ext}${aud.acodec ? ` • ${aud.acodec}` : ""}${aud.bandwidth ? ` • ${Math.round(aud.bandwidth / 1000)} kbps` : ""}`,
+                          })),
+                        ]}
+                      />
                     </div>
 
                     <div className="space-y-1.5">
@@ -268,18 +260,19 @@ export const MediaStreamPickerModal: React.FC<MediaStreamPickerModalProps> = ({
                         <Subtitles className="w-3.5 h-3.5" />
                         Subtitles
                       </label>
-                      <select
+                      <Select
                         value={selectedSubtitle}
-                        onChange={(e) => setSelectedSubtitle(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                      >
-                        <option value="">None</option>
-                        {probeInfo.subtitles.map((sub) => (
-                          <option key={sub.lang} value={sub.lang}>
-                            {sub.name ? `${sub.name} (${sub.lang})` : sub.lang} • {sub.ext}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSelectedSubtitle}
+                        ariaLabel="Subtitles"
+                        className="w-full"
+                        options={[
+                          { value: "", label: "None" },
+                          ...probeInfo.subtitles.map((sub) => ({
+                            value: sub.lang,
+                            label: `${sub.name ? `${sub.name} (${sub.lang})` : sub.lang} • ${sub.ext}`,
+                          })),
+                        ]}
+                      />
                     </div>
                   </div>
 

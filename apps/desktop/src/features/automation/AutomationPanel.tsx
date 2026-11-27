@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Tooltip } from "../../components/Tooltip";
 import {
   AlertCircle,
   CheckCircle2,
@@ -260,15 +261,17 @@ export const AutomationPanel: React.FC = () => {
               >
                 {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
-              <button
-                type="button"
-                onClick={() => setConfig({ ...config, rpcSecret: generateSecret() })}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
-                title="Generate random secret"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Generate</span>
-              </button>
+              <Tooltip content="Generate random secret" side="top" align="end">
+                <button
+                  type="button"
+                  onClick={() => setConfig({ ...config, rpcSecret: generateSecret() })}
+                  aria-label="Generate random secret"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Generate</span>
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>

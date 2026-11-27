@@ -133,15 +133,21 @@ class PopupController {
   constructor() {
     try {
       this.currentVersion = chrome.runtime.getManifest().version;
+    } catch {
+      this.currentVersion = "0.1.1";
+    }
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        chrome.storage.local.get(["expected_extension_version", "edm_update_status"], (res) => {
+          if (res && res.expected_extension_version) {
+            this.expectedVersion = res.expected_extension_version;
+          }
+          if (res && res.edm_update_status) {
+            this.updateStatus = res.edm_update_status;
+          }
+        });
+      }
     } catch {}
-    chrome.storage.local.get(["expected_extension_version", "edm_update_status"], (res) => {
-      if (res && res.expected_extension_version) {
-        this.expectedVersion = res.expected_extension_version;
-      }
-      if (res && res.edm_update_status) {
-        this.updateStatus = res.edm_update_status;
-      }
-    });
     this.init();
   }
 
@@ -149,6 +155,16 @@ class PopupController {
     const proBadge = document.querySelector(".pro-badge");
     if (proBadge) proBadge.textContent = `v${this.currentVersion}`;
     this.bindHeaderNav();
+
+    const isExtensionEnv = typeof chrome !== "undefined" && !!chrome.runtime?.id;
+    if (!isExtensionEnv) {
+      this.connectionState = "disconnected";
+      this.downloads = [];
+      this.updateConnectionPill();
+      this.render();
+      return;
+    }
+
     this.connectPort();
     await this.loadSettings();
     this.render();
@@ -634,7 +650,9 @@ class PopupController {
             <button class="filter-pill ${this.taskFilter === "completed" ? "active" : ""}" data-filter="completed">Done (${completedCount})</button>
             <button class="filter-pill ${this.taskFilter === "failed" ? "active" : ""}" data-filter="failed">Failed</button>
           </div>
-          <button id="toggleAddBtn" class="btn-3d btn-primary" title="Add Download Link">+ Add URL</button>
+          <button id="toggleAddBtn" class="btn-add-icon" title="Add Download URL" aria-label="Add Download URL">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
         </div>
 
         <div class="toolbar-row">
@@ -779,43 +797,33 @@ class PopupController {
       ? ""
       : 'style="opacity: 0.35; pointer-events: none; cursor: not-allowed;"';
 
-    let actionsHtml = "";
+    let primaryHtml = "";
+    let pillHtml = "";
+
     if (isDownloading) {
-      actionsHtml = `
-        <button class="btn-icon-3d act-pause" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Pause Download">${SVG_ICONS.pause}</button>
-        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-accent act-pause" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Pause Download">${SVG_ICONS.pause}</button>`;
+      pillHtml += `<button class="btn-pill-icon btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>`;
     } else if (isPaused) {
-      actionsHtml = `
-        <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Resume Download">${SVG_ICONS.play}</button>
-        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-amber act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Resume Download">${SVG_ICONS.play}</button>`;
+      pillHtml += `<button class="btn-pill-icon btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>`;
     } else if (isQueued) {
-      actionsHtml = `
-        <button class="btn-icon-3d btn-icon-success act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Start Download Now">${SVG_ICONS.play}</button>
-        <button class="btn-icon-3d btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-zinc act-resume" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Start Download">${SVG_ICONS.play}</button>`;
+      pillHtml += `<button class="btn-pill-icon btn-icon-danger act-cancel" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Cancel Download">${SVG_ICONS.cancel}</button>`;
     } else if (isCompleted) {
-      actionsHtml = `
-        <button class="btn-icon-3d act-open-file" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open File">${SVG_ICONS.openFile}</button>
-        <button class="btn-icon-3d act-open-folder" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open Folder">${SVG_ICONS.openFolder}</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-emerald act-open-file" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Open File">${SVG_ICONS.openFile}</button>`;
+      pillHtml += `<button class="btn-pill-icon act-open-folder" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Reveal in Explorer">${SVG_ICONS.openFolder}</button>`;
     } else if (isFailed) {
-      actionsHtml = `
-        <button class="btn-icon-3d btn-icon-primary act-retry" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Retry Download">${SVG_ICONS.retry}</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-danger act-retry" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Retry Download">${SVG_ICONS.retry}</button>`;
     } else if (item.state === "needs_fresh_link" || item.state === "link_expired") {
-      actionsHtml = `
-        <button class="btn-icon-3d act-refresh-link" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Refresh Expired Link">🔄</button>
-      `;
+      primaryHtml = `<button class="btn-circle btn-circle-amber act-refresh-link" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" title="Refresh Expired Link">${SVG_ICONS.retry}</button>`;
     }
 
-    actionsHtml += `
-      <button class="btn-icon-3d act-copy" ${disAttr} ${disStyle} data-url="${escapeHtml(item.url || item.filename)}" title="Copy URL">${SVG_ICONS.copy}</button>
-      <button class="btn-icon-3d btn-icon-danger act-delete" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" data-name="${escapeHtml(item.filename)}" title="Remove">${SVG_ICONS.trash}</button>
+    pillHtml += `
+      <button class="btn-pill-icon act-copy" ${disAttr} ${disStyle} data-url="${escapeHtml(item.url || item.filename)}" title="Copy URL">${SVG_ICONS.copy}</button>
+      <button class="btn-pill-icon btn-icon-danger act-delete" ${disAttr} ${disStyle} data-id="${escapeHtml(item.id)}" data-name="${escapeHtml(item.filename)}" title="Delete Task">${SVG_ICONS.trash}</button>
     `;
 
-    return actionsHtml;
+    return `${primaryHtml}<div class="actions-pill">${pillHtml}</div>`;
   }
 
   private patchDownloadCard(card: HTMLElement, item: DownloadItem) {
@@ -1031,6 +1039,14 @@ class PopupController {
             isFailed
           );
 
+          const progressBarHtml =
+            isQueued && pct === 0
+              ? `<div class="card-progress-track"><div class="card-progress-sweep sweep-zinc"></div></div>`
+              : `<div class="card-progress-track">
+                   <div class="card-progress-fill ${isCompleted ? "fill-emerald" : isPaused ? "fill-amber" : isFailed ? "fill-rose" : "fill-accent"}" style="width:${isCompleted ? 100 : pct}%;"></div>
+                   ${(isDownloading || isPaused) && pct < 100 ? `<div class="card-sweep-window" style="left:${pct}%;"><div class="card-progress-sweep ${isPaused ? "sweep-amber" : "sweep-accent"}"></div></div>` : ""}
+                 </div>`;
+
           return `
             <div class="download-card ${isCompleted ? "card-completed" : isQueued ? "card-queued" : "card-downloading"}" data-id="${escapeHtml(item.id)}">
               <div class="card-inner">
@@ -1041,6 +1057,7 @@ class PopupController {
                   <div class="card-title-row">
                     <div class="file-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div>
                   </div>
+                  ${progressBarHtml}
                   <div class="card-meta-row">
                     ${metaHtml}
                   </div>
@@ -1049,7 +1066,6 @@ class PopupController {
                   ${actionsHtml}
                 </div>
               </div>
-              ${isDownloading ? `<div class="card-progress-border" style="width: ${pct}%;"></div>` : ""}
             </div>
           `;
         })

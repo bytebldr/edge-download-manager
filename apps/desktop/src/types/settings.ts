@@ -1,4 +1,5 @@
 import type { FeaturePackId } from "./featurePacks";
+import type { FontFamilyId } from "../lib/fonts";
 import { tauriSaveSettings } from "../services/tauriBridge";
 
 export interface CategoryRule {
@@ -14,6 +15,7 @@ export interface CategoryRule {
 export interface GeneralSettings {
   theme: "dark" | "light" | "system";
   palette: "blue" | "emerald" | "amber" | "violet" | "rose" | "titanium";
+  fontFamily?: FontFamilyId;
   language: string;
   uiStyle: "pro" | "compact" | "modern";
   launchAtStartup: boolean;
@@ -40,6 +42,7 @@ export interface EdmSettings {
     maxActiveDownloads: number;
     globalSpeedLimitBytesPerSecond: number | null; // null = unlimited
     autoAdaptiveStreams?: boolean;
+    askBeforeDownload?: boolean;
     maxConnectionsPerFile: number;
     totalConnectionsLimit: number;
     segmentedDownloads: "automatic" | "disabled" | "aggressive";
@@ -119,7 +122,8 @@ export const defaultSettings: EdmSettings = {
   schemaVersion: 1,
   general: {
     theme: "dark",
-    palette: "blue",
+    palette: "violet",
+    fontFamily: "system",
     language: "en-US",
     uiStyle: "pro",
     launchAtStartup: false,
@@ -142,6 +146,7 @@ export const defaultSettings: EdmSettings = {
     maxActiveDownloads: 3,
     globalSpeedLimitBytesPerSecond: null,
     autoAdaptiveStreams: true,
+    askBeforeDownload: true,
     maxConnectionsPerFile: 32,
     totalConnectionsLimit: 32,
     segmentedDownloads: "automatic",

@@ -5,9 +5,7 @@ use tauri::{command, State};
 use uuid::Uuid;
 
 use crate::os::{open_file, open_folder};
-use crate::services::download_manager::{
-    execute_download_with_selected_files, remove_download_task,
-};
+use crate::services::download_manager::remove_download_task;
 use crate::services::extension_bridge::handle_extension_message;
 use crate::state::AppState;
 
@@ -37,22 +35,25 @@ pub async fn start_download(
     save_dir: Option<String>,
     max_connections: Option<u32>,
     selected_files: Option<Vec<usize>>,
+    queue_only: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let id = Uuid::new_v4();
     let save_path = save_dir.map(PathBuf::from);
-    let (download_id, is_started) = execute_download_with_selected_files(
-        &state,
-        id,
-        url,
-        filename,
-        save_path,
-        max_connections,
-        None,
-        None,
-        None,
-        None,
-        selected_files,
-    )?;
+    let (download_id, is_started) =
+        crate::services::download_manager::execute_download_with_options(
+            &state,
+            id,
+            url,
+            filename,
+            save_path,
+            max_connections,
+            None,
+            None,
+            None,
+            None,
+            selected_files,
+            queue_only.unwrap_or(false),
+        )?;
 
     Ok(serde_json::json!({
         "status": if is_started { "started" } else { "queued" },

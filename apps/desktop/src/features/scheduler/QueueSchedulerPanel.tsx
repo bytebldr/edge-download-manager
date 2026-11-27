@@ -1,5 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Tooltip } from "../../components/Tooltip";
+import { Select } from "../../components/Select";
 import { CalendarClock, Gauge, Layers, Plus, Power, Trash2, Check, X } from "lucide-react";
+
+export type QueuePostAction = "none" | "shutdown" | "sleep" | "hibernate" | "exit" | "notify";
+
+export const POST_ACTION_OPTIONS: Array<{ value: QueuePostAction; label: string }> = [
+  { value: "none", label: "None (Keep running)" },
+  { value: "shutdown", label: "Shutdown Computer" },
+  { value: "sleep", label: "Sleep Computer" },
+  { value: "hibernate", label: "Hibernate Computer" },
+  { value: "exit", label: "Exit EDM" },
+  { value: "notify", label: "Play Sound & Notify" },
+];
 
 export interface ScheduleWindowConfig {
   enabled: boolean;
@@ -16,6 +29,10 @@ export interface ScheduledQueueConfig {
   taskIds: string[];
   enabled: boolean;
   schedule: ScheduleWindowConfig;
+  postAction?: QueuePostAction;
+  autoStartOnWindow?: boolean;
+  pauseOnWindowClose?: boolean;
+  autoRetryFailed?: boolean;
 }
 
 export interface QueueScheduleEvaluation {
@@ -121,11 +138,15 @@ function makeBlankQueue(): ScheduledQueueConfig {
     taskIds: [],
     enabled: true,
     schedule: {
-      enabled: false,
+      enabled: true,
       startHhmm: "23:00",
       endHhmm: "06:00",
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
     },
+    postAction: "none",
+    autoStartOnWindow: true,
+    pauseOnWindowClose: true,
+    autoRetryFailed: false,
   };
 }
 
@@ -235,24 +256,18 @@ export const QueueSchedulerPanel: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4 rounded-2xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+    <div className="flex flex-col gap-4 text-[var(--text-primary)]">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <CalendarClock className="w-5 h-5 text-[var(--accent)]" />
-          <div>
-            <h2 className="text-sm font-semibold tracking-tight">Queue Scheduler</h2>
-            <p className="text-xs text-[var(--text-muted)]">
-              Configure named queues, concurrency caps, bandwidth limits, and active time windows.
-            </p>
-          </div>
-        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          Configure named queues, concurrency caps, bandwidth limits, and active time windows.
+        </p>
         <button
           type="button"
           onClick={() => startEdit(makeBlankQueue())}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-[var(--accent-on)] hover:bg-[var(--accent-hover)] transition-colors cursor-pointer"
+          className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--accent)] hover:bg-white/[0.08] hover:border-[var(--accent)]/40 inline-flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
         >
-          <Plus className="w-3.5 h-3.5" />
-          New Queue
+          <Plus className="w-3.5 h-3.5 stroke-[2]" />
+          <span>New Queue</span>
         </button>
       </div>
 
@@ -265,36 +280,36 @@ export const QueueSchedulerPanel: React.FC = () => {
       {editing && (
         <form
           onSubmit={handleSave}
-          className="flex flex-col gap-3 p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-strong)]"
+          className="flex flex-col gap-3.5 p-4 rounded-xl bg-[var(--bg-chassis)] border border-[var(--border-subtle)]"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              {queues.some((q) => q.id === editing.id) ? "Edit Queue" : "Create Queue"}
+            <span className="text-xs font-semibold text-[var(--text-primary)]">
+              {queues.some((q) => q.id === editing.id) ? "Edit queue" : "Create queue"}
             </span>
             <button
               type="button"
               onClick={() => setEditing(null)}
-              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] cursor-pointer"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-colors cursor-pointer"
               aria-label="Cancel editing"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 stroke-[1.75]" />
             </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-[var(--text-secondary)]">Queue Name</span>
+              <span className="text-[var(--text-secondary)] font-medium">Queue name</span>
               <input
                 type="text"
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                 placeholder="e.g. Overnight Bulk"
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                className="h-8 px-2.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
               />
             </label>
 
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-[var(--text-secondary)]">Max Concurrent</span>
+              <span className="text-[var(--text-secondary)] font-medium">Max concurrent</span>
               <input
                 type="number"
                 min={1}
@@ -306,7 +321,7 @@ export const QueueSchedulerPanel: React.FC = () => {
                     maxConcurrent: Math.max(1, Number(e.target.value) || 1),
                   })
                 }
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                className="h-8 px-2.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
               />
             </label>
 
@@ -398,17 +413,82 @@ export const QueueSchedulerPanel: React.FC = () => {
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          {/* Post-Completion Action & Queue Behavior */}
+          <div className="flex flex-col gap-3 pt-3 border-t border-[var(--border-dim)]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              <div>
+                <span className="text-xs font-medium text-[var(--text-primary)] block">
+                  On Queue Complete
+                </span>
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  System action once every item in this queue finishes.
+                </span>
+              </div>
+              <Select
+                value={(editing.postAction || "none") as QueuePostAction}
+                onChange={(val) =>
+                  setEditing({
+                    ...editing,
+                    postAction: val as QueuePostAction,
+                  })
+                }
+                ariaLabel="Action on queue complete"
+                align="right"
+                className="w-full"
+                options={POST_ACTION_OPTIONS}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  checked={editing.autoStartOnWindow ?? true}
+                  onChange={(e) =>
+                    setEditing({ ...editing, autoStartOnWindow: e.target.checked })
+                  }
+                  className="edm-checkbox"
+                />
+                <span>Auto-start on window</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  checked={editing.pauseOnWindowClose ?? true}
+                  onChange={(e) =>
+                    setEditing({ ...editing, pauseOnWindowClose: e.target.checked })
+                  }
+                  className="edm-checkbox"
+                />
+                <span>Pause on window end</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  checked={editing.autoRetryFailed ?? false}
+                  onChange={(e) =>
+                    setEditing({ ...editing, autoRetryFailed: e.target.checked })
+                  }
+                  className="edm-checkbox"
+                />
+                <span>Auto-retry failed</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-dim)]">
             <button
               type="button"
               onClick={() => setEditing(null)}
-              className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] cursor-pointer"
+              className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] cursor-pointer transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-[var(--accent-on)] hover:bg-[var(--accent-hover)] cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-xs font-medium bg-[var(--btn-contrast-bg)] text-[var(--btn-contrast-text)] hover:bg-[var(--btn-contrast-hover)] cursor-pointer transition-colors"
             >
               <Check className="w-3.5 h-3.5" />
               Save Queue
@@ -420,7 +500,7 @@ export const QueueSchedulerPanel: React.FC = () => {
       {loading ? (
         <div className="py-6 text-center text-xs text-[var(--text-muted)]">Loading queues…</div>
       ) : queues.length === 0 ? (
-        <div className="py-8 text-center rounded-xl border border-dashed border-[var(--border-subtle)] text-xs text-[var(--text-muted)]">
+        <div className="py-8 text-center text-xs text-[var(--text-muted)] border-t border-[var(--border-dim)]">
           No scheduled queues configured yet. Create one to manage concurrency and time windows.
         </div>
       ) : (
@@ -472,18 +552,20 @@ export const QueueSchedulerPanel: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleEnabled(q)}
-                    title={q.enabled ? "Disable queue" : "Enable queue"}
-                    className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                      q.enabled
-                        ? "border-[var(--accent-badge-border)] bg-[var(--accent-badge-bg)] text-[var(--accent-badge-text)]"
-                        : "border-[var(--border-dim)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                    }`}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip content={q.enabled ? "Disable queue" : "Enable queue"} side="top">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleEnabled(q)}
+                      aria-label={q.enabled ? "Disable queue" : "Enable queue"}
+                      className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        q.enabled
+                          ? "border-[var(--accent-badge-border)] bg-[var(--accent-badge-bg)] text-[var(--accent-badge-text)]"
+                          : "border-[var(--border-dim)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                      }`}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                   <button
                     type="button"
                     onClick={() => startEdit(q)}
@@ -491,14 +573,16 @@ export const QueueSchedulerPanel: React.FC = () => {
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(q.id)}
-                    title="Delete queue"
-                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip content="Delete queue" side="top" align="end">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(q.id)}
+                      aria-label="Delete queue"
+                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             );

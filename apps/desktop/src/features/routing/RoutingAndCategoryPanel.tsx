@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Tooltip } from "../../components/Tooltip";
 import { Globe, FolderCog, Plus, Power, Trash2, Check, Search } from "lucide-react";
 
 export interface DomainProxyRule {
@@ -93,7 +94,13 @@ function matchesDomainPattern(host: string, pattern: string): boolean {
   return regex.test(h);
 }
 
-export const RoutingAndCategoryPanel: React.FC = () => {
+export interface RoutingAndCategoryPanelProps {
+  mode?: "all" | "proxy" | "categories";
+}
+
+export const RoutingAndCategoryPanel: React.FC<RoutingAndCategoryPanelProps> = ({
+  mode = "all",
+}) => {
   const [rules, setRules] = useState<DomainProxyRule[]>([]);
   const [policies, setPolicies] = useState<CategoryPolicy[]>(DEFAULT_CATEGORIES);
   const [newPattern, setNewPattern] = useState("");
@@ -184,6 +191,7 @@ export const RoutingAndCategoryPanel: React.FC = () => {
       )}
 
       {/* Per-Domain Split Proxy Routing */}
+      {mode !== "categories" && (
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2.5">
           <Globe className="w-5 h-5 text-[var(--accent)]" />
@@ -252,39 +260,45 @@ export const RoutingAndCategoryPanel: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      persistRules(
-                        rules.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
-                      )
-                    }
-                    className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
-                      rule.enabled
-                        ? "border-[var(--accent)]/40 text-[var(--accent)] bg-[var(--accent)]/10"
-                        : "border-[var(--border-subtle)] text-[var(--text-muted)]"
-                    }`}
-                    title={rule.enabled ? "Disable rule" : "Enable rule"}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => persistRules(rules.filter((r) => r.id !== rule.id), "Rule removed.")}
-                    className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
-                    title="Delete rule"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip content={rule.enabled ? "Disable rule" : "Enable rule"} side="top">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        persistRules(
+                          rules.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
+                        )
+                      }
+                      aria-label={rule.enabled ? "Disable rule" : "Enable rule"}
+                      className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
+                        rule.enabled
+                          ? "border-[var(--accent)]/40 text-[var(--accent)] bg-[var(--accent)]/10"
+                          : "border-[var(--border-subtle)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Delete rule" side="top" align="end">
+                    <button
+                      type="button"
+                      onClick={() => persistRules(rules.filter((r) => r.id !== rule.id), "Rule removed.")}
+                      aria-label="Delete rule"
+                      className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             ))
           )}
         </div>
       </section>
+      )}
 
       {/* Per-Category Concurrency & Speed Caps */}
-      <section className="flex flex-col gap-3 pt-2 border-t border-[var(--border-subtle)]">
+      {mode !== "proxy" && (
+      <section className={`flex flex-col gap-3 ${mode === "all" ? "pt-2 border-t border-[var(--border-subtle)]" : ""}`}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <FolderCog className="w-5 h-5 text-[var(--accent)]" />
@@ -366,6 +380,7 @@ export const RoutingAndCategoryPanel: React.FC = () => {
           ))}
         </div>
       </section>
+      )}
     </div>
   );
 };

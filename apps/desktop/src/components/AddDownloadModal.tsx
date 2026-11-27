@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { X, CheckCircle2, FolderOpen, FileCode, Search, AlertCircle, Film, Upload } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { backdropVariants, modalVariants } from "../utils/motion";
 import { EdmSettings } from "../types/settings";
+import { Select } from "./Select";
 import {
   isTauri,
   TorrentInspectionResult,
@@ -32,9 +33,15 @@ interface AddDownloadModalProps {
     category: string,
     connections: number,
     saveDir: string,
-    selectedFiles?: number[]
+    selectedFiles?: number[],
+    scheduleQueueId?: string,
+    queueOnly?: boolean
   ) => void;
   onOpenBatchImport?: () => void;
+  initialQueueMode?: boolean;
+  initialUrl?: string;
+  initialFilename?: string;
+  initialSize?: number | null;
   settings: EdmSettings;
 }
 
@@ -50,6 +57,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   onClose,
   onAdd,
   onOpenBatchImport,
+  initialQueueMode = false,
+  initialUrl,
+  initialFilename,
+  initialSize,
   settings,
 }) => {
   const getDefaultConnectionsOption = (): number => {
@@ -67,6 +78,36 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [addCategory, setAddCategory] = useState("auto");
   const [addConnections, setAddConnections] = useState<number>(getDefaultConnectionsOption);
   const [addSaveDir, setAddSaveDir] = useState<string>("");
+  const [availableQueues, setAvailableQueues] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedQueueId, setSelectedQueueId] = useState<string>("immediate");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialUrl) {
+      setUrlInput(initialUrl);
+      const derived = initialFilename?.trim() || initialUrl.split("/").pop()?.split("?")[0] || "";
+      if (derived) setFileNameInput(derived);
+      if (initialSize && initialSize > 0) {
+        setProbeResult({ size: formatTorrentBytes(initialSize), finalUrl: initialUrl });
+      }
+    }
+    try {
+      const raw = localStorage.getItem("edm_queues");
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed)
+        ? parsed.map((q: any) => ({ id: String(q.id), name: String(q.name || "Unnamed Queue") }))
+        : [];
+      setAvailableQueues(list);
+      if (initialQueueMode) {
+        setSelectedQueueId(list.length > 0 ? list[0].id : "default-queue");
+      } else {
+        setSelectedQueueId("immediate");
+      }
+    } catch {
+      setAvailableQueues([]);
+      setSelectedQueueId(initialQueueMode ? "default-queue" : "immediate");
+    }
+  }, [isOpen, initialQueueMode, initialUrl, initialFilename, initialSize]);
   const [isProbing, setIsProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<{
     size: string;
@@ -332,7 +373,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const selectedTotalBytes = selectedFilesList.reduce((acc, f) => acc + f.size_bytes, 0);
   const noFilesSelected = Boolean(torrentInfo && torrentInfo.files.length > 0 && selectedFileIndices.size === 0);
 
-  const handleSubmit = () => {
+  const handleSubmit = (queueOnly = false) => {
     if (!trimmedUrl || noFilesSelected) return;
     const selectedIndices =
       torrentInfo && torrentInfo.files.length > 0
@@ -344,7 +385,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
       effectiveCategory,
       addConnections,
       currentDestination,
-      selectedIndices
+      selectedIndices,
+      selectedQueueId !== "immediate" ? selectedQueueId : undefined,
+      queueOnly
     );
     resetState();
   };
@@ -365,27 +408,31 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="panel-3d w-full max-w-lg overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add Download"
+            className="w-full max-w-lg rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.7)] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-              <span className="font-bold tracking-tight text-sm flex items-center gap-2">
-                <img src="/logo.png" alt="EDM Logo" className="w-4 h-4 object-contain" />
-                Add New Download Task
+            <div className="px-4 py-3 border-b border-[var(--border-dim)] flex items-center justify-between">
+              <span className="font-semibold tracking-tight text-xs sm:text-sm text-[var(--text-primary)] flex items-center gap-2">
+                <img src="/logo.png" alt="EDM Logo" className="w-4 h-4 object-contain pointer-events-none" />
+                {selectedQueueId !== "immediate" ? "Add to Scheduler" : "Add Download"}
               </span>
               <button
                 onClick={resetState}
-                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                aria-label="Close Add Download dialog"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4 stroke-[1.75]" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 space-y-3.5">
               <div>
-                <div className="flex items-center justify-between mb-1 gap-2">
+                <div className="flex items-center justify-between mb-1.5 gap-2">
                   <label className="block text-xs font-medium text-[var(--text-secondary)]">
-                    Source Address (URL / HTTP / Magnet / .torrent)
+                    Source URL
                   </label>
                   <div className="flex items-center gap-3 shrink-0">
                     {onOpenBatchImport && (
@@ -395,38 +442,38 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                           resetState();
                           onOpenBatchImport();
                         }}
-                        className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                        className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--accent)] inline-flex items-center gap-1 cursor-pointer font-medium transition-colors"
                       >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Import Batch (.txt/.csv/.html)</span>
+                        <Upload className="w-3.5 h-3.5 stroke-[1.75]" />
+                        <span>Batch Import</span>
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={handleBrowseTorrentFile}
-                      className="text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                      className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--accent)] inline-flex items-center gap-1 cursor-pointer font-medium transition-colors"
                     >
-                      <FileCode className="w-3.5 h-3.5" />
-                      <span>Choose .torrent File...</span>
+                      <FileCode className="w-3.5 h-3.5 stroke-[1.75]" />
+                      <span>.torrent File</span>
                     </button>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="https://example.com/file.zip, magnet:?xt=..., or path to .torrent file"
+                    placeholder="https://example.com/file.zip or magnet:?xt=..."
                     value={urlInput}
                     onChange={(e) => handleUrlInputChange(e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none"
+                    className="flex-1 h-8 px-3 rounded-lg text-xs bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
                   {isTorrentTarget ? (
                     <button
                       type="button"
                       onClick={() => void handleInspectTorrent()}
                       disabled={isInspectingTorrent || !trimmedUrl}
-                      className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                      className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--accent)] hover:bg-white/[0.08] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 shrink-0 transition-colors"
                     >
-                      <Search className="w-3.5 h-3.5" />
+                      <Search className="w-3.5 h-3.5 stroke-[1.75]" />
                       <span>{isInspectingTorrent ? "Looking up..." : "Look up"}</span>
                     </button>
                   ) : (
@@ -435,9 +482,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                         type="button"
                         onClick={handleProbe}
                         disabled={isProbing || !trimmedUrl}
-                        className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--accent)] disabled:opacity-40 cursor-pointer shrink-0"
+                        className="h-8 px-2.5 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] disabled:opacity-40 cursor-pointer shrink-0 transition-colors"
                       >
-                        {isProbing ? "Probing..." : "Probe Server"}
+                        {isProbing ? "Probing..." : "Probe"}
                       </button>
                       <button
                         type="button"
@@ -557,35 +604,57 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                  <select
+                  <Select
                     value={addCategory}
-                    onChange={(e) => setAddCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg input-3d text-[var(--text-primary)] focus:outline-none cursor-pointer"
-                  >
-                    <option value="auto">Auto-Detect from Extension</option>
-                    {settings.categories
-                      .filter((c) => c.enabled)
-                      .map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                  </select>
+                    onChange={setAddCategory}
+                    ariaLabel="Download Category"
+                    className="w-full"
+                    options={[
+                      { value: "auto", label: "Auto-Detect from Extension" },
+                      ...settings.categories
+                        .filter((c) => c.enabled)
+                        .map((c) => ({ value: c.name, label: c.name })),
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block font-medium text-[var(--text-secondary)] mb-1">Stream Scaling</label>
-                  <select
+                  <Select
                     value={String(addConnections)}
-                    onChange={(e) => setAddConnections(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-lg input-3d text-[var(--text-primary)] focus:outline-none cursor-pointer"
-                  >
-                    <option value="0">Auto (Adaptive — Recommended)</option>
-                    <option value="1">Single Stream (Strict Compatibility)</option>
-                    <option value="16">16 Max</option>
-                    <option value="32">32 Max</option>
-                    <option value="64">64 Max</option>
-                  </select>
+                    onChange={(v) => setAddConnections(Number(v))}
+                    ariaLabel="Stream Scaling"
+                    className="w-full"
+                    options={[
+                      { value: "0", label: "Auto (Adaptive — Recommended)" },
+                      { value: "1", label: "Single Stream (Strict Compatibility)" },
+                      { value: "16", label: "16 Max" },
+                      { value: "32", label: "32 Max" },
+                      { value: "64", label: "64 Max" },
+                    ]}
+                  />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                  Schedule / Queue
+                </label>
+                <Select
+                  value={selectedQueueId}
+                  onChange={setSelectedQueueId}
+                  ariaLabel="Schedule Queue"
+                  className="w-full"
+                  options={[
+                    { value: "immediate", label: "Immediate (Download now)" },
+                    ...availableQueues.map((q) => ({
+                      value: q.id,
+                      label: `Queue: ${q.name}`,
+                    })),
+                    ...(availableQueues.length === 0
+                      ? [{ value: "default-queue", label: "Default Scheduled Queue" }]
+                      : []),
+                  ]}
+                />
               </div>
 
               <div>
@@ -597,33 +666,43 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                     type="text"
                     value={currentDestination}
                     onChange={(e) => setAddSaveDir(e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg text-xs input-3d text-[var(--text-primary)] font-mono"
+                    className="flex-1 h-8 px-3 rounded-lg text-xs bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)] transition-colors"
                   />
                   <button
                     type="button"
                     onClick={handleBrowseAddDir}
-                    className="btn-3d px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                    className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] cursor-pointer inline-flex items-center gap-1.5 shrink-0 transition-colors"
                   >
-                    <FolderOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
-                    <span>Browse...</span>
+                    <FolderOpen className="w-3.5 h-3.5 stroke-[1.75] text-[var(--accent)]" />
+                    <span>Browse</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="px-5 py-3 bg-[var(--bg-card)] border-t border-[var(--border-subtle)] flex items-center justify-end gap-2">
+            <div className="px-4 py-3 border-t border-[var(--border-dim)] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSubmit(true)}
+                  disabled={!trimmedUrl || noFilesSelected}
+                  className="h-8 px-3.5 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] disabled:opacity-40 cursor-pointer transition-colors"
+                  title="Add to queue without starting immediately"
+                >
+                  Add
+                </button>
+                <button
+                  onClick={() => handleSubmit(false)}
+                  disabled={!trimmedUrl || noFilesSelected}
+                  className="h-8 px-4 rounded-lg bg-[var(--btn-contrast-bg)] hover:bg-[var(--btn-contrast-hover)] text-[var(--btn-contrast-text)] text-xs font-medium disabled:opacity-40 cursor-pointer transition-colors"
+                >
+                  {selectedQueueId !== "immediate" ? "Add to Scheduler" : "Download"}
+                </button>
+              </div>
               <button
                 onClick={resetState}
-                className="btn-3d px-4 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
+                className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] cursor-pointer transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!trimmedUrl || noFilesSelected}
-                className="btn-primary-3d px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 cursor-pointer"
-              >
-                Start Download
               </button>
             </div>
           </motion.div>

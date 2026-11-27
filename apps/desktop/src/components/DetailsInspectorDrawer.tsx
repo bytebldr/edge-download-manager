@@ -80,6 +80,13 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
   const shareRatio = (totalUploadedBytes / shareBase).toFixed(2);
 
   const totalBytes = Math.max(1, download.sizeTotal);
+  const isQueued = download.state === "queued";
+  const isPaused = download.state === "paused";
+  const isFailed = download.state === "failed";
+  const isCompleted = download.state === "completed";
+  const activeStreamCount =
+    download.state === "downloading" ? Math.max(1, download.connections || 8) : 0;
+
   const workersList =
     download.workers && download.workers.length > 0
       ? download.workers
@@ -94,23 +101,39 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
             start,
             end,
             pos: start + done,
-            speed: download.speed,
+            speed: download.state === "downloading" ? download.speed : "0 B/s",
             status:
               download.state === "downloading"
                 ? isTorrent
                   ? isVerifying
-                    ? "Verifying piece hashes..."
+                    ? "Verifying piece hashes"
                     : "Active swarm exchange"
-                  : "Receiving chunk (HTTP 206)..."
-                : download.state === "completed"
-                ? isTorrent
-                  ? "Verified • Seeding"
-                  : "Chunk verified • Complete"
-                : isTorrent
-                ? "Swarm suspended (Paused)"
-                : "Thread suspended (Paused)",
+                  : "Receiving chunk (HTTP 206)"
+                : isCompleted
+                  ? isTorrent
+                    ? "Verified • Seeding"
+                    : "Chunk verified • Complete"
+                  : isQueued
+                    ? "Queued (Waiting for slot)"
+                    : isFailed
+                      ? "Transfer interrupted"
+                      : isTorrent
+                        ? "Swarm suspended (Paused)"
+                        : "Thread suspended (Paused)",
           };
         });
+
+  const statusMeta = isVerifying
+    ? { label: "Verifying data", dot: "bg-amber-400", text: "text-amber-300" }
+    : download.state === "downloading"
+      ? { label: isTorrent ? "Active swarm" : "Downloading", dot: "bg-[var(--accent)]", text: "text-[var(--text-primary)]" }
+      : isPaused
+        ? { label: "Paused", dot: "bg-amber-400", text: "text-[var(--text-primary)]" }
+        : isQueued
+          ? { label: "Queued", dot: "bg-zinc-500", text: "text-[var(--text-secondary)]" }
+          : isFailed
+            ? { label: "Failed", dot: "bg-rose-400", text: "text-rose-400" }
+            : { label: isTorrent ? "Seeding" : "Completed", dot: "bg-emerald-400", text: "text-emerald-400" };
 
   return (
     <AnimatePresence>
@@ -128,95 +151,80 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="panel-3d w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Download Status — ${download.name}`}
+            className="w-full max-w-2xl max-h-[85vh] rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Title Bar */}
-            <div className="px-4 py-2.5 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <img src="/logo.png" alt="EDM" className="w-4 h-4 object-contain shrink-0" />
-                <span className="font-bold tracking-tight text-xs sm:text-sm truncate">
+            <div className="px-4 py-3 border-b border-[var(--border-dim)] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img src="/logo.png" alt="EDM" className="w-4 h-4 object-contain shrink-0 pointer-events-none" />
+                <span className="font-semibold tracking-tight text-xs sm:text-sm text-[var(--text-primary)] truncate">
                   Download Status — {download.name}
                 </span>
               </div>
               <button
                 onClick={onClose}
-                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-chassis)] cursor-pointer shrink-0"
+                aria-label="Close Download Status"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4 stroke-[1.75]" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-3.5 sm:p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
-              {/* Metadata Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-[var(--bg-chassis)] border border-[var(--border-subtle)] text-xs">
+            <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
+              {/* Metadata Strip (Hairline divider, no boxed card soup) */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pb-3.5 border-b border-[var(--border-dim)] text-xs">
                 <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+                  <div className="text-[11px] text-[var(--text-muted)] font-medium">
                     Status
                   </div>
-                  <div
-                    className={`font-semibold text-xs mt-0.5 ${
-                      isVerifying
-                        ? "text-amber-300 animate-pulse"
-                        : download.state === "downloading"
-                        ? "text-[var(--accent)]"
-                        : download.state === "paused"
-                        ? "text-amber-400"
-                        : "text-emerald-400"
-                    }`}
-                  >
-                    {isVerifying
-                      ? "Verifying data..."
-                      : download.state === "downloading"
-                      ? isTorrent
-                        ? "Active Swarm..."
-                        : "Receiving data..."
-                      : download.state === "paused"
-                      ? "Paused"
-                      : isTorrent
-                      ? "Seeding (100%)"
-                      : "Completed"}
+                  <div className={`font-medium text-xs mt-1 flex items-center gap-1.5 ${statusMeta.text}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusMeta.dot}`} />
+                    <span>{statusMeta.label}</span>
                   </div>
                 </div>
                 <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                    File Size
+                  <div className="text-[11px] text-[var(--text-muted)] font-medium">
+                    File size
                   </div>
-                  <div className="font-mono tabular-nums font-semibold text-xs mt-0.5">
+                  <div className="tabular-nums font-medium text-xs text-[var(--text-primary)] mt-1">
                     {formatBytes(download.sizeTotal)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                    Transfer Rate
+                  <div className="text-[11px] text-[var(--text-muted)] font-medium">
+                    Transfer rate
                   </div>
                   <div
-                    className={`font-mono tabular-nums font-semibold text-xs mt-0.5 flex items-center gap-1.5 ${
-                      download.state === "downloading" ? "text-emerald-400" : "text-[var(--text-muted)]"
+                    className={`tabular-nums font-medium text-xs mt-1 flex items-center gap-1.5 ${
+                      download.state === "downloading" ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"
                     }`}
                   >
-                    <span>{download.speed}</span>
+                    <span>{download.state === "downloading" ? download.speed : "0 B/s"}</span>
                     {isTorrent && currentUlBps > 0 && (
-                      <span className="text-[#818CF8] text-[10px] flex items-center">
-                        <ArrowUp className="w-2.5 h-2.5 inline" />
+                      <span className="text-[#818CF8] text-[11px] flex items-center">
+                        <ArrowUp className="w-3 h-3 inline" />
                         {formatBytes(currentUlBps)}/s
                       </span>
                     )}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                    {isTorrent ? "Swarm Protocol" : "Resume Capable"}
+                  <div className="text-[11px] text-[var(--text-muted)] font-medium">
+                    {isTorrent ? "Swarm protocol" : "Resume capable"}
                   </div>
-                  <div className={`font-semibold text-xs mt-0.5 flex items-center gap-1 ${isTorrent ? "text-sky-400" : "text-emerald-400"}`}>
+                  <div className="font-medium text-xs text-[var(--text-primary)] mt-1 flex items-center gap-1.5">
                     {isTorrent ? (
                       <>
-                        <Radio className="w-3 h-3 inline shrink-0 text-sky-400" /> BitTorrent (DHT/uTP)
+                        <Radio className="w-3.5 h-3.5 shrink-0 text-sky-400 stroke-[1.75]" /> BitTorrent (DHT/uTP)
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="w-3 h-3 inline shrink-0" /> Yes (Byte-Range)
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400 stroke-[1.75]" /> Byte-Range
                       </>
                     )}
                   </div>
@@ -225,36 +233,37 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
 
               {/* Dynamic Parallel Segmentation Progress Bar */}
               <div>
-                <div className="flex justify-between items-center text-[11px] mb-1">
+                <div className="flex justify-between items-center text-xs mb-1.5">
                   <span className="font-medium text-[var(--text-secondary)]">
                     {isTorrent
-                      ? "BitTorrent Swarm Piece Verification & Progress:"
-                      : "Start positions and download progress by connections:"}
+                      ? "Swarm piece verification & progress"
+                      : "Segment progress by connections"}
                   </span>
-                  <span className="font-mono tabular-nums font-bold text-[var(--accent)] text-xs">
-                    {download.state === "completed" || download.progress >= 100 ? 100 : download.progress}% (
-                    {formatBytes(
-                      download.state === "completed" || download.progress >= 100
-                        ? download.sizeTotal || download.sizeDone
-                        : download.sizeDone
-                    )}{" "}
-                    / {formatBytes(download.sizeTotal || download.sizeDone)})
+                  <span className="tabular-nums font-medium text-[var(--text-primary)]">
+                    {isCompleted || download.progress >= 100 ? 100 : download.progress}%{" "}
+                    <span className="text-[var(--text-muted)]">
+                      ({formatBytes(isCompleted || download.progress >= 100 ? download.sizeTotal || download.sizeDone : download.sizeDone)} / {formatBytes(download.sizeTotal || download.sizeDone)})
+                    </span>
                   </span>
                 </div>
-                <div className="h-5 rounded bg-[var(--bg-chassis)] border border-[var(--border-strong)] relative overflow-hidden shadow-inner flex items-center">
+                <div className="h-2 rounded-full bg-white/[0.06] relative overflow-hidden flex items-center">
                   {(() => {
                     const isComplete =
-                      download.state === "completed" ||
+                      isCompleted ||
                       download.progress >= 100 ||
                       (totalBytes > 0 && download.sizeDone >= totalBytes);
 
                     if (isComplete) {
                       return (
                         <div
-                          className="h-full w-full progress-fill-3d transition-all duration-300"
+                          className="h-full w-full rounded-full bg-emerald-500 transition-[width] duration-300"
                           style={{ width: "100%" }}
                         />
                       );
+                    }
+
+                    if (isQueued && download.progress === 0) {
+                      return null;
                     }
 
                     const spans = getMergedProgressSpans(
@@ -269,7 +278,9 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                         {spans.map((span, sIdx) => (
                           <div
                             key={sIdx}
-                            className="absolute top-0 bottom-0 z-10 progress-fill-3d transition-all duration-300"
+                            className={`absolute top-0 bottom-0 z-10 rounded-full transition-[width] duration-300 ${
+                              isPaused ? "bg-amber-500/85" : isFailed ? "bg-rose-500/85" : "bg-[var(--accent)]"
+                            }`}
                             style={{
                               left: `${span.startPct}%`,
                               width:
@@ -277,11 +288,7 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                                   ? `calc(${span.widthPct}% + 1px)`
                                   : `${span.widthPct}%`,
                             }}
-                          >
-                            {download.state === "downloading" && sIdx === spans.length - 1 && (
-                              <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_#38BDF8] animate-pulse" />
-                            )}
-                          </div>
+                          />
                         ))}
                         {settings?.general?.showConnectionBoundaries &&
                           workersList &&
@@ -300,14 +307,14 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                     );
                   })()}
                 </div>
-                <div className="flex justify-between text-[9.5px] text-[var(--text-muted)] font-mono mt-1">
-                  <span>{isTorrent ? `Pieces Verified: ${download.progress}%` : "Offset: 0x00000000"}</span>
-                  <span className="text-emerald-400 font-medium">
+                <div className="flex justify-between text-[11px] text-[var(--text-muted)] tabular-nums mt-1.5">
+                  <span className="font-mono">{isTorrent ? `Pieces verified: ${download.progress}%` : "0x00000000"}</span>
+                  <span>
                     {isTorrent
-                      ? "UPnP & NAT-PMP Active • Swarm Seeding Enabled"
-                      : "Engine Crash Safety: Flush-Before-Checkpoint Enabled"}
+                      ? "UPnP & NAT-PMP active"
+                      : "Crash-safe checkpointing"}
                   </span>
-                  <span>{isTorrent ? `Swarm Total: ${formatBytes(download.sizeTotal)}` : `Offset: ${formatBytes(download.sizeTotal)}`}</span>
+                  <span>{isTorrent ? `Total: ${formatBytes(download.sizeTotal)}` : formatBytes(download.sizeTotal)}</span>
                 </div>
               </div>
 
@@ -426,59 +433,55 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
               ) : (
                 /* HTTP / HTTPS Multi-Connection Worker Thread Telemetry Table */
                 <div>
-                  <div className="flex justify-between items-center text-[11px] font-medium text-[var(--text-secondary)] mb-1">
-                    <span>Multi-Connection Worker Thread Telemetry</span>
-                    <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                      {workersList.length} Active Stream{workersList.length > 1 ? "s" : ""}
+                  <div className="flex justify-between items-center text-xs font-medium text-[var(--text-secondary)] mb-2">
+                    <span>Worker thread telemetry</span>
+                    <span className="tabular-nums text-[11px] text-[var(--text-muted)]">
+                      {activeStreamCount} active stream{activeStreamCount === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-chassis)] max-h-36 overflow-y-auto">
+                  <div className="border-t border-[var(--border-dim)] overflow-hidden max-h-36 overflow-y-auto">
                     <table className="w-full text-left text-[11px]">
-                      <thead className="sticky top-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] z-10">
+                      <thead className="sticky top-0 bg-[var(--bg-panel)] border-b border-[var(--border-dim)] text-[11px] font-medium text-[var(--text-muted)] z-10">
                         <tr>
-                          <th className="py-1 px-2.5">Connection</th>
-                          <th className="py-1 px-2.5">Byte Range</th>
-                          <th className="py-1 px-2.5">Progress</th>
-                          <th className="py-1 px-2.5">Throughput</th>
-                          <th className="py-1 px-2.5">Status</th>
+                          <th className="py-1.5 px-2">Connection</th>
+                          <th className="py-1.5 px-2">Byte range</th>
+                          <th className="py-1.5 px-2">Progress</th>
+                          <th className="py-1.5 px-2">Throughput</th>
+                          <th className="py-1.5 px-2">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[var(--border-dim)] font-mono tabular-nums">
+                      <tbody className="divide-y divide-[var(--border-dim)] tabular-nums">
                         {workersList.map((w, idx) => {
-                          const isPaused = download.state === "paused";
-                          const isCompleted = download.state === "completed";
+                          const wPaused = download.state === "paused";
+                          const wCompleted = download.state === "completed";
                           const range = Math.max(1, w.end - w.start);
                           const done = Math.max(0, Math.min(range, w.pos - w.start));
                           const pct = Math.min(100, Math.round((done / range) * 100));
 
-                          let statusColor = "text-[var(--text-muted)]";
-                          if (isCompleted || pct >= 100) statusColor = "text-emerald-400";
-                          else if (!isPaused && download.state === "downloading") statusColor = "text-sky-400";
-
                           return (
-                            <tr key={w.idx || idx + 1} className="hover:bg-[var(--bg-card-hover)]">
-                              <td className="py-1 px-2.5 font-semibold text-[var(--accent)]">
+                            <tr key={w.idx || idx + 1} className="hover:bg-white/[0.025] transition-colors">
+                              <td className="py-1.5 px-2 font-medium text-[var(--text-primary)]">
                                 Worker #{w.idx || idx + 1}
                               </td>
-                              <td className="py-1 px-2.5 text-[var(--text-secondary)]">
-                                {formatBytes(w.start)} - {formatBytes(w.end)}
+                              <td className="py-1.5 px-2 text-[var(--text-secondary)]">
+                                {formatBytes(w.start)} – {formatBytes(w.end)}
                               </td>
-                              <td className="py-1 px-2.5 text-[var(--text-primary)]">
+                              <td className="py-1.5 px-2 text-[var(--text-primary)]">
                                 {pct}% ({formatBytes(done)})
                               </td>
                               <td
-                                className={`py-1 px-2.5 font-semibold ${
-                                  isPaused ? "text-[var(--text-muted)]" : "text-emerald-400"
+                                className={`py-1.5 px-2 font-medium ${
+                                  download.state === "downloading" ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
                                 }`}
                               >
-                                {isPaused ? "0 B/s" : w.speed}
+                                {download.state === "downloading" ? w.speed : "0 B/s"}
                               </td>
-                              <td className={`py-1 px-2.5 text-[10px] ${statusColor}`}>
-                                {isPaused
-                                  ? "Thread suspended (Paused)"
-                                  : isCompleted
-                                  ? "Chunk verified • Complete"
-                                  : w.status}
+                              <td className="py-1.5 px-2 text-[11px] text-[var(--text-secondary)]">
+                                {wPaused
+                                  ? "Paused"
+                                  : wCompleted
+                                    ? "Complete"
+                                    : w.status}
                               </td>
                             </tr>
                           );
@@ -491,36 +494,32 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
             </div>
 
             {/* Modal Actions */}
-            <div className="px-4 py-2.5 bg-[var(--bg-card)] border-t border-[var(--border-subtle)] flex items-center justify-between shrink-0">
-              <div className="text-[10px] text-[var(--text-muted)] font-mono truncate mr-2">
-                NTFS Sparse Allocation • Mark-of-the-Web Attached
+            <div className="px-4 py-3 border-t border-[var(--border-dim)] flex items-center justify-between shrink-0">
+              <div className="text-[11px] text-[var(--text-muted)] truncate mr-2">
+                NTFS sparse allocation • Mark-of-the-Web attached
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {download.state === "completed" && (
                   <button
                     onClick={() => onOpenFile(download.id)}
-                    className="btn-3d h-7 px-3 rounded-lg text-xs font-semibold cursor-pointer text-blue-400 hover:text-blue-300"
+                    className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.08] cursor-pointer transition-colors"
                   >
-                    Open File
+                    Open file
                   </button>
                 )}
                 {download.state !== "completed" && (
                   <button
                     onClick={() => onToggleState(download.id)}
-                    className={`btn-3d h-7 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                      download.state === "downloading"
-                        ? "text-amber-400 hover:text-amber-300"
-                        : "text-emerald-400 hover:text-emerald-300"
-                    }`}
+                    className="h-8 px-3 rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.08] cursor-pointer transition-colors"
                   >
-                    {download.state === "downloading" ? "Pause" : "Resume"}
+                    {download.state === "downloading" ? "Pause" : isQueued ? "Start" : "Resume"}
                   </button>
                 )}
                 <button
                   onClick={onClose}
-                  className="btn-primary-3d h-7 px-3.5 rounded-lg text-xs font-semibold cursor-pointer"
+                  className="h-8 px-3 rounded-lg bg-white/[0.08] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.12] cursor-pointer transition-colors"
                 >
-                  Close Window
+                  Close
                 </button>
               </div>
             </div>

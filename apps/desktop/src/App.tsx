@@ -19,11 +19,12 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
-  Compass,
-  Activity,
   RotateCcw,
   Image,
   CalendarClock,
+  Zap,
+  Settings,
+  Info,
 } from "lucide-react";
 import SettingsPage from "./components/SettingsPage";
 import SetupWizard from "./components/SetupWizard";
@@ -33,8 +34,10 @@ import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DetailsInspectorDrawer } from "./components/DetailsInspectorDrawer";
 import { AppToolbar } from "./components/AppToolbar";
 import { StatusFooter } from "./components/StatusFooter";
+import { Tooltip } from "./components/Tooltip";
 import { DownloadContextMenu } from "./components/DownloadContextMenu";
 import {
+  APP_VERSION,
   DOWNLOADS_STORAGE_KEY,
   DISMISSED_UPDATE_VERSION_KEY,
   DEFAULT_MAX_CONNECTIONS,
@@ -55,6 +58,7 @@ import { BatchImportModal, ImportedLink } from "./features/batch-import";
 import { QueueSchedulerPanel } from "./features/scheduler";
 import { EditRequestModal } from "./features/routing";
 import { loadSettings, saveSettings, defaultSettings, EdmSettings } from "./types/settings";
+import { applyFontFamily } from "./lib/fonts";
 import { formatBytes, formatSpeed, formatEta } from "./utils/format";
 import { motion, AnimatePresence } from "motion/react";
 import { viewVariants, backdropVariants, modalVariants } from "./utils/motion";
@@ -206,6 +210,10 @@ export default function App() {
   const mode = settings.general.theme === "system" ? "dark" : settings.general.theme;
   const palette = settings.general.palette;
 
+  useEffect(() => {
+    applyFontFamily(settings.general.fontFamily);
+  }, [settings.general.fontFamily]);
+
   const handleUpdateSettings = (newSettings: EdmSettings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
@@ -228,6 +236,12 @@ export default function App() {
   const [selectedDownload, setSelectedDownload] = useState<DownloadItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [pendingCapture, setPendingCapture] = useState<{
+    url: string;
+    filename?: string;
+    size?: number | null;
+  } | null>(null);
+  const [isAddSchedulerMode, setIsAddSchedulerMode] = useState(false);
   const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -457,13 +471,14 @@ export default function App() {
   }, [settings.downloads.defaultDirectory]);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [downloads, setDownloads] = useState<DownloadItem[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(DOWNLOADS_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && (parsed.length > 0 || isTauri())) {
             return parsed.map((item: DownloadItem) => {
               const itemWithCreated: DownloadItem = {
                 ...item,
@@ -685,8 +700,9 @@ export default function App() {
     // Initial immediate sync
     syncWithBackend();
 
-    // Listen for backend downloads-changed event (e.g. extension deleted task)
+    // Listen for backend downloads-changed and prompt-add-download events
     let unlisten: (() => void) | undefined;
+    let unlistenPrompt: (() => void) | undefined;
     if (isTauri()) {
       import("@tauri-apps/api/event").then(({ listen }) => {
         try {
@@ -694,6 +710,23 @@ export default function App() {
             syncWithBackend();
           }).then((fn) => {
             if (mounted) unlisten = fn;
+            else fn();
+          }).catch(() => {});
+
+          listen<{ url: string; filename?: string; size?: number | null }>(
+            "prompt-add-download",
+            (event) => {
+              if (!event.payload?.url) return;
+              setPendingCapture({
+                url: event.payload.url,
+                filename: event.payload.filename,
+                size: event.payload.size,
+              });
+              setIsAddSchedulerMode(false);
+              setIsAddModalOpen(true);
+            }
+          ).then((fn) => {
+            if (mounted) unlistenPrompt = fn;
             else fn();
           }).catch(() => {});
         } catch {}
@@ -706,6 +739,7 @@ export default function App() {
       mounted = false;
       clearInterval(interval);
       if (unlisten) unlisten();
+      if (unlistenPrompt) unlistenPrompt();
     };
   }, []);
 
@@ -735,7 +769,8 @@ export default function App() {
     customCategory?: string,
     customConns?: number,
     customSaveDir?: string,
-    selectedFiles?: number[]
+    selectedFiles?: number[],
+    queueOnly?: boolean
   ) => {
     const targetUrl = customUrl || "";
     if (!targetUrl.trim()) return;
@@ -817,6 +852,7 @@ export default function App() {
       saveDir: targetDir,
       maxConnections: backendMaxConnections,
       selectedFiles,
+      queueOnly,
     });
 
     const isQueued = backendRes?.status === "queued";
@@ -1404,48 +1440,6 @@ export default function App() {
     totalUploadSpeedDisplay = formatSpeed(totalUploadBps);
   }
 
-  const getCategoryLucideIcon = (category: string) => {
-    switch (category.toLowerCase()) {
-      case "video":
-        return Film;
-      case "music":
-      case "audio":
-        return Music;
-      case "compressed":
-      case "archives":
-        return Archive;
-      case "documents":
-        return FileText;
-      case "pictures":
-      case "images":
-        return Image;
-      case "programs":
-      default:
-        return FileCode;
-    }
-  };
-
-  const getCategoryColor = (category: string) => {
-    switch (category.toLowerCase()) {
-      case "video":
-        return "text-purple-400";
-      case "music":
-      case "audio":
-        return "text-amber-400";
-      case "compressed":
-      case "archives":
-        return "text-orange-400";
-      case "documents":
-        return "text-emerald-400";
-      case "pictures":
-      case "images":
-        return "text-cyan-400";
-      case "programs":
-      default:
-        return "text-[var(--accent)]";
-    }
-  };
-
   const getCategoryIcon = (category: string) => {
     switch (category.toLowerCase()) {
       case "video":
@@ -1534,7 +1528,14 @@ export default function App() {
         onPauseSelected={pauseSelected}
         onStopSelected={stopSelected}
         onDeleteSelected={deleteSelected}
-        onAddUrl={() => setIsAddModalOpen(true)}
+        onAddUrl={() => {
+          setIsAddSchedulerMode(false);
+          setIsAddModalOpen(true);
+        }}
+        onAddToScheduler={() => {
+          setIsAddSchedulerMode(true);
+          setIsAddModalOpen(true);
+        }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         viewMode={viewMode}
@@ -1580,129 +1581,92 @@ export default function App() {
           2. WORKSPACE BODY: SIDEBAR + MAIN CONTENT AREA
       ────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
-        {/* Left Navigation Spine (Flat Ghost Icon Rail) */}
-        <aside className="w-14 bg-[var(--bg-sidebar)] border-r border-[var(--border-dim)] flex flex-col shrink-0 select-none py-2.5 overflow-hidden">
-          <div className="space-y-2 w-full flex flex-col items-center">
-            {/* Status Filters */}
-            <div className="space-y-0.5 w-full">
-              {[
-                { id: "all", label: "All Tasks", count: downloads.length, icon: Compass },
-                {
-                  id: "downloading",
-                  label: "Active",
-                  count: downloads.filter((d) => d.state === "downloading").length,
-                  icon: Activity,
-                },
-                {
-                  id: "completed",
-                  label: "Completed",
-                  count: downloads.filter((d) => d.state === "completed").length,
-                  icon: CheckCircle2,
-                },
-                {
-                  id: "paused",
-                  label: "Paused",
-                  count: downloads.filter((d) => d.state === "paused").length,
-                  icon: Pause,
-                },
-                {
-                  id: "queued",
-                  label: "Queued",
-                  count: downloads.filter((d) => d.state === "queued").length,
-                  icon: Clock,
-                },
-                {
-                  id: "failed",
-                  label: "Failed / Expired",
-                  count: downloads.filter((d) => d.state === "failed").length,
-                  icon: RotateCcw,
-                },
-              ].map((item) => {
-                const Icon = item.icon;
-                const isActive = statusFilter === item.id;
-                return (
-                  <div key={item.id} className="relative w-full flex items-center justify-center">
-                    {isActive && (
-                      <span className="absolute left-0 w-0.5 h-4 rounded-r bg-[var(--accent)]" />
-                    )}
+        {/* Left Navigation Spine (Blended Edge matching Upper Header) */}
+        <aside className="w-14 sidebar-3d flex flex-col shrink-0 select-none py-3 z-20">
+          <div className="space-y-1 w-full flex flex-col items-center">
+            {[
+              { id: "all", label: "All Downloads", count: downloads.length, icon: Download },
+              {
+                id: "completed",
+                label: "Completed",
+                count: downloads.filter((d) => d.state === "completed").length,
+                icon: CheckCircle2,
+              },
+              {
+                id: "paused",
+                label: "Paused",
+                count: downloads.filter((d) => d.state === "paused").length,
+                icon: Pause,
+              },
+              {
+                id: "queued",
+                label: "Queued",
+                count: downloads.filter((d) => d.state === "queued").length,
+                icon: Clock,
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = statusFilter === item.id && categoryFilter === "all";
+              return (
+                <div key={item.id} className="relative w-full flex items-center justify-center">
+                  {isActive && (
+                    <span className="absolute left-0 w-0.5 h-4 rounded-r bg-[var(--accent)]" />
+                  )}
+                  <Tooltip content={`${item.label} (${item.count})`} side="right">
                     <button
-                      onClick={() => setStatusFilter(item.id)}
-                      title={`${item.label} (${item.count})`}
+                      onClick={() => {
+                        setStatusFilter(item.id);
+                        setCategoryFilter("all");
+                      }}
                       aria-label={`${item.label} (${item.count})`}
-                      className={`w-9 h-8 relative flex items-center justify-center rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer ${
+                      className={`w-9 h-9 relative flex items-center justify-center rounded-lg transition-colors duration-150 cursor-pointer ${
                         isActive
-                          ? "bg-[var(--accent)]/10 text-[var(--accent)] font-semibold"
-                          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                          ? "bg-[var(--accent)]/12 text-[var(--accent)]"
+                          : "bg-transparent text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
                       }`}
                     >
-                      <Icon className="w-3.5 h-3.5" />
-                      {item.count > 0 && item.id === "downloading" && (
-                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                      )}
-                      {item.count > 0 && item.id === "failed" && (
-                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-400" />
-                      )}
+                      <Icon className="w-4 h-4 stroke-[1.75]" />
                     </button>
-                  </div>
-                );
-              })}
+                  </Tooltip>
+                </div>
+              );
+            })}
+
+            <div className="w-6 h-px bg-[var(--border-dim)] my-2" />
+
+            <div className="relative w-full flex items-center justify-center">
+              <Tooltip content="Settings" side="right">
+                <button
+                  onClick={() => setActiveView("settings")}
+                  aria-label="Settings"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)] transition-colors duration-150 cursor-pointer"
+                >
+                  <Settings className="w-4 h-4 stroke-[1.75]" />
+                </button>
+              </Tooltip>
             </div>
 
-            <div className="w-6 h-[1px] bg-[var(--border-dim)] my-0.5" />
-
-            {/* Categories */}
-            <div className="space-y-0.5 w-full">
-              {[
-                { id: "all", label: "All Categories", icon: FolderOpen, color: "" },
-                ...settings.categories
-                  .filter((c) => c.enabled)
-                  .map((c) => ({
-                    id: c.name.toLowerCase(),
-                    label: c.name,
-                    icon: getCategoryLucideIcon(c.name),
-                    color: getCategoryColor(c.name),
-                  })),
-                { id: "other", label: "Other", icon: FileText, color: "text-zinc-400" },
-              ].map((item) => {
-                const Icon = item.icon;
-                const isActive = categoryFilter === item.id;
-                return (
-                  <div key={item.id} className="relative w-full flex items-center justify-center">
-                    {isActive && (
-                      <span className="absolute left-0 w-0.5 h-4 rounded-r bg-[var(--accent)]" />
-                    )}
-                    <button
-                      onClick={() => setCategoryFilter(item.id)}
-                      title={item.label}
-                      aria-label={item.label}
-                      className={`group w-9 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer ${
-                        isActive
-                          ? "bg-[var(--accent)]/10 text-[var(--accent)] font-semibold"
-                          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
-                      }`}
-                    >
-                      <Icon
-                        className={`w-3.5 h-3.5 transition-colors ${
-                          isActive
-                            ? item.color || "text-[var(--accent)]"
-                            : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="relative w-full flex items-center justify-center">
+              <Tooltip content="About EDM" side="right">
+                <button
+                  onClick={() => setIsAboutOpen(true)}
+                  aria-label="About EDM"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)] transition-colors duration-150 cursor-pointer"
+                >
+                  <Info className="w-4 h-4 stroke-[1.75]" />
+                </button>
+              </Tooltip>
             </div>
           </div>
         </aside>
 
-        {/* Center Main Canvas: Downloads Viewport (Zero Dead Space!) */}
+        {/* Center Main Canvas: Quiet Neutral Surface, Edge-to-Edge Rows */}
         <main className="flex-1 flex flex-col min-w-0 bg-[var(--bg-chassis)] overflow-hidden">
           {viewMode === "table" ? (
-            /* Table View with responsive auto-fitting layout (Zero clipping on resize) */
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-auto px-2.5 sm:px-3 pt-1 pb-2">
-              <table className="w-full table-fixed text-left border-separate border-spacing-y-1.5 min-w-[720px]">
-                <thead className="sticky top-0 bg-[var(--bg-chassis)] border-b border-[var(--border-subtle)] text-[11px] font-semibold text-[var(--text-muted)] z-10 shadow-sm">
+            /* Table View with edge-to-edge hairline rows & rounded selection */
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-auto px-4 pt-2 pb-4">
+              <table className="w-full table-fixed text-left border-separate border-spacing-y-0 min-w-[720px]">
+                <thead className="sticky top-0 bg-[var(--bg-chassis)] border-b border-[var(--border-dim)] text-xs font-medium text-[var(--text-muted)] z-10">
                   <tr>
                     <th className="py-2 px-2 w-10 text-center whitespace-nowrap">
                       <input
@@ -1752,14 +1716,12 @@ export default function App() {
                       className="py-2 px-2 w-24 md:w-28 text-center whitespace-nowrap cursor-pointer select-none hover:text-[var(--text-primary)]"
                     >
                       <div className="flex items-center justify-center gap-1">
-                        <span>Transfer Rate</span>
+                        <span>Speed</span>
                         {sortField === "speed" && (sortDirection === "asc" ? <ChevronUp className="w-3 h-3 text-[var(--accent)]" /> : <ChevronDown className="w-3 h-3 text-[var(--accent)]" />)}
                       </div>
                     </th>
-                    <th className="py-2 px-3 pr-3 sm:pr-4 w-48 min-w-[188px] whitespace-nowrap">
-                      <div className="flex items-center justify-end">
-                        <div className="w-[130px] text-left select-none">Actions</div>
-                      </div>
+                    <th className="py-2 px-3 pr-4 w-44 min-w-[176px] whitespace-nowrap text-center">
+                      <span className="select-none">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -1809,133 +1771,186 @@ export default function App() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-2.5 px-2 font-mono tabular-nums text-[11px] sm:text-xs text-[var(--text-secondary)] text-center whitespace-nowrap">
+                        <td className="py-3 px-2 tabular-nums text-xs text-[var(--text-secondary)] text-center whitespace-nowrap">
                           {formatBytes(item.sizeTotal)}
                         </td>
-                        <td className="py-2.5 px-3 min-w-0 overflow-hidden">
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center justify-between text-[11px] font-mono tabular-nums min-w-0 gap-1.5">
+                        <td className="py-3 px-3 min-w-0 overflow-hidden">
+                          <div className="space-y-1.5 min-w-0">
+                            <div className="flex items-center justify-between text-xs tabular-nums min-w-0 gap-2">
                               <div className="flex items-center gap-1.5 shrink-0">
-                                {getStatusBadge(item.state === "completed" || item.progress >= 100 ? "completed" : item.state, item.error_msg)}
-                                <span className="font-semibold text-[var(--accent)]">{item.state === "completed" || item.progress >= 100 ? 100 : item.progress}%</span>
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    item.state === "completed" || item.progress >= 100
+                                      ? "bg-emerald-400"
+                                      : item.state === "downloading"
+                                        ? "bg-[var(--accent)]"
+                                        : item.state === "paused"
+                                          ? "bg-amber-400"
+                                          : item.state === "failed"
+                                            ? "bg-rose-400"
+                                            : "bg-zinc-500"
+                                  }`}
+                                />
+                                <span className="font-medium text-[var(--text-primary)]">
+                                  {item.state === "completed" || item.progress >= 100 ? 100 : item.progress}%
+                                </span>
                               </div>
-                              <span className="text-[var(--text-muted)] truncate text-right">
+                              <span className="text-[var(--text-secondary)] truncate text-right">
                                 {formatBytes(item.state === "completed" || item.progress >= 100 ? (item.sizeTotal || item.sizeDone) : item.sizeDone)} / {formatBytes(item.sizeTotal || item.sizeDone)}
                               </span>
                             </div>
-                            {/* Plain Seamless Progress Bar (100% smooth, zero vertical lines) */}
-                            <div className="w-full h-2 rounded overflow-hidden track-3d relative bg-[var(--bg-chassis)]">
-                              <div
-                                className="h-full rounded bg-[var(--accent)] transition-[width] duration-200 ease-linear"
-                                style={{
-                                  width: `${item.state === "completed" || item.progress >= 100 ? 100 : Math.min(100, Math.max(0, item.progress))}%`,
-                                  opacity: item.state === "paused" ? 0.6 : 1,
-                                }}
-                              />
-                              {item.state === "downloading" && (item.eta?.includes("Merging") || item.eta?.includes("Fetching") || !item.sizeTotal || item.sizeTotal === 0) ? (
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--accent)]/50 to-transparent pointer-events-none animate-[shimmer_1.5s_infinite]" />
-                              ) : item.state === "downloading" ? (
-                                <div className="absolute inset-0 bg-white/10 pointer-events-none animate-[pulse_1.5s_infinite]" />
-                              ) : null}
+                            {/* Semantic Progress Bar (Completed=Emerald, Downloading=Accent+Sweep, Paused=Amber+Sweep, Failed=Rose, Queued=Zinc Sweep) */}
+                            <div className="w-full h-1.5 rounded-full overflow-hidden track-3d relative bg-white/[0.06]">
+                              {item.state === "queued" && item.progress === 0 ? (
+                                <div className="w-1/4 h-full rounded-full bg-gradient-to-r from-transparent via-zinc-400/70 to-transparent edm-queue-sweep" />
+                              ) : (
+                                <>
+                                  <div
+                                    className={`h-full rounded-full transition-[width,background-color] duration-200 ease-linear ${
+                                      item.state === "completed" || item.progress >= 100
+                                        ? "bg-emerald-500"
+                                        : item.state === "downloading"
+                                          ? "bg-[var(--accent)]"
+                                          : item.state === "paused"
+                                            ? "bg-amber-500/85"
+                                            : item.state === "failed"
+                                              ? "bg-rose-500/85"
+                                              : "bg-zinc-500/70"
+                                    }`}
+                                    style={{
+                                      width: `${item.state === "completed" || item.progress >= 100 ? 100 : Math.min(100, Math.max(0, item.progress))}%`,
+                                    }}
+                                  />
+                                  {(item.state === "downloading" || item.state === "paused") && item.progress < 100 && (
+                                    <div
+                                      className="absolute inset-y-0 right-0 overflow-hidden pointer-events-none"
+                                      style={{ left: `${Math.min(100, Math.max(0, item.progress))}%` }}
+                                    >
+                                      <div
+                                        className={`w-1/3 h-full rounded-full bg-gradient-to-r from-transparent ${
+                                          item.state === "paused" ? "via-amber-300/65" : "via-[var(--accent)]/60"
+                                        } to-transparent edm-queue-sweep`}
+                                      />
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td className="py-2.5 px-2 font-mono tabular-nums font-semibold text-[var(--accent)] text-center whitespace-nowrap text-[11px] sm:text-xs">
-                          {item.speed}
+                        <td className="py-3 px-2 tabular-nums font-semibold text-[var(--accent)] text-center whitespace-nowrap text-xs">
+                          <div className="inline-flex items-center justify-center gap-1">
+                            {item.state === "downloading" && (
+                              <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
+                            )}
+                            <span>{item.speed}</span>
+                          </div>
                         </td>
-                        <td className="py-2.5 px-3 pr-3 sm:pr-4 w-48 min-w-[188px] text-right whitespace-nowrap overflow-hidden">
-                          <div className="flex items-center justify-end gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <td className="py-3 px-3 pr-4 w-44 min-w-[176px] text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
                             {item.state === "completed" ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  tauriOpenFile(item.id);
-                                }}
-                                className="p-1.5 rounded-lg btn-3d text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 cursor-pointer transition-all"
-                                title="Download Complete • Click to Open File"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                              </button>
-                            ) : item.state === "downloading" ? (
-                              <button
-                                onClick={(e) => toggleDownloadState(item.id, e)}
-                                className="p-1.5 rounded-lg btn-3d text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 cursor-pointer transition-all"
-                                title="Pause Download"
-                              >
-                                <Pause className="w-3.5 h-3.5 icon-3d" />
-                              </button>
-                            ) : item.state === "paused" ? (
-                              <button
-                                onClick={(e) => toggleDownloadState(item.id, e)}
-                                className="p-1.5 rounded-lg btn-3d text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 cursor-pointer transition-all"
-                                title="Resume Download"
-                              >
-                                <Play className="w-3.5 h-3.5 text-emerald-400 icon-3d" />
-                              </button>
-                            ) : item.state === "failed" ? (
-                              item.error_msg?.toLowerCase().includes("expire") || item.error_msg?.includes("401") || item.error_msg?.includes("403") || item.error_msg?.includes("410") ? (
+                              <Tooltip content="Open File" side="top">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setRefreshModalTask(item);
+                                    tauriOpenFile(item.id);
                                   }}
-                                  className="p-1.5 rounded-lg btn-3d text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 cursor-pointer transition-all"
-                                  title="Refresh Expired Download Link"
+                                  className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Open ${item.name}`}
                                 >
-                                  <RotateCcw className="w-3.5 h-3.5 text-amber-400 icon-3d" />
+                                  <CheckCircle2 className="w-4 h-4 stroke-[1.75]" />
                                 </button>
-                              ) : (
+                              </Tooltip>
+                            ) : item.state === "downloading" ? (
+                              <Tooltip content="Pause Download" side="top">
                                 <button
                                   onClick={(e) => toggleDownloadState(item.id, e)}
-                                  className="p-1.5 rounded-lg btn-3d text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer transition-all"
-                                  title="Retry Download"
+                                  className="w-8 h-8 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Pause ${item.name}`}
                                 >
-                                  <RotateCcw className="w-3.5 h-3.5 text-rose-400 icon-3d" />
+                                  <Pause className="w-4 h-4 stroke-[1.75]" />
                                 </button>
-                              )
+                              </Tooltip>
+                            ) : item.state === "paused" ? (
+                              <Tooltip content="Resume Download" side="top">
+                                <button
+                                  onClick={(e) => toggleDownloadState(item.id, e)}
+                                  className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Resume ${item.name}`}
+                                >
+                                  <Play className="w-4 h-4 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
+                            ) : item.state === "failed" ? (
+                              <Tooltip content="Retry / Refresh" side="top">
+                                <button
+                                  onClick={(e) => {
+                                    if (item.error_msg?.toLowerCase().includes("expire") || item.error_msg?.includes("401") || item.error_msg?.includes("403") || item.error_msg?.includes("410")) {
+                                      e.stopPropagation();
+                                      setRefreshModalTask(item);
+                                    } else {
+                                      toggleDownloadState(item.id, e);
+                                    }
+                                  }}
+                                  className="w-8 h-8 rounded-full bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Retry ${item.name}`}
+                                >
+                                  <RotateCcw className="w-4 h-4 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
                             ) : (
-                              <button
-                                onClick={(e) => toggleDownloadState(item.id, e)}
-                                className="p-1.5 rounded-lg btn-3d text-[var(--accent)] hover:brightness-110 cursor-pointer transition-all"
-                                title="Start Download"
-                              >
-                                <Play className="w-3.5 h-3.5 icon-3d" />
-                              </button>
+                              <Tooltip content="Start Download" side="top">
+                                <button
+                                  onClick={(e) => toggleDownloadState(item.id, e)}
+                                  className="w-8 h-8 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Start ${item.name}`}
+                                >
+                                  <Play className="w-4 h-4 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedDownload(item);
-                                if (!selectedIds.includes(item.id)) {
-                                  setSelectedIds([item.id]);
-                                }
-                                setIsInspectorOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg btn-3d text-[var(--accent)] hover:brightness-110 cursor-pointer"
-                              title="Download Status"
-                            >
-                              <Layers className="w-3.5 h-3.5 icon-3d" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                tauriOpenFolder(item.id);
-                              }}
-                              className="p-1.5 rounded-lg btn-3d text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
-                              title="Reveal in Explorer"
-                            >
-                              <FolderOpen className="w-3.5 h-3.5 icon-3d" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRequestDelete(item.id, item.name);
-                              }}
-                              className="p-1.5 rounded-lg btn-3d text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-all"
-                              title="Delete Task"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="inline-flex items-center p-0.5 rounded-full bg-white/[0.03] border border-[var(--border-dim)]">
+                              <Tooltip content="Reveal in Explorer" side="top">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    tauriOpenFolder(item.id);
+                                  }}
+                                  className="w-7 h-7 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.07] flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Reveal ${item.name} in Explorer`}
+                                >
+                                  <FolderOpen className="w-3.5 h-3.5 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="Download Status" side="top">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedDownload(item);
+                                    if (!selectedIds.includes(item.id)) {
+                                      setSelectedIds([item.id]);
+                                    }
+                                    setIsInspectorOpen(true);
+                                  }}
+                                  className="w-7 h-7 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-white/[0.07] flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Download Status for ${item.name}`}
+                                >
+                                  <Layers className="w-3.5 h-3.5 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="Delete Task" side="top" align="end">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRequestDelete(item.id, item.name);
+                                  }}
+                                  className="w-7 h-7 rounded-full text-[var(--text-secondary)] hover:text-rose-400 hover:bg-rose-500/12 flex items-center justify-center cursor-pointer transition-colors"
+                                  aria-label={`Delete ${item.name}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 stroke-[1.75]" />
+                                </button>
+                              </Tooltip>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -2235,9 +2250,44 @@ export default function App() {
 
       <AddDownloadModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdd={(url, filename, category, conns, saveDir, selectedFiles) => {
-          handleAddDownload(url, filename, category, conns, saveDir, selectedFiles);
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setIsAddSchedulerMode(false);
+          setPendingCapture(null);
+        }}
+        initialQueueMode={isAddSchedulerMode}
+        initialUrl={pendingCapture?.url}
+        initialFilename={pendingCapture?.filename}
+        initialSize={pendingCapture?.size}
+        onAdd={(url, filename, category, conns, saveDir, selectedFiles, scheduleQueueId, queueOnly) => {
+          if ((scheduleQueueId || queueOnly) && !isTauri()) {
+            const parsedName = filename || url.split("/").pop()?.split("?")[0] || "scheduled-download";
+            let domain = "scheduled";
+            try {
+              domain = new URL(url).hostname;
+            } catch {}
+            setDownloads((prev) => [
+              {
+                id: `sched-${Date.now()}`,
+                name: parsedName,
+                category: (category as DownloadItem["category"]) || "Other",
+                sizeTotal: 0,
+                sizeDone: 0,
+                speed: "0 B/s",
+                eta: "Queued",
+                connections: 0,
+                state: "queued",
+                progress: 0,
+                url,
+                domain,
+                createdAt: Date.now(),
+                dateAdded: "Just now",
+              },
+              ...prev,
+            ]);
+            return;
+          }
+          handleAddDownload(url, filename, category, conns, saveDir, selectedFiles, queueOnly || Boolean(scheduleQueueId));
         }}
         onOpenBatchImport={() => setIsBatchImportOpen(true)}
         settings={settings}
@@ -2272,19 +2322,23 @@ export default function App() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="panel-3d w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Queue Scheduler"
+              className="w-full max-w-2xl max-h-[85vh] rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-5 py-3 bg-[var(--bg-card)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="font-bold tracking-tight text-sm flex items-center gap-2">
-                  <CalendarClock className="w-4 h-4 text-[var(--accent)]" />
+              <div className="px-4 py-3 border-b border-[var(--border-dim)] flex items-center justify-between shrink-0">
+                <span className="font-semibold tracking-tight text-xs sm:text-sm text-[var(--text-primary)] flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 stroke-[1.75] text-[var(--accent)]" />
                   Queue Scheduler
                 </span>
                 <button
                   onClick={() => setIsSchedulerOpen(false)}
-                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                  aria-label="Close Queue Scheduler"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-colors cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4 stroke-[1.75]" />
                 </button>
               </div>
               <div className="p-4 overflow-y-auto">
@@ -2463,6 +2517,83 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating About EDM Modal */}
+      <AnimatePresence>
+        {isAboutOpen && (
+          <motion.div
+            variants={backdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            onClick={() => setIsAboutOpen(false)}
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              variants={modalVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="About Evo Download Manager"
+              className="w-full max-w-sm rounded-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.7)] p-5 space-y-4 select-none"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/logo.png"
+                    alt="EDM Logo"
+                    className="w-10 h-10 object-contain shrink-0 pointer-events-none"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold tracking-tight text-[var(--text-primary)]">
+                        Evo Download Manager
+                      </h2>
+                      <span className="px-1.5 py-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[11px] font-medium tabular-nums text-[var(--accent)]">
+                        v{APP_VERSION}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Built by <span className="font-medium text-[var(--text-primary)]">bytebldr</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAboutOpen(false)}
+                  aria-label="Close About dialog"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4 stroke-[1.75]" />
+                </button>
+              </div>
+
+              <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+                Evo Download Manager is an open-source application built for fast, reliable, and distraction-free downloads. Having you here makes this project better — if you're interested in contributing, your ideas and pull requests are always welcome.
+              </p>
+
+              <div className="pt-2 border-t border-[var(--border-dim)] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[var(--text-muted)]">GPL-3.0 License</span>
+                <Tooltip content="GitHub Repository" side="top" align="end">
+                  <a
+                    href="https://github.com/bytebldr/evo-download-manager"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open EDM GitHub Repository"
+                    className="w-8 h-8 rounded-lg bg-white/[0.04] border border-[var(--border-dim)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] flex items-center justify-center transition-colors"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden="true">
+                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                    </svg>
+                  </a>
+                </Tooltip>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -89,17 +89,27 @@ export const SpeedChartInteractive: React.FC<SpeedChartInteractiveProps> = ({
                 .map((_, i) => Math.round(seedUl * (0.92 + ((i * 13) % 15) * 0.01)))
             : Array(totalPoints).fill(0));
 
+    const endSecond = Math.max(totalPoints - 1, Math.floor(elapsedSeconds || 0));
+    const startSecond = Math.max(0, endSecond - (totalPoints - 1));
+
+    const formatAxisTime = (sec: number) => {
+      if (sec < 60) return `${sec}s`;
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${String(s).padStart(2, "0")}`;
+    };
+
     return paddedDl.map((dl, idx) => {
-      // Progression of time taken: 0s, 10s, 20s... 60s
-      const timeLabel = idx === 0 ? "0s" : idx === totalPoints - 1 ? "60s" : `${idx}s`;
+      const sec = startSecond + idx;
+      const timeLabel = formatAxisTime(sec);
       return {
         time: timeLabel,
-        second: idx,
+        second: sec,
         download: dl,
         upload: paddedUl[idx],
       };
     });
-  }, [speedHistory, uploadHistory, isDownloading]);
+  }, [speedHistory, uploadHistory, isDownloading, elapsedSeconds]);
 
   const currentDl = isDownloading
     ? (chartData.length > 0 ? chartData[chartData.length - 1].download : 0)

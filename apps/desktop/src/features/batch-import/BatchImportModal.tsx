@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { Select } from "../../components/Select";
 import {
   X,
   Upload,
@@ -298,16 +299,18 @@ export const BatchImportModal: React.FC<BatchImportModalProps> = ({
 
             {sourceTab === "file" && (
               <div className="flex items-center gap-2">
-                <select
+                <Select
                   value={format}
-                  onChange={(e) => setFormat(e.target.value as "auto" | ImportFormat)}
-                  className="px-2.5 py-1.5 rounded-lg text-xs input-3d text-[var(--text-primary)] focus:outline-none"
-                >
-                  <option value="auto">Auto-detect</option>
-                  <option value="txt">.txt (Lines)</option>
-                  <option value="csv">.csv (Table)</option>
-                  <option value="html">.html (Markup)</option>
-                </select>
+                  onChange={(v) => setFormat(v as "auto" | ImportFormat)}
+                  ariaLabel="Import file format"
+                  className="w-36"
+                  options={[
+                    { value: "auto", label: "Auto-detect" },
+                    { value: "txt", label: ".txt (Lines)" },
+                    { value: "csv", label: ".csv (Table)" },
+                    { value: "html", label: ".html (Markup)" },
+                  ]}
+                />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}

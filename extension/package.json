@@ -1,11 +1,12 @@
 {
   "name": "edm-extension",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "EDM (Evo Download Manager) Browser Extension",
   "license": "GPL-3.0-only",
   "private": true,
   "scripts": {
-    "build": "node build.js"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && node build.js"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

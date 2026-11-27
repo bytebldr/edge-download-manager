@@ -107,14 +107,6 @@ const allChromiumFiles = [
 ];
 const chromiumHashes = computeHashes(distChromium, chromiumManifest.version, allChromiumFiles);
 
-// Sync unpacked Chromium bundle to extension/ root so loading extension/ directly works
-for (const file of [...allChromiumFiles, 'hashes.json']) {
-  const srcFile = path.join(distChromium, file);
-  if (fs.existsSync(srcFile)) {
-    fs.copyFileSync(srcFile, path.join(root, file));
-  }
-}
-
 // 2. Chromium Web Store & Edge Add-ons store build (strips "key" and yt-main.js / *://*.youtube.com/*)
 const storeManifest = JSON.parse(JSON.stringify(chromiumManifest));
 delete storeManifest.key;
