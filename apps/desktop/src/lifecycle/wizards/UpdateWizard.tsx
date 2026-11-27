@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { APP_VERSION } from "../../config/constants";
 import {
   tauriWindowMinimize,
   tauriWindowClose,
@@ -49,7 +50,7 @@ export const UpdateWizard: React.FC<UpdateWizardProps> = ({
   updateInfo: initialUpdateInfo,
 }) => {
   const [phase, setPhase] = useState<UpdatePhase>("checking");
-  const [currentVersion, setCurrentVersion] = useState("0.1.1");
+  const [currentVersion, setCurrentVersion] = useState(APP_VERSION);
   const [targetVersion, setTargetVersion] = useState("0.0.19");
   const [releaseInfo, setReleaseInfo] = useState<UpdateCheckResult | null>(
     initialUpdateInfo || null

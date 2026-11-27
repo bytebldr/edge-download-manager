@@ -2,7 +2,9 @@ import type { CategoryRule } from "../types/settings";
 
 export const APP_NAME = "EDM";
 export const APP_SUBTITLE = "Evo Download Manager";
-export const APP_VERSION = "0.1.1";
+import pkg from "../../package.json";
+
+export const APP_VERSION = pkg.version;
 
 export const DOWNLOADS_STORAGE_KEY = "edm_downloads_v1";
 export const DISMISSED_UPDATE_VERSION_KEY = "edm_dismissed_update_version";

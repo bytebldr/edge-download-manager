@@ -201,6 +201,30 @@ export default function AddDownloadPopup() {
     };
   }, [applyCapture]);
 
+  const lastAutoInspectedRef = React.useRef<string>("");
+
+  useEffect(() => {
+    const trimmed = urlInput.trim();
+    const lower = trimmed.toLowerCase();
+    const isTorrent = lower.startsWith("magnet:") || lower.split("?")[0].endsWith(".torrent");
+    if (isTorrent && trimmed !== lastAutoInspectedRef.current) {
+      lastAutoInspectedRef.current = trimmed;
+      void handleInspectTorrent(trimmed);
+    } else if (!isTorrent && lastAutoInspectedRef.current) {
+      lastAutoInspectedRef.current = "";
+    }
+  }, [urlInput]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const hasFiles = Boolean(torrentInfo && torrentInfo.files.length > 0);
+    import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow, LogicalSize }) => {
+        await getCurrentWindow().setSize(new LogicalSize(540, hasFiles ? 600 : 430));
+      })
+      .catch(() => {});
+  }, [torrentInfo]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !isMediaPickerOpen) {

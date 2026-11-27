@@ -151,6 +151,10 @@ function notifyPopupPorts() {
   }
 
   // Update extension badge
+  syncActionBadge();
+}
+
+function syncActionBadge() {
   const activeStatuses = new Set(["downloading", "probing", "connecting", "allocating", "queued", "finishing"]);
   const activeCount = latestTasks.filter((t) => activeStatuses.has(t.status)).length;
   for (const tabId of detectedMediaByTab.keys()) {
@@ -1336,16 +1340,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const tabId = _sender.tab?.id;
     if (tabId && Array.isArray(msg.media)) {
       detectedMediaByTab.set(tabId, msg.media);
-      try {
-        chrome.action.setBadgeText({
-          text: msg.media.length > 0 ? String(msg.media.length) : "",
-          tabId,
-        });
-        chrome.action.setBadgeBackgroundColor({
-          color: "#2563eb",
-          tabId,
-        });
-      } catch {}
+      syncActionBadge();
     }
     sendResponse({ ok: true });
     return true;
@@ -1428,16 +1423,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Clean up detected media cache on tab close or navigation
+// Clean up detected media cache on tab close, activation, or navigation
 chrome.tabs.onRemoved.addListener((tabId) => {
   detectedMediaByTab.delete(tabId);
+  syncActionBadge();
+});
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  try {
+    chrome.action.setBadgeText({ text: null as any, tabId });
+  } catch {}
+  syncActionBadge();
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) {
     detectedMediaByTab.delete(tabId);
     try {
-      chrome.action.setBadgeText({ text: "", tabId });
+      chrome.action.setBadgeText({ text: null as any, tabId });
     } catch {}
+    syncActionBadge();
   }
 });
 

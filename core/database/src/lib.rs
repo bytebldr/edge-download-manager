@@ -738,6 +738,19 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_download_filename(
+        &self,
+        id: Uuid,
+        new_filename: &str,
+    ) -> std::result::Result<(), StoreError> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE downloads SET filename = ?1 WHERE id = ?2",
+            params![new_filename, id.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn find_duplicate(
         &self,
         url: &str,

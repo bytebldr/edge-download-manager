@@ -1846,14 +1846,18 @@ export default function App() {
                                       width: `${item.state === "completed" || item.progress >= 100 ? 100 : Math.min(100, Math.max(0, item.progress))}%`,
                                     }}
                                   />
-                                  {(item.state === "downloading" || item.state === "paused") && item.progress < 100 && (
+                                  {(item.state === "downloading" || item.state === "paused" || item.state === "queued") && item.progress < 100 && (
                                     <div
                                       className="absolute inset-y-0 right-0 overflow-hidden pointer-events-none"
                                       style={{ left: `${Math.min(100, Math.max(0, item.progress))}%` }}
                                     >
                                       <div
                                         className={`w-1/3 h-full rounded-full bg-gradient-to-r from-transparent ${
-                                          item.state === "paused" ? "via-amber-300/65" : "via-[var(--accent)]/60"
+                                          item.state === "paused"
+                                            ? "via-amber-300/65"
+                                            : item.state === "queued"
+                                              ? "via-zinc-300/70"
+                                              : "via-[var(--accent)]/60"
                                         } to-transparent edm-queue-sweep`}
                                       />
                                     </div>

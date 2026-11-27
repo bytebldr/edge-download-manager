@@ -160,6 +160,19 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   const currentDestination = addSaveDir || getAutoDestination(effectiveCategory);
 
+  const lastAutoInspectedRef = React.useRef<string>("");
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      lastAutoInspectedRef.current = "";
+      return;
+    }
+    if (isTorrentTarget && trimmedUrl && trimmedUrl !== lastAutoInspectedRef.current) {
+      lastAutoInspectedRef.current = trimmedUrl;
+      void handleInspectTorrent(trimmedUrl);
+    }
+  }, [isOpen, isTorrentTarget, trimmedUrl]);
+
   React.useEffect(() => {
     if (isOpen) {
       setAddConnections(getDefaultConnectionsOption());

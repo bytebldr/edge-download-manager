@@ -716,9 +716,9 @@ impl WorkScheduler {
         is_tail_phase: bool,
     ) {
         let timeout_secs = if is_tail_phase {
-            2.min(self.stall_timeout.as_secs()).max(1)
+            self.stall_timeout.as_secs().clamp(4, 10)
         } else {
-            self.stall_timeout.as_secs().max(1)
+            self.stall_timeout.as_secs().max(10)
         };
         let timeout_dur = Duration::from_secs(timeout_secs);
         let now = Instant::now();
@@ -994,7 +994,13 @@ impl WorkScheduler {
     pub fn get_telemetry_snapshot(&self) -> Vec<WorkerTelemetry> {
         let now_ms = self.elapsed_ms();
         let mut snaps = self.snapshots.lock().unwrap_or_else(|p| p.into_inner());
-        let mut merged: BTreeMap<u32, WorkerTelemetry> = self.archived_workers.clone();
+        let mut archived: Vec<WorkerTelemetry> = self.archived_workers.values().cloned().collect();
+        if archived.len() > 16 {
+            archived.sort_by(|a, b| b.bytes_downloaded.cmp(&a.bytes_downloaded));
+            archived.truncate(16);
+        }
+        let mut merged: BTreeMap<u32, WorkerTelemetry> =
+            archived.into_iter().map(|w| (w.idx, w)).collect();
 
         for w in &self.workers {
             let start = w.start;
@@ -1041,7 +1047,13 @@ impl WorkScheduler {
     /// Returns the final telemetry snapshot on download completion, preserving all workers
     /// that actually transferred data (including mid-download scaled and completed workers).
     pub fn get_final_telemetry_snapshot(&self) -> Vec<WorkerTelemetry> {
-        let mut merged: BTreeMap<u32, WorkerTelemetry> = self.archived_workers.clone();
+        let mut archived: Vec<WorkerTelemetry> = self.archived_workers.values().cloned().collect();
+        if archived.len() > 16 {
+            archived.sort_by(|a, b| b.bytes_downloaded.cmp(&a.bytes_downloaded));
+            archived.truncate(16);
+        }
+        let mut merged: BTreeMap<u32, WorkerTelemetry> =
+            archived.into_iter().map(|w| (w.idx, w)).collect();
 
         for w in &self.workers {
             let bytes = w.bytes_downloaded.load(Ordering::Relaxed);

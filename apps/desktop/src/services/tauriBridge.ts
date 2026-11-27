@@ -1,4 +1,5 @@
 import type { EdmSettings } from "../types/settings";
+import { APP_VERSION } from "../config/constants";
 
 // Safe dynamic check for Tauri v2 runtime
 export const isTauri = (): boolean => {
@@ -482,7 +483,7 @@ export async function tauriGetAppVersion(): Promise<string> {
       console.warn("Tauri get_app_version failed:", err);
     }
   }
-  return "0.1.1";
+  return APP_VERSION;
 }
 
 function isSemverNewer(latest: string, current: string): boolean {
@@ -507,7 +508,7 @@ export async function tauriCheckForUpdates(): Promise<UpdateCheckResult> {
     }
   }
 
-  const currentVersion = "0.1.1";
+  const currentVersion = APP_VERSION;
 
   // Web fallback: query GitHub releases API directly
   try {
@@ -636,7 +637,7 @@ export async function tauriGetBrowserDiagnostics(extId?: string): Promise<Diagno
     }
   }
   return {
-    app_version: "0.1.1",
+    app_version: APP_VERSION,
     os: "Windows",
     helper_path: "C:\\Program Files\\EDM\\edm-nmh.exe",
     app_exe_path: "C:\\Program Files\\EDM\\EDM.exe",

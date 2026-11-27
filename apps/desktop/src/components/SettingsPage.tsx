@@ -42,6 +42,7 @@ import {
   OtaProgress,
 } from "../services/tauriBridge";
 import { EdmSettings, defaultSettings, saveSettings } from "../types/settings";
+import { APP_VERSION } from "../config/constants";
 import { formatBytes } from "../utils/format";
 import { useI18n } from "../features/i18n";
 import { RoutingAndCategoryPanel } from "../features/routing";
@@ -96,7 +97,7 @@ export default function SettingsPage({
   const [customCatName, setCustomCatName] = useState("");
   const [customCatExt, setCustomCatExt] = useState("");
   const [importStatus, setImportStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [appVersion, setAppVersion] = useState<string>("0.1.1");
+  const [appVersion, setAppVersion] = useState<string>(APP_VERSION);
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "checking" | "up-to-date" | "update-available" | "downloading" | "ready" | "error"
   >("idle");

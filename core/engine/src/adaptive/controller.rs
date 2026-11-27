@@ -440,6 +440,37 @@ impl AdaptiveController {
             };
         }
 
+        // 4b. Severe throughput collapse guard (e.g. 10 MB/s -> 25 KB/s CDN throttling):
+        // Break Stable lock immediately and halve concurrency to relieve server throttling.
+        if self.current_connections > min_allowed.max(4)
+            && self.previous_baseline_throughput > 500_000.0
+            && self.rolling_throughput_bps < self.previous_baseline_throughput * 0.35
+        {
+            let step_from = self.current_connections;
+            let step_to = (step_from / 2).max(min_allowed.max(2));
+            if step_to < step_from {
+                self.stable_locked_until = Some(now + Duration::from_secs(30));
+                self.mode = AccelerationMode::Stable;
+                self.probe_state = ProbeState::Baseline;
+                self.stable_target = step_to;
+                self.current_connections = step_to;
+                self.last_adjustment = now;
+                let reason = format!(
+                    "Severe throughput collapse ({:.2} Mbps vs {:.2} Mbps baseline) -> halving concurrency {} -> {}",
+                    self.rolling_throughput_bps / 1_000_000.0,
+                    self.previous_baseline_throughput / 1_000_000.0,
+                    step_from,
+                    step_to
+                );
+                self.status_reason = reason.clone();
+                return AdaptiveDecision::ScaleDown {
+                    from: step_from,
+                    to: step_to,
+                    reason,
+                };
+            }
+        }
+
         // 5. Check if controller is locked in Stable mode after plateau/degradation (lock for 60s)
         if let Some(lock_until) = self.stable_locked_until {
             if now < lock_until {

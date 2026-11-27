@@ -230,7 +230,23 @@ pub(super) async fn handle_download_completion(
     }
 
     if final_state == DownloadState::Completed {
-        let full_path = actual_final_path.unwrap_or_else(|| save_path.join(filename));
+        let mut full_path = actual_final_path.unwrap_or_else(|| save_path.join(filename));
+        let lower_url = url.to_ascii_lowercase();
+        let is_torrent = lower_url.starts_with("magnet:")
+            || lower_url
+                .split('?')
+                .next()
+                .unwrap_or("")
+                .ends_with(".torrent");
+        if is_torrent && full_path.is_dir() {
+            if let Some((zip_path, zip_size)) = maybe_zip_multifile_torrent(&full_path).await {
+                full_path = zip_path;
+                if let Some(zip_name) = full_path.file_name().and_then(|n| n.to_str()) {
+                    let _ = store.update_download_filename(id, zip_name);
+                }
+                let _ = store.update_download_size_and_progress(id, zip_size, Some(zip_size));
+            }
+        }
         let display_name = full_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -302,4 +318,60 @@ pub(super) async fn handle_download_completion(
         }
         ws_mgr_fin.broadcast_snapshot().await;
     });
+}
+
+fn count_files_in_dir(dir: &std::path::Path) -> usize {
+    let mut count = 0usize;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                count += count_files_in_dir(&p);
+            } else if p.is_file() {
+                count += 1;
+            }
+            if count > 1 {
+                return count;
+            }
+        }
+    }
+    count
+}
+
+async fn maybe_zip_multifile_torrent(dir: &std::path::Path) -> Option<(PathBuf, u64)> {
+    let dir_owned = dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        if count_files_in_dir(&dir_owned) <= 1 {
+            return None;
+        }
+        let parent = dir_owned.parent()?;
+        let dir_name = dir_owned.file_name()?.to_str()?;
+        let zip_path = parent.join(format!("{}.zip", dir_name));
+        let mut cmd = std::process::Command::new("tar");
+        cmd.args(["-a", "-c", "-f"])
+            .arg(&zip_path)
+            .arg("-C")
+            .arg(parent)
+            .arg(dir_name);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let status = cmd.status().ok()?;
+        if !status.success() {
+            let _ = std::fs::remove_file(&zip_path);
+            return None;
+        }
+        let meta = std::fs::metadata(&zip_path).ok()?;
+        if meta.len() == 0 {
+            let _ = std::fs::remove_file(&zip_path);
+            return None;
+        }
+        let _ = std::fs::remove_dir_all(&dir_owned);
+        Some((zip_path, meta.len()))
+    })
+    .await
+    .ok()
+    .flatten()
 }

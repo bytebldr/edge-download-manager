@@ -54,6 +54,10 @@ export default function TrayFlyout() {
     return [...items].sort((a, b) => {
       const rankDiff = stateRank(a.state) - stateRank(b.state);
       if (rankDiff !== 0) return rankDiff;
+      if (a.state === "queued" && b.state === "queued") {
+        // Newest at top, oldest (#1 next-to-run) directly above active downloads
+        return createdAtMs(b.created_at) - createdAtMs(a.created_at);
+      }
       return createdAtMs(a.created_at) - createdAtMs(b.created_at);
     });
   }, [items]);
@@ -61,7 +65,8 @@ export default function TrayFlyout() {
   const queueOrder = useMemo(() => {
     const map = new Map<string, number>();
     let n = 1;
-    for (const item of sortedItems) {
+    for (let i = sortedItems.length - 1; i >= 0; i--) {
+      const item = sortedItems[i];
       if (item.state === "queued") {
         map.set(item.id, n++);
       }
