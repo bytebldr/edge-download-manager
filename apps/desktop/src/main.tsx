@@ -7,6 +7,7 @@ import { tauriWindowClose } from "./services/tauriBridge";
 import "./styles/theme.css";
 
 const TrayFlyout = React.lazy(() => import("./components/TrayFlyout"));
+const AddDownloadPopup = React.lazy(() => import("./components/AddDownloadPopup"));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -93,6 +94,9 @@ function Root() {
   const [isTrayFlyout, setIsTrayFlyout] = React.useState<boolean>(() => {
     return typeof window !== "undefined" && window.location.hash === "#tray-flyout";
   });
+  const [isAddDownloadPopup, setIsAddDownloadPopup] = React.useState<boolean>(() => {
+    return typeof window !== "undefined" && window.location.hash === "#add-download";
+  });
   const [lifecycleRoute, setLifecycleRoute] = React.useState<LifecycleRoute | null>(() => {
     return resolveLifecycleRoute();
   });
@@ -100,6 +104,7 @@ function Root() {
   React.useEffect(() => {
     const handleHashChange = () => {
       setIsTrayFlyout(window.location.hash === "#tray-flyout");
+      setIsAddDownloadPopup(window.location.hash === "#add-download");
       const resolved = resolveLifecycleRoute();
       setLifecycleRoute(resolved);
     };
@@ -111,6 +116,14 @@ function Root() {
     return (
       <React.Suspense fallback={null}>
         <TrayFlyout />
+      </React.Suspense>
+    );
+  }
+
+  if (isAddDownloadPopup) {
+    return (
+      <React.Suspense fallback={null}>
+        <AddDownloadPopup />
       </React.Suspense>
     );
   }

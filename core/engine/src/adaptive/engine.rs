@@ -217,6 +217,17 @@ impl AdaptiveEngine {
         .await
         .map_err(|e| format!("Probe failed: {}", e))?;
 
+        if probe.status_code >= 400 {
+            return Err(format!("Server returned HTTP {} error", probe.status_code));
+        }
+
+        if is_unexpected_html_response(&task.url, &task.filename, probe.content_type.as_deref()) {
+            return Err(format!(
+                "Server returned an HTML error/challenge page ({}) instead of the expected file",
+                probe.content_type.as_deref().unwrap_or("text/html")
+            ));
+        }
+
         let total_size = probe.size_total;
         let is_resumable = probe.resumable && total_size.is_some() && total_size.unwrap() > 0;
 
@@ -1314,6 +1325,7 @@ impl AdaptiveEngine {
 
         let coalesced_ops = writer_handle.coalesced_write_ops();
         let hedged_won = scheduler.hedged_requests_won();
+        let final_workers = scheduler.get_final_telemetry_snapshot();
         let url_for_zone = task.url.clone();
         drop(writer_tx);
         let final_path =
@@ -1364,6 +1376,19 @@ impl AdaptiveEngine {
         }
 
         let final_completed_bytes = total_size.unwrap_or(total_downloaded);
+        if total_size.is_none() && final_completed_bytes == 0 {
+            let err = "Download failed: 0 bytes received from server".to_string();
+            error!("{}", err);
+            let store = self.store.clone();
+            let id = task.id;
+            let err_copy = err.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                let _ = store.update_download_state(id, DownloadState::Failed, Some(&err_copy));
+            })
+            .await;
+            return Err(err);
+        }
+
         let store = self.store.clone();
         let id = task.id;
         let _ = tokio::task::spawn_blocking(move || {
@@ -1385,6 +1410,8 @@ impl AdaptiveEngine {
                 mode: controller.mode(),
                 eta_seconds: Some(0),
                 decision_reason: "Completed and verified".into(),
+                phase: Some("Completed".to_string()),
+                workers: final_workers,
                 negotiated_protocol: controller.protocol().as_str().to_string(),
                 hedged_requests_won: hedged_won,
                 coalesced_write_ops: coalesced_ops,
@@ -1496,6 +1523,126 @@ fn apply_limit_rate(
     paused_until_ms.fetch_max(until, Ordering::SeqCst);
     scheduler.set_target_connections(target);
     scheduler.retire_excess_workers(target);
+}
+
+pub(crate) fn is_unexpected_html_response(
+    url: &str,
+    filename: &str,
+    content_type: Option<&str>,
+) -> bool {
+    let Some(ct) = content_type else {
+        return false;
+    };
+    let ct_lower = ct.trim().to_ascii_lowercase();
+    let is_html_ct =
+        ct_lower.starts_with("text/html") || ct_lower.starts_with("application/xhtml+xml");
+    if !is_html_ct {
+        return false;
+    }
+
+    let extract_ext = |s: &str| -> Option<String> {
+        let clean = s
+            .split('?')
+            .next()
+            .unwrap_or(s)
+            .split('#')
+            .next()
+            .unwrap_or(s);
+        let name = clean.rsplit('/').next().unwrap_or(clean);
+        let (_, ext) = name.rsplit_once('.')?;
+        let ext_lower = ext.trim().to_ascii_lowercase();
+        if ext_lower.is_empty() || ext_lower.len() > 16 {
+            None
+        } else {
+            Some(ext_lower)
+        }
+    };
+
+    let html_exts = ["html", "htm", "xhtml", "mhtml", "php", "asp", "aspx", "jsp"];
+    let non_html_exts = [
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+        "bz2",
+        "xz",
+        "zst",
+        "iso",
+        "img",
+        "dmg",
+        "exe",
+        "msi",
+        "msix",
+        "appx",
+        "deb",
+        "rpm",
+        "apk",
+        "pkg",
+        "appimage",
+        "bin",
+        "mp4",
+        "mkv",
+        "avi",
+        "mov",
+        "webm",
+        "flv",
+        "wmv",
+        "m4v",
+        "ts",
+        "mp3",
+        "flac",
+        "wav",
+        "aac",
+        "ogg",
+        "m4a",
+        "opus",
+        "pdf",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "avif",
+        "svg",
+        "wasm",
+        "dll",
+        "so",
+        "dylib",
+        "jar",
+        "torrent",
+        "safetensors",
+        "gguf",
+        "onnx",
+        "pt",
+        "pth",
+    ];
+
+    if let Some(ext) = extract_ext(filename) {
+        if html_exts.contains(&ext.as_str()) {
+            return false;
+        }
+        if filename != "download.bin" && non_html_exts.contains(&ext.as_str()) {
+            return true;
+        }
+    }
+
+    if let Some(url_ext) = extract_ext(url) {
+        if html_exts.contains(&url_ext.as_str()) {
+            return false;
+        }
+        if non_html_exts.contains(&url_ext.as_str()) {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn redact_headers(headers: &HashMap<String, String>) -> HashMap<&str, &str> {
@@ -1645,6 +1792,30 @@ mod tests {
             Some("Wed, 21 Oct 2015 07:28:00 GMT"),
             Some(1024),
             true,
+        ));
+    }
+
+    #[test]
+    fn test_is_unexpected_html_response() {
+        assert!(is_unexpected_html_response(
+            "https://example.com/archive.zip",
+            "archive.zip",
+            Some("text/html; charset=utf-8")
+        ));
+        assert!(is_unexpected_html_response(
+            "https://example.com/installer.exe?token=abc",
+            "download.bin",
+            Some("text/html")
+        ));
+        assert!(!is_unexpected_html_response(
+            "https://example.com/index.html",
+            "index.html",
+            Some("text/html; charset=utf-8")
+        ));
+        assert!(!is_unexpected_html_response(
+            "https://example.com/archive.zip",
+            "archive.zip",
+            Some("application/zip")
         ));
     }
 

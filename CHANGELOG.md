@@ -2,6 +2,17 @@
 
 All notable changes to **Evo Download Manager (EDM)** are documented in this file.
 
+## [v0.1.3] - 2026-11-27
+
+### 🛠️ Queue Reliability, Standalone Capture Popup & Tray Polish Hotfix
+- **Queued Concurrency=1 & False Completion Fix**: Rejected non-2xx HTTP status codes in `probe.rs` and `packs/http.rs`, blocked unexpected `text/html` error pages on binary targets, failed 0-byte unbounded responses, prevented `phase == "Failed"` from emitting `"completed"`, and fixed `try_start_next_queued` synchronous task/state reservation so queued HTTP, BitTorrent, and YouTube downloads dequeue cleanly.
+- **Preserved Completion Speed Graph & Real Worker Telemetry**: Added `archived_workers` + `get_final_telemetry_snapshot` in `core/engine/src/adaptive/scheduler.rs` and updated `App.tsx` / `DetailsInspectorDrawer.tsx` so completed tasks keep their full speed graph curve and show all participating worker threads.
+- **Standalone Add Download Popup (`#add-download`)**: Captured external downloads now open a compact `540×430` frameless standalone dialog window (`AddDownloadPopup.tsx`) without showing the main application window behind it.
+- **Tray Flyout Corner Anchoring & Auto-Promotion**: Anchored `#tray-flyout` flush to the bottom-right corner (`12px` margin) and added `promote_windows_tray_icon()` in `os/assets.rs` to keep EDM's Windows 11 system tray icon visible.
+- **Typography Alignment & About Copy**: Fixed 2-column dropdown alignment in `GeneralSettingsTab.tsx` when using fonts like `Poppins`, and updated the About modal description in `App.tsx`.
+
+---
+
 ## [v0.1.2] - 2026-11-27
 
 ### ✨ UI/UX Polish, Capture Confirmation, Security Hardening & Modularity Release

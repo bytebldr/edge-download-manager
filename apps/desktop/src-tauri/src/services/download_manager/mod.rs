@@ -1,9 +1,10 @@
 mod config;
 mod telemetry;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::Utc;
 use edm_core::adaptive::AdaptiveDownloadTask;
@@ -12,6 +13,11 @@ use edm_store::DownloadRecord;
 use uuid::Uuid;
 
 use crate::state::{ActiveTaskHandle, AppState};
+
+fn queued_selected_files_map() -> &'static Mutex<HashMap<Uuid, Vec<usize>>> {
+    static MAP: OnceLock<Mutex<HashMap<Uuid, Vec<usize>>>> = OnceLock::new();
+    MAP.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn execute_download(
@@ -71,6 +77,7 @@ pub fn execute_download_with_selected_files(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute_download_with_options(
     state: &AppState,
     id: Uuid,
@@ -84,6 +91,39 @@ pub fn execute_download_with_options(
     user_agent: Option<String>,
     selected_files: Option<Vec<usize>>,
     queue_only: bool,
+) -> Result<(Uuid, bool), String> {
+    execute_download_internal(
+        state,
+        id,
+        url,
+        filename,
+        save_dir,
+        max_connections,
+        size_total,
+        cookies,
+        referer,
+        user_agent,
+        selected_files,
+        queue_only,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_download_internal(
+    state: &AppState,
+    id: Uuid,
+    url: String,
+    filename: Option<String>,
+    save_dir: Option<PathBuf>,
+    max_connections: Option<u32>,
+    size_total: Option<u64>,
+    cookies: Option<String>,
+    referer: Option<String>,
+    user_agent: Option<String>,
+    selected_files: Option<Vec<usize>>,
+    queue_only: bool,
+    slot_reserved: bool,
 ) -> Result<(Uuid, bool), String> {
     let lc = state.lifecycle.clone();
     state.rt_handle.spawn(async move {
@@ -150,7 +190,10 @@ pub fn execute_download_with_options(
             .count()
     };
 
-    if queue_only || active_count >= exec_cfg.max_active_downloads {
+    if queue_only || (!slot_reserved && active_count >= exec_cfg.max_active_downloads) {
+        if let Some(ref sf) = selected_files {
+            crate::lock_unpoisoned(queued_selected_files_map()).insert(id, sf.clone());
+        }
         let record = DownloadRecord {
             id,
             url: url.clone(),
@@ -187,13 +230,24 @@ pub fn execute_download_with_options(
         return Ok((id, false));
     }
 
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let telemetry_store = Arc::new(Mutex::new(None));
-    let handle = ActiveTaskHandle {
-        cancelled: cancelled.clone(),
-        telemetry: telemetry_store.clone(),
+    let (cancelled, telemetry_store) = {
+        let mut tasks = crate::lock_unpoisoned(&state.tasks);
+        if let Some(existing_handle) = tasks.get(&id_str) {
+            (
+                existing_handle.cancelled.clone(),
+                existing_handle.telemetry.clone(),
+            )
+        } else {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let telemetry_store = Arc::new(Mutex::new(None));
+            let handle = ActiveTaskHandle {
+                cancelled: cancelled.clone(),
+                telemetry: telemetry_store.clone(),
+            };
+            tasks.insert(id_str.clone(), handle);
+            (cancelled, telemetry_store)
+        }
     };
-    crate::lock_unpoisoned(&state.tasks).insert(id_str.clone(), handle);
 
     if let Some(sz) = effective_size {
         if let Err(e) = edm_core::security::check_disk_space(&save_path, sz) {
@@ -291,7 +345,8 @@ pub fn execute_download_with_options(
             ws_mgr_cb.clone(),
         );
         let result = edm_core::PackExecutor::execute(task, engine, client, Some(cb)).await;
-        let (final_state, error_msg, verified_size) = telemetry::classify_execution_result(result);
+        let (final_state, error_msg, verified_size, actual_final_path) =
+            telemetry::classify_execution_result(result);
 
         telemetry::handle_download_completion(
             id,
@@ -299,6 +354,7 @@ pub fn execute_download_with_options(
             &url,
             &final_clean_name,
             &save_path,
+            actual_final_path,
             referer.as_deref(),
             effective_size,
             final_state,
@@ -326,52 +382,100 @@ pub fn try_start_next_queued(state: &AppState) {
     let settings_val = config::load_app_settings(state);
     let max_active = config::read_max_active_downloads(settings_val.as_ref());
 
-    let active_count = {
-        let tasks = crate::lock_unpoisoned(&state.tasks);
-        tasks
-            .values()
-            .filter(|h| !h.cancelled.load(Ordering::Relaxed))
-            .count()
+    let Ok(records) = state.store.list_all_downloads() else {
+        return;
     };
-
-    let slots_available = max_active.saturating_sub(active_count);
-    if slots_available == 0 {
+    let mut queued_items: Vec<_> = records
+        .into_iter()
+        .filter(|d| d.state == DownloadState::Queued)
+        .collect();
+    if queued_items.is_empty() {
         return;
     }
+    // FIFO order: oldest created first
+    queued_items.sort_by_key(|d| d.created_at);
 
-    if let Ok(records) = state.store.list_all_downloads() {
-        let mut queued_items: Vec<_> = records
-            .into_iter()
-            .filter(|d| d.state == DownloadState::Queued)
-            .collect();
-        // FIFO order: oldest created first
-        queued_items.sort_by_key(|d| d.created_at);
-
-        for queued in queued_items.into_iter().take(slots_available) {
-            let state_clone = state.clone();
-            let decrypted_cookies = state
-                .store
-                .get_encrypted_cookies(queued.id)
-                .ok()
-                .flatten()
-                .and_then(|enc| edm_core::security::decrypt_dpapi(&enc).ok())
-                .and_then(|dec| String::from_utf8(dec).ok());
-
-            state.rt_handle.spawn(async move {
-                let _ = execute_download(
-                    &state_clone,
-                    queued.id,
-                    queued.url,
-                    Some(queued.filename),
-                    Some(PathBuf::from(queued.save_dir)),
-                    Some(queued.connections),
-                    queued.size_total,
-                    decrypted_cookies,
-                    queued.referer,
-                    queued.user_agent,
-                );
-            });
+    // Reserve slots synchronously under state.tasks lock so concurrent callers
+    // cannot double-start the same queued download or exceed max_active_downloads.
+    let reserved: Vec<_> = {
+        let mut tasks = crate::lock_unpoisoned(&state.tasks);
+        let active_count = tasks
+            .values()
+            .filter(|h| !h.cancelled.load(Ordering::Relaxed))
+            .count();
+        let slots_available = max_active.saturating_sub(active_count);
+        if slots_available == 0 {
+            return;
         }
+
+        let mut picked = Vec::new();
+        for queued in queued_items {
+            if picked.len() >= slots_available {
+                break;
+            }
+            let id_str = queued.id.to_string();
+            if tasks.contains_key(&id_str) {
+                continue;
+            }
+            let _ = state
+                .store
+                .update_download_state(queued.id, DownloadState::Downloading, None);
+            tasks.insert(
+                id_str,
+                ActiveTaskHandle {
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                    telemetry: Arc::new(Mutex::new(None)),
+                },
+            );
+            picked.push(queued);
+        }
+        picked
+    };
+
+    for queued in reserved {
+        let state_clone = state.clone();
+        let decrypted_cookies = state
+            .store
+            .get_encrypted_cookies(queued.id)
+            .ok()
+            .flatten()
+            .and_then(|enc| edm_core::security::decrypt_dpapi(&enc).ok())
+            .and_then(|dec| String::from_utf8(dec).ok());
+        let selected_files = crate::lock_unpoisoned(queued_selected_files_map()).remove(&queued.id);
+
+        state.rt_handle.spawn(async move {
+            let id_str = queued.id.to_string();
+            if let Err(err) = execute_download_internal(
+                &state_clone,
+                queued.id,
+                queued.url,
+                Some(queued.filename),
+                Some(PathBuf::from(queued.save_dir)),
+                Some(queued.connections),
+                queued.size_total,
+                decrypted_cookies,
+                queued.referer,
+                queued.user_agent,
+                selected_files,
+                false,
+                true,
+            ) {
+                tracing::error!("Queued download {} failed to start: {}", id_str, err);
+                crate::lock_unpoisoned(&state_clone.tasks).remove(&id_str);
+                let _ = state_clone.store.update_download_state(
+                    queued.id,
+                    DownloadState::Failed,
+                    Some(&err),
+                );
+                state_clone
+                    .ws_manager
+                    .update_task_error(&id_str, Some(err))
+                    .await;
+                state_clone.ws_manager.broadcast_snapshot().await;
+                telemetry::emit_downloads_changed(&state_clone.app_handle, &id_str, "failed");
+                try_start_next_queued(&state_clone);
+            }
+        });
     }
 }
 
@@ -459,6 +563,7 @@ pub async fn remove_download_task(
 
     // 3. Delete from persistent SQLite database
     let _ = state.store.delete_download(id_uuid);
+    crate::lock_unpoisoned(queued_selected_files_map()).remove(&id_uuid);
 
     // 4. Remove from ws_manager live memory and broadcast task_removed immediately
     state.ws_manager.broadcast_task_removed(id_str).await;

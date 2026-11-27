@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for EDM desktop window",
-  "windows": ["main", "tray-flyout"],
+  "windows": ["main", "tray-flyout", "add-download"],
   "permissions": [
     "core:app:default",
     "core:event:default",

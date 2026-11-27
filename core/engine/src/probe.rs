@@ -108,6 +108,9 @@ impl Probe {
         };
 
         let status = resp.status();
+        if !status.is_success() {
+            return Err(ProbeError::Status(status.as_u16()));
+        }
         let final_url = resp.url().to_string();
         let headers = resp.headers();
 
@@ -449,5 +452,43 @@ mod tests {
         .await;
 
         assert!(matches!(res, Err(ProbeError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn test_probe_rejects_http_error_status_on_get_fallback() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+
+        let _server = tokio::spawn(async move {
+            for _ in 0..2 {
+                if let Ok((mut socket, _)) = listener.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = socket.read(&mut buf).await;
+                    let body = "<html><body>403 Forbidden</body></html>";
+                    let resp = format!(
+                        "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                }
+            }
+        });
+
+        let client = Client::new();
+        let url = format!("http://{}/protected.zip", addr);
+        let res = Probe::probe_url_with_headers_timeout(
+            &client,
+            &url,
+            None,
+            None,
+            None,
+            Duration::from_secs(2),
+        )
+        .await;
+
+        assert!(matches!(res, Err(ProbeError::Status(403))));
     }
 }

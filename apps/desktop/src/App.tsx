@@ -635,9 +635,13 @@ export default function App() {
           const finalDone = isCompleted && finalTotal > 0 ? finalTotal : done;
           const isDownloading = itemState === "downloading";
           const currentBps = isDownloading ? speedVal : 0;
-          const history = existing?.speedHistory
-            ? [...existing.speedHistory.slice(-59), currentBps]
-            : [currentBps];
+          const history = isDownloading
+            ? existing?.speedHistory
+              ? [...existing.speedHistory.slice(-59), currentBps]
+              : [currentBps]
+            : existing?.speedHistory && existing.speedHistory.length > 0
+              ? existing.speedHistory
+              : [0];
 
           // Single source of truth: preserve live smoothed ETA and connections from telemetry
           const eta = isCompleted
@@ -650,12 +654,17 @@ export default function App() {
                 ? existing.eta
                 : (b.eta_seconds ? formatEta(b.eta_seconds) : "Calculating..."));
 
+          const isTorrentItem =
+            b.url.startsWith("magnet:") ||
+            b.url.toLowerCase().includes(".torrent") ||
+            b.filename.toLowerCase().endsWith(".torrent") ||
+            category.toLowerCase() === "torrents";
           const finalWorkers = isCompleted && existing?.workers
             ? existing.workers.map((w) => ({
                 ...w,
                 pos: w.end,
                 speed: "0 B/s",
-                status: "Chunk verified • Complete",
+                status: isTorrentItem ? "Verified • Seeding" : "Chunk verified • Complete",
               }))
             : existing?.workers;
 
@@ -1084,6 +1093,13 @@ export default function App() {
                   status: workerStatusStr,
                 };
               });
+            } else if (isFinished && task.workers && task.workers.length > 0) {
+              newWorkers = task.workers.map((w) => ({
+                ...w,
+                pos: w.end,
+                speed: "0 B/s",
+                status: isTorrent ? "Verified • Seeding" : "Chunk verified • Complete",
+              }));
             } else {
               const numConns = Math.max(1, smooth.displayedConns);
               const chunkBytes = Math.floor(sizeTotal / numConns);
@@ -1105,9 +1121,18 @@ export default function App() {
               });
             }
 
-            const actualBps = isFinished ? 0 : smoothedSpeedBps;
-            const history = [...(task.speedHistory || []).slice(-59), actualBps];
-            const peak = Math.max(task.peakSpeedBps || 0, actualBps);
+            const prevHistory = task.speedHistory || [];
+            const hasNonZeroHistory = prevHistory.some((v) => v > 0);
+            const history = isFinished
+              ? hasNonZeroHistory
+                ? prevHistory
+                : smoothedSpeedBps > 0
+                  ? [...prevHistory.slice(-59), smoothedSpeedBps]
+                  : prevHistory.length > 0
+                    ? prevHistory
+                    : [0]
+              : [...prevHistory.slice(-59), smoothedSpeedBps];
+            const peak = Math.max(task.peakSpeedBps || 0, smoothedSpeedBps);
             const uploadBps = Math.floor((telem.upload_throughput_bps || 0) / 8);
             const ulHistory = [...(task.uploadHistory || []).slice(-59), uploadBps];
             const uploadedBytes = (telem as any).uploaded_bytes ?? (task as any).uploadedBytes ?? 0;
@@ -2573,7 +2598,7 @@ export default function App() {
               </div>
 
               <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
-                Evo Download Manager is an open-source application built for fast, reliable, and distraction-free downloads. Having you here makes this project better — if you're interested in contributing, your ideas and pull requests are always welcome.
+                Evo Download Manager is an open-source download manager built with a focus on speed, reliability, and simplicity. Our goal is to make downloading files faster and more seamless. Contributions, feedback, and suggestions are always welcome. If you'd like to get involved, feel free to share your ideas or submit a pull request.
               </p>
 
               <div className="pt-2 border-t border-[var(--border-dim)] flex items-center justify-between gap-2 text-xs">

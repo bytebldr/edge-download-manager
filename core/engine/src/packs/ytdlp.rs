@@ -1064,7 +1064,16 @@ impl YtDlpPack {
                 eta_seconds: Some(0),
                 decision_reason: "Download & Processing Complete ✓".to_string(),
                 phase: Some("Completed".to_string()),
-                workers: vec![],
+                workers: vec![WorkerTelemetry {
+                    idx: 0,
+                    start: 0,
+                    end: file_size,
+                    pos: file_size,
+                    bytes_downloaded: file_size,
+                    speed_bps: 0,
+                    status: WorkerStatus::Completed,
+                    retry_count: 0,
+                }],
                 updated_at: Utc::now(),
                 ..Default::default()
             });

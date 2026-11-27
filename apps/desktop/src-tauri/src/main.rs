@@ -175,19 +175,6 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
     if let Some(monitor) = chosen_monitor {
         let scale = monitor.scale_factor();
         let wa = monitor.work_area();
-        let (ix, iy) = match rect.position {
-            tauri::Position::Physical(p) => (p.x, p.y),
-            tauri::Position::Logical(p) => {
-                ((p.x * scale).round() as i32, (p.y * scale).round() as i32)
-            }
-        };
-        let (iw, ih) = match rect.size {
-            tauri::Size::Physical(s) => (s.width as i32, s.height as i32),
-            tauri::Size::Logical(s) => (
-                (s.width * scale).round() as i32,
-                (s.height * scale).round() as i32,
-            ),
-        };
         let fw = (FLYOUT_W * scale).round() as i32;
         let fh = (FLYOUT_H * scale).round() as i32;
         let wa_x = wa.position.x;
@@ -195,13 +182,9 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
         let wa_w = wa.size.width as i32;
         let wa_h = wa.size.height as i32;
 
-        let target_x = (ix + iw / 2 - fw / 2).clamp(wa_x, (wa_x + wa_w - fw).max(wa_x));
-        let preferred_y = if iy - fh - 8 >= wa_y {
-            iy - fh - 8
-        } else {
-            iy + ih + 8
-        };
-        let target_y = preferred_y.clamp(wa_y, (wa_y + wa_h - fh).max(wa_y));
+        let margin = (12.0 * scale).round() as i32;
+        let target_x = (wa_x + wa_w - fw - margin).max(wa_x);
+        let target_y = (wa_y + wa_h - fh - margin).max(wa_y);
 
         let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
             target_x, target_y,

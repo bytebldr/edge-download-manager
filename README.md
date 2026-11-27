@@ -20,7 +20,7 @@
 ---
 
 > [!NOTE]
-> **Early Development (`v0.1.2`)**: Evo Download Manager (EDM) `v0.1.2` delivers a self-tuning Auto-Adaptive Concurrency Engine (up to 64 streams), zero-copy pipelined disk I/O, unified Quick Tray & Browser Extension UI, capture confirmation dialog, and hardened local IPC security. Feedback and bug reports are welcome via GitHub Issues!
+> **Early Development (`v0.1.3`)**: Evo Download Manager (EDM) `v0.1.3` delivers a self-tuning Auto-Adaptive Concurrency Engine (up to 64 streams), reliable single-concurrency queuing across HTTP/Torrent/YouTube, standalone capture popup, bottom-right Quick Tray, and hardened local IPC security. Feedback and bug reports are welcome via GitHub Issues!
 
 **Evo Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
 
@@ -115,11 +115,11 @@ Get the latest production release from the official [**GitHub Releases Page**](h
 
 | Package | Type | Link |
 | :--- | :--- | :--- |
-| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.1.2_x64-setup.exe`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.2/EDM_0.1.2_x64-setup.exe) |
-| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.2/edm-extension-chromium.zip) |
-| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.2/edm-firefox.xpi) |
-| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.2/edm-extension.tar.gz) |
-| **Release Checksums** | SHA-256 Manifest (`.txt`) | [**`SHA256SUMS.txt`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.2/SHA256SUMS.txt) |
+| **EDM Windows Installer** | Standalone Setup (`.exe`) | [**`EDM_0.1.3_x64-setup.exe`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.3/EDM_0.1.3_x64-setup.exe) |
+| **Chromium Extension** | Chrome, Edge, Brave, Opera (`.zip`) | [**`edm-extension-chromium.zip`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.3/edm-extension-chromium.zip) |
+| **Firefox Add-on** | Mozilla Firefox (`.xpi`) | [**`edm-firefox.xpi`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.3/edm-firefox.xpi) |
+| **Extension Source** | Unpacked Bundle Archive (`.tar.gz`) | [**`edm-extension.tar.gz`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.3/edm-extension.tar.gz) |
+| **Release Checksums** | SHA-256 Manifest (`.txt`) | [**`SHA256SUMS.txt`**](https://github.com/bytebldr/evo-download-manager/releases/download/v0.1.3/SHA256SUMS.txt) |
 
 ### Installing the Browser Companion:
 1. Download `edm-extension-chromium.zip` (for Chrome, Edge, Brave, Opera) or `edm-firefox.xpi` (for Firefox).

@@ -27,6 +27,10 @@ impl HttpPack {
             .await
             .map_err(|e| format!("HTTP HEAD probe failed: {}", e))?;
 
+        if !resp.status().is_success() {
+            return Err(format!("HTTP HEAD probe returned status {}", resp.status()));
+        }
+
         let headers = resp.headers();
 
         let content_length = headers

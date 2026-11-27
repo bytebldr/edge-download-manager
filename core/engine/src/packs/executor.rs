@@ -305,6 +305,9 @@ impl PackExecutor {
             match YtDlpPack::download_media(task.clone(), telemetry_cb.clone()).await {
                 Ok(path) => return Ok(path),
                 Err(err) => {
+                    if err.contains("cancelled") || task.cancelled.load(Ordering::Relaxed) {
+                        return Err(err);
+                    }
                     tracing::warn!(
                         "yt-dlp execution error: {}. Falling back to in-process extractors...",
                         err

@@ -1,5 +1,5 @@
 use reqwest::Client;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,6 +51,7 @@ pub struct WorkScheduler {
     host_semaphore: Option<Arc<Semaphore>>,
     runtime: HashMap<u32, WorkerRuntime>,
     snapshots: Mutex<HashMap<u32, SnapshotState>>,
+    archived_workers: BTreeMap<u32, WorkerTelemetry>,
 }
 
 impl WorkScheduler {
@@ -73,6 +74,7 @@ impl WorkScheduler {
             host_semaphore: None,
             runtime: HashMap::new(),
             snapshots: Mutex::new(HashMap::new()),
+            archived_workers: BTreeMap::new(),
         }
     }
 
@@ -850,9 +852,38 @@ impl WorkScheduler {
         self.check_stalled_workers_adaptive(client, writer, limiter, event_tx, false);
     }
 
+    fn archive_worker_if_transferred(&mut self, w: &AdaptiveWorker) {
+        let bytes = w.bytes_downloaded.load(Ordering::Relaxed);
+        if bytes == 0 {
+            return;
+        }
+        let status = match w.get_status() {
+            WorkerStatus::Connecting | WorkerStatus::Downloading | WorkerStatus::Stalled => {
+                WorkerStatus::Completed
+            }
+            other => other,
+        };
+        self.archived_workers.insert(
+            w.idx,
+            WorkerTelemetry {
+                idx: w.idx,
+                start: w.start,
+                end: w.end.load(Ordering::Relaxed),
+                pos: w.pos.load(Ordering::Relaxed),
+                bytes_downloaded: bytes,
+                speed_bps: 0,
+                status,
+                retry_count: w.retry_count.load(Ordering::Relaxed),
+            },
+        );
+    }
+
     /// Prunes a specific worker by `idx` (e.g. a failed worker after its transient error
     /// has been recorded) from `workers` and runtime maps.
     pub fn prune_worker(&mut self, idx: u32) -> bool {
+        if let Some(w) = self.workers.iter().find(|w| w.idx == idx).cloned() {
+            self.archive_worker_if_transferred(&w);
+        }
         let before = self.workers.len();
         self.workers.retain(|w| w.idx != idx);
         let removed = self.workers.len() < before;
@@ -871,6 +902,7 @@ impl WorkScheduler {
     pub fn prune_finished_workers(&mut self) -> usize {
         let before = self.workers.len();
         let mut removed_ids = Vec::new();
+        let mut to_archive = Vec::new();
         self.workers.retain(|w| {
             let s = w.get_status();
             let keep = s != WorkerStatus::Completed
@@ -878,9 +910,14 @@ impl WorkScheduler {
                 && !w.cancelled.load(Ordering::Relaxed);
             if !keep {
                 removed_ids.push(w.idx);
+                to_archive.push(w.clone());
             }
             keep
         });
+
+        for w in &to_archive {
+            self.archive_worker_if_transferred(w);
+        }
 
         if !removed_ids.is_empty() {
             let mut snaps = self.snapshots.lock().unwrap_or_else(|p| p.into_inner());
@@ -953,36 +990,38 @@ impl WorkScheduler {
     }
 
     /// Returns a monotonic, read-safe telemetry snapshot without dropping bytes on `delta_t == 0`.
+    /// Includes previously completed/pruned workers that transferred data alongside active workers.
     pub fn get_telemetry_snapshot(&self) -> Vec<WorkerTelemetry> {
         let now_ms = self.elapsed_ms();
         let mut snaps = self.snapshots.lock().unwrap_or_else(|p| p.into_inner());
+        let mut merged: BTreeMap<u32, WorkerTelemetry> = self.archived_workers.clone();
 
-        self.workers
-            .iter()
-            .map(|w| {
-                let start = w.start;
-                let end = w.end.load(Ordering::Relaxed);
-                let pos = w.pos.load(Ordering::Relaxed);
-                let bytes = w.bytes_downloaded.load(Ordering::Relaxed);
+        for w in &self.workers {
+            let start = w.start;
+            let end = w.end.load(Ordering::Relaxed);
+            let pos = w.pos.load(Ordering::Relaxed);
+            let bytes = w.bytes_downloaded.load(Ordering::Relaxed);
 
-                let state = snaps.entry(w.idx).or_insert(SnapshotState {
-                    last_bytes: bytes,
-                    last_ms: now_ms,
-                });
+            let state = snaps.entry(w.idx).or_insert(SnapshotState {
+                last_bytes: bytes,
+                last_ms: now_ms,
+            });
 
-                let delta_t = now_ms.saturating_sub(state.last_ms);
-                let speed_bps = if delta_t > 0 {
-                    let delta_b = bytes.saturating_sub(state.last_bytes);
-                    state.last_bytes = bytes;
-                    state.last_ms = now_ms;
-                    let bps = delta_b.saturating_mul(8000) / delta_t;
-                    w.speed_bps.store(bps, Ordering::Relaxed);
-                    bps
-                } else {
-                    // Read-safe on rapid calls within the same millisecond: keep last_bytes intact
-                    w.speed_bps.load(Ordering::Relaxed)
-                };
+            let delta_t = now_ms.saturating_sub(state.last_ms);
+            let speed_bps = if delta_t > 0 {
+                let delta_b = bytes.saturating_sub(state.last_bytes);
+                state.last_bytes = bytes;
+                state.last_ms = now_ms;
+                let bps = delta_b.saturating_mul(8000) / delta_t;
+                w.speed_bps.store(bps, Ordering::Relaxed);
+                bps
+            } else {
+                // Read-safe on rapid calls within the same millisecond: keep last_bytes intact
+                w.speed_bps.load(Ordering::Relaxed)
+            };
 
+            merged.insert(
+                w.idx,
                 WorkerTelemetry {
                     idx: w.idx,
                     start,
@@ -992,9 +1031,52 @@ impl WorkScheduler {
                     speed_bps,
                     status: w.get_status(),
                     retry_count: w.retry_count.load(Ordering::Relaxed),
-                }
-            })
-            .collect()
+                },
+            );
+        }
+
+        merged.into_values().collect()
+    }
+
+    /// Returns the final telemetry snapshot on download completion, preserving all workers
+    /// that actually transferred data (including mid-download scaled and completed workers).
+    pub fn get_final_telemetry_snapshot(&self) -> Vec<WorkerTelemetry> {
+        let mut merged: BTreeMap<u32, WorkerTelemetry> = self.archived_workers.clone();
+
+        for w in &self.workers {
+            let bytes = w.bytes_downloaded.load(Ordering::Relaxed);
+            if bytes == 0 && !merged.is_empty() {
+                continue;
+            }
+            let status = match w.get_status() {
+                WorkerStatus::Failed => WorkerStatus::Failed,
+                _ => WorkerStatus::Completed,
+            };
+            merged.insert(
+                w.idx,
+                WorkerTelemetry {
+                    idx: w.idx,
+                    start: w.start,
+                    end: w.end.load(Ordering::Relaxed),
+                    pos: w.pos.load(Ordering::Relaxed),
+                    bytes_downloaded: bytes,
+                    speed_bps: 0,
+                    status,
+                    retry_count: w.retry_count.load(Ordering::Relaxed),
+                },
+            );
+        }
+
+        let transferred: Vec<WorkerTelemetry> = merged
+            .values()
+            .filter(|w| w.bytes_downloaded > 0)
+            .cloned()
+            .collect();
+        if transferred.is_empty() {
+            merged.into_values().collect()
+        } else {
+            transferred
+        }
     }
 }
 
@@ -1356,5 +1438,41 @@ mod tests {
         drop(writer_tx);
         let mut wh = writer_handle;
         let _ = wh.abort();
+    }
+
+    #[test]
+    fn test_final_telemetry_snapshot_preserves_mid_download_workers() {
+        let mut scheduler = WorkScheduler::new(512 * 1024, Duration::from_secs(3), 3);
+
+        // Worker #0 transferred 100 MB and finished early (pruned)
+        let w0 = make_dummy_worker(0, 0, 100_000_000, 100_000_000);
+        w0.bytes_downloaded.store(100_000_000, Ordering::Relaxed);
+        w0.set_status(WorkerStatus::Completed);
+
+        // Worker #1 scaled up mid-download, transferred 50 MB, and finished (pruned)
+        let w1 = make_dummy_worker(1, 100_000_000, 150_000_000, 150_000_000);
+        w1.bytes_downloaded.store(50_000_000, Ordering::Relaxed);
+        w1.set_status(WorkerStatus::Completed);
+
+        // Worker #2 failed with 0 bytes transferred (should not pollute final snapshot)
+        let w2 = make_dummy_worker(2, 150_000_000, 160_000_000, 150_000_000);
+        w2.bytes_downloaded.store(0, Ordering::Relaxed);
+        w2.set_status(WorkerStatus::Failed);
+
+        scheduler.workers.extend([w0, w1, w2]);
+        assert_eq!(scheduler.prune_finished_workers(), 3);
+
+        // Tail hedged worker #34 transferred 118 KB
+        let w34 = make_dummy_worker(34, 150_000_000, 150_118_800, 150_118_800);
+        w34.bytes_downloaded.store(118_800, Ordering::Relaxed);
+        w34.set_status(WorkerStatus::Completed);
+        scheduler.workers.push(w34);
+
+        let final_snap = scheduler.get_final_telemetry_snapshot();
+        let ids: Vec<u32> = final_snap.iter().map(|w| w.idx).collect();
+        assert_eq!(ids, vec![0, 1, 34]);
+        assert_eq!(final_snap[0].bytes_downloaded, 100_000_000);
+        assert_eq!(final_snap[1].bytes_downloaded, 50_000_000);
+        assert_eq!(final_snap[2].bytes_downloaded, 118_800);
     }
 }

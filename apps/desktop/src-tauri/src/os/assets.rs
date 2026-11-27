@@ -68,5 +68,34 @@ pub fn ensure_runtime_environment() {
             let edm_dir = std::path::PathBuf::from(local_app_data).join("EDM");
             self_heal_dll_in_dir(&edm_dir);
         }
+
+        // 3. Ensure EDM's Windows 11 system tray icon is promoted (not hidden in overflow)
+        std::thread::spawn(promote_windows_tray_icon);
     }
+}
+
+/// Ensures EDM's Windows 11 system tray icon is pinned visible in the taskbar
+/// (`HKCU\Control Panel\NotifyIconSettings\<id>\IsPromoted = 1`).
+#[cfg(windows)]
+pub fn promote_windows_tray_icon() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let ps = r#"
+$base = 'HKCU:\Control Panel\NotifyIconSettings'
+if (Test-Path $base) {
+  Get-ChildItem $base -ErrorAction SilentlyContinue | ForEach-Object {
+    $exe = (Get-ItemProperty $_.PSPath -Name ExecutablePath -ErrorAction SilentlyContinue).ExecutablePath
+    if ($exe -and ($exe -like '*\EDM.exe' -or $exe -like '*\edm-desktop-app.exe')) {
+      $cur = (Get-ItemProperty $_.PSPath -Name IsPromoted -ErrorAction SilentlyContinue).IsPromoted
+      if ($cur -ne 1) {
+        Set-ItemProperty -Path $_.PSPath -Name IsPromoted -Value 1 -Type DWord -ErrorAction SilentlyContinue
+      }
+    }
+  }
+}
+"#;
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
 }

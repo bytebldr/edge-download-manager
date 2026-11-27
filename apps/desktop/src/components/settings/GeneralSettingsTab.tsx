@@ -74,7 +74,7 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
 
         {/* Accent Color & Font Family (2-Column Split) */}
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div className="flex flex-col justify-between gap-2">
             <div>
               <label className="text-xs font-semibold text-[var(--text-primary)] block">
                 Accent Color
@@ -96,7 +96,7 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col justify-between gap-2">
             <div>
               <label className="text-xs font-semibold text-[var(--text-primary)] block">
                 Interface Font

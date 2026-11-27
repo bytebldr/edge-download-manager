@@ -111,8 +111,8 @@ pub(super) fn build_telemetry_callback(
             let id_c = ws_id.clone();
             let speed_bytes =
                 (telem.rolling_throughput_bps / 8).max(telem.instant_throughput_bps / 8);
-            let is_phase_done =
-                telem.phase.as_deref() == Some("Completed") || telem.progress_pct >= 100.0;
+            let is_phase_done = telem.phase.as_deref() == Some("Completed")
+                || (telem.phase.as_deref() != Some("Failed") && telem.progress_pct >= 100.0);
             let status_str = if is_phase_done {
                 "completed"
             } else {
@@ -133,15 +133,15 @@ pub(super) fn build_telemetry_callback(
     })
 }
 
-/// Map `PackExecutor::execute` output into final `DownloadState`, optional error message, and verified size.
+/// Map `PackExecutor::execute` output into final `DownloadState`, optional error message, verified size, and actual final path.
 pub(super) fn classify_execution_result(
     result: Result<PathBuf, String>,
-) -> (DownloadState, Option<String>, Option<u64>) {
+) -> (DownloadState, Option<String>, Option<u64>, Option<PathBuf>) {
     match result {
-        Ok(ref final_path) => {
+        Ok(final_path) => {
             let s = if final_path.is_dir() {
                 let mut dir_total = 0u64;
-                if let Ok(entries) = std::fs::read_dir(final_path) {
+                if let Ok(entries) = std::fs::read_dir(&final_path) {
                     for entry in entries.flatten() {
                         dir_total += std::fs::metadata(entry.path())
                             .map(|m| m.len())
@@ -150,19 +150,20 @@ pub(super) fn classify_execution_result(
                 }
                 dir_total
             } else {
-                std::fs::metadata(final_path).map(|m| m.len()).unwrap_or(0)
+                std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(0)
             };
             if s > 0 {
-                (DownloadState::Completed, None, Some(s))
+                (DownloadState::Completed, None, Some(s), Some(final_path))
             } else {
                 (
                     DownloadState::Failed,
                     Some("Download failed: 0 bytes received or merge failed".to_string()),
                     None,
+                    None,
                 )
             }
         }
-        Err(ref e) if e.contains("cancelled") => (DownloadState::Paused, None, None),
+        Err(ref e) if e.contains("cancelled") => (DownloadState::Paused, None, None, None),
         Err(ref e)
             if e.contains("401")
                 || e.contains("403")
@@ -175,19 +176,22 @@ pub(super) fn classify_execution_result(
                     "Download link expired (HTTP 401/403/410). Refresh link to resume.".to_string(),
                 ),
                 None,
+                None,
             )
         }
         Err(ref e) if e.contains("429") => (
             DownloadState::Failed,
             Some("HTTP 429 Rate Limited".to_string()),
             None,
+            None,
         ),
         Err(ref e) if e.contains("stalled") => (
             DownloadState::Failed,
             Some("Connection Stalled".to_string()),
             None,
+            None,
         ),
-        Err(e) => (DownloadState::Failed, Some(e), None),
+        Err(e) => (DownloadState::Failed, Some(e), None, None),
     }
 }
 
@@ -199,6 +203,7 @@ pub(super) async fn handle_download_completion(
     url: &str,
     filename: &str,
     save_path: &PathBuf,
+    actual_final_path: Option<PathBuf>,
     referer: Option<&str>,
     effective_size: Option<u64>,
     final_state: DownloadState,
@@ -225,12 +230,16 @@ pub(super) async fn handle_download_completion(
     }
 
     if final_state == DownloadState::Completed {
-        let full_path = save_path.join(filename);
+        let full_path = actual_final_path.unwrap_or_else(|| save_path.join(filename));
+        let display_name = full_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(filename);
         let _ = edm_core::security::apply_mark_of_the_web(&full_path, Some(url));
         let _ = store.purge_encrypted_cookies(id);
         let _ = crate::os::notifications::send_system_notification_internal(
             "EDM Download Complete",
-            &format!("{} has finished downloading.", filename),
+            &format!("{} has finished downloading.", display_name),
             Some(&full_path.to_string_lossy()),
         );
         if let Ok(records) = store.list_all_downloads() {

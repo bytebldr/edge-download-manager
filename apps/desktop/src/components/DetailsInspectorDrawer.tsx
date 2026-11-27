@@ -436,7 +436,9 @@ export const DetailsInspectorDrawer: React.FC<DetailsInspectorDrawerProps> = ({
                   <div className="flex justify-between items-center text-xs font-medium text-[var(--text-secondary)] mb-2">
                     <span>Worker thread telemetry</span>
                     <span className="tabular-nums text-[11px] text-[var(--text-muted)]">
-                      {activeStreamCount} active stream{activeStreamCount === 1 ? "" : "s"}
+                      {isCompleted
+                        ? `${workersList.length} worker${workersList.length === 1 ? "" : "s"} participated`
+                        : `${activeStreamCount} active stream${activeStreamCount === 1 ? "" : "s"}`}
                     </span>
                   </div>
                   <div className="border-t border-[var(--border-dim)] overflow-hidden max-h-36 overflow-y-auto">

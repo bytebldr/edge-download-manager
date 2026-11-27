@@ -32,21 +32,60 @@ pub fn emit_prompt_add_download(
     if let Ok(guard) = state.app_handle.lock() {
         if let Some(ref handle) = *guard {
             use tauri::{Emitter, Manager};
-            if let Some(win) = handle.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+
+            let payload = serde_json::json!({
+                "url": url,
+                "filename": filename,
+                "size": size,
+            });
+
+            if let Some(existing) = handle.get_webview_window("add-download") {
+                let _ = existing.show();
+                let _ = existing.unminimize();
+                let _ = existing.set_focus();
+                return handle
+                    .emit_to("add-download", "prompt-add-download", payload)
+                    .is_ok();
             }
-            return handle
-                .emit(
-                    "prompt-add-download",
-                    serde_json::json!({
-                        "url": url,
-                        "filename": filename,
-                        "size": size,
-                    }),
-                )
-                .is_ok();
+
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair("url", url);
+            if let Some(fname) = filename {
+                if !fname.is_empty() {
+                    serializer.append_pair("filename", fname);
+                }
+            }
+            if let Some(sz) = size {
+                serializer.append_pair("size", &sz.to_string());
+            }
+            let query = serializer.finish();
+            let target_url = format!("index.html?{}#add-download", query);
+
+            let builder = tauri::WebviewWindowBuilder::new(
+                handle,
+                "add-download",
+                tauri::WebviewUrl::App(target_url.into()),
+            )
+            .title("Add Download")
+            .inner_size(540.0, 430.0)
+            .center()
+            .decorations(false)
+            .transparent(true)
+            .resizable(false)
+            .always_on_top(true)
+            .focused(true)
+            .visible(true);
+
+            match builder.build() {
+                Ok(win) => {
+                    let _ = win.set_focus();
+                    return true;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to build add-download popup window: {}", e);
+                    return false;
+                }
+            }
         }
     }
     false

@@ -757,6 +757,28 @@ impl AdaptiveWorker {
                 continue;
             }
 
+            if let Some(ct) = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+            {
+                if super::engine::is_unexpected_html_response(&self.url, "", Some(ct)) {
+                    let err_msg = format!(
+                        "Server returned an HTML error/challenge page ({}) instead of the expected file",
+                        ct
+                    );
+                    warn!("Worker {} aborting: {}", self.idx, err_msg);
+                    self.set_status(WorkerStatus::Failed);
+                    let _ = event_tx
+                        .send(AdaptiveWorkerEvent::Failed {
+                            idx: self.idx,
+                            reason: err_msg,
+                        })
+                        .await;
+                    return;
+                }
+            }
+
             // Validate ETag with weak `W/` normalization; fall back to Last-Modified on 206
             let resp_etag_header = resp
                 .headers()
