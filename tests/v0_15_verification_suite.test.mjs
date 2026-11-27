@@ -121,7 +121,8 @@ test("4. 'OTA' text removed across entire application UI (Bug 5)", () => {
     "SettingsPage.tsx should have 'Update Now'"
   );
   assert.ok(
-    settingsPage.includes("Software Updates & Pipeline"),
+    settingsPage.includes("Software Updates & Pipeline") ||
+      settingsPage.includes("Software Updates &amp; Pipeline"),
     "SettingsPage.tsx should have 'Software Updates & Pipeline'"
   );
 });

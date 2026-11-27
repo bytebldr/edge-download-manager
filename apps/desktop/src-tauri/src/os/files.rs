@@ -63,8 +63,12 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
     if let Some(host) = parsed.host() {
         match host {
             url::Host::Ipv4(ip) => {
-                if ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified() {
-                    return Err("Security violation: Blocked access to private or loopback IPv4 address".into());
+                if ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
+                {
+                    return Err(
+                        "Security violation: Blocked access to private or loopback IPv4 address"
+                            .into(),
+                    );
                 }
             }
             url::Host::Ipv6(ip) => {
@@ -89,7 +93,8 @@ pub fn validate_url_security(raw_url: &str) -> Result<url::Url, String> {
                     || h.ends_with(".internal")
                 {
                     return Err(
-                        "Security violation: Blocked access to loopback or cloud metadata endpoint".into(),
+                        "Security violation: Blocked access to loopback or cloud metadata endpoint"
+                            .into(),
                     );
                 }
             }
