@@ -2656,31 +2656,35 @@ export default function App() {
       />
 
       {/* ─────────────────────────────────────────────────────────────
-          FLOATING IN-APP UPDATE BANNER (Astryx Chassis Pill)
+          FLOATING IN-APP UPDATE BANNER (Theme-Adaptive Flat Surface)
       ────────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showUpdateBanner && updateInfo && (
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
             role="alert"
             aria-label="Update notification"
-            className="fixed z-50 bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[var(--bg-chassis)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl text-xs w-auto select-none"
+            className="fixed z-50 bottom-11 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3.5 py-2 rounded-lg bg-[var(--bg-elevated)]/95 backdrop-blur-md border border-[var(--border-subtle)] shadow-[0_8px_24px_rgba(0,0,0,0.24)] text-xs w-auto max-w-[90vw] select-none"
           >
-            {/* Floating Update Toast (Astryx Chassis Compact Pill) */}
-            {/* Version Text & Subtle Release Notes Link */}
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="font-bold text-[var(--text-primary)] text-xs sm:text-sm whitespace-nowrap">
-                EDM v{updateInfo.latest_version}
+            {/* Status Dot + Version & Release Notes */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: "var(--accent-primary)" }}
+              />
+              <span className="font-semibold text-[var(--text-primary)] text-xs whitespace-nowrap tabular-nums">
+                Update available: v{updateInfo.latest_version}
               </span>
               {updateInfo.html_url && updateInfo.html_url.startsWith("https://") && (
                 <a
                   href={updateInfo.html_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 whitespace-nowrap inline-flex items-center gap-0.5"
+                  className="text-[11px] font-medium hover:underline underline-offset-2 whitespace-nowrap"
+                  style={{ color: "var(--accent-primary)" }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   Release notes ↗
@@ -2689,45 +2693,49 @@ export default function App() {
             </div>
 
             {updateBannerState === "downloading" && (
-              <div className="flex items-center gap-2 min-w-[100px]">
-                <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
+              <div className="flex items-center gap-2 min-w-[110px]">
+                <div className="flex-1 h-1.5 bg-[var(--bg-surface)] rounded-full overflow-hidden border border-[var(--border-subtle)]">
                   <div
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-200"
-                    style={{ width: `${updateBannerProgress}%` }}
+                    className="h-full rounded-full transition-all duration-200"
+                    style={{
+                      width: `${updateBannerProgress}%`,
+                      backgroundColor: "var(--accent-primary)",
+                    }}
                   />
                 </div>
-                <span className="text-[10px] text-emerald-400 font-mono font-medium shrink-0">
+                <span className="text-[11px] text-[var(--text-secondary)] font-medium tabular-nums shrink-0">
                   {updateBannerProgress}%
                 </span>
               </div>
             )}
             {updateBannerState === "installing" && (
-              <span className="text-[10.5px] text-blue-400 animate-pulse whitespace-nowrap">
+              <span className="text-[11px] text-[var(--text-secondary)] animate-pulse whitespace-nowrap">
                 Installing...
               </span>
             )}
             {updateBannerState === "failed" && (
-              <span className="text-[10.5px] text-rose-400 whitespace-nowrap" title={updateBannerError || ""}>
-                ⚠ {updateBannerError || "Installation failed"}
+              <span className="text-[11px] text-rose-500 whitespace-nowrap" title={updateBannerError || ""}>
+                {updateBannerError || "Installation failed"}
               </span>
             )}
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-[var(--border-subtle)]">
               {updateBannerState === "failed" && (
                 <button
                   onClick={() => tauriOpenInstallerFolder()}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-blue-300 bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 cursor-pointer shadow-sm flex items-center gap-1"
+                  className="px-2.5 py-1 rounded-md text-[11px] font-medium text-[var(--text-primary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] cursor-pointer flex items-center gap-1 transition-colors"
                   title="Open installer folder in File Explorer"
                 >
-                  <FolderOpen className="w-3.5 h-3.5" />
+                  <FolderOpen className="w-3 h-3" />
                   <span>Open folder</span>
                 </button>
               )}
               <button
                 onClick={handleBannerUpdate}
                 disabled={updateBannerState === "downloading" || updateBannerState === "installing"}
-                className="btn-primary-3d px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 rounded-md text-[11px] font-semibold text-white cursor-pointer flex items-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: "var(--accent-primary)" }}
                 aria-label="Install software update"
               >
                 {updateBannerState === "downloading" ? (
@@ -2742,7 +2750,7 @@ export default function App() {
               </button>
               <button
                 onClick={handleDismissUpdateBanner}
-                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors cursor-pointer"
+                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
                 title="Dismiss update banner"
                 aria-label="Dismiss update banner"
               >

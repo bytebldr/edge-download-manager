@@ -93,6 +93,7 @@ fn open_persistent_store() -> Store {
 }
 
 static LAST_FLYOUT_BLUR_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LAST_FLYOUT_OPEN_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn epoch_ms_now() -> u64 {
     std::time::SystemTime::now()
@@ -159,7 +160,13 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
                 let w_clone = w.clone();
                 w.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        LAST_FLYOUT_BLUR_MS.store(epoch_ms_now(), Ordering::Relaxed);
+                        let now = epoch_ms_now();
+                        let opened_at = LAST_FLYOUT_OPEN_MS.load(Ordering::Relaxed);
+                        // Ignore transient Windows taskbar focus bounce immediately after opening
+                        if now.saturating_sub(opened_at) < 450 {
+                            return;
+                        }
+                        LAST_FLYOUT_BLUR_MS.store(now, Ordering::Relaxed);
                         let _ = w_clone.destroy();
                         crate::os::trim_process_working_set();
                     }
@@ -229,7 +236,9 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
         )));
     }
 
+    LAST_FLYOUT_OPEN_MS.store(epoch_ms_now(), Ordering::Relaxed);
     let _ = win.show();
+    let _ = win.unminimize();
     let _ = win.set_focus();
 }
 
@@ -822,7 +831,11 @@ fn main() {
                             rect,
                             ..
                         } => {
-                            toggle_tray_flyout(tray.app_handle(), rect);
+                            let app = tray.app_handle().clone();
+                            let app_cb = app.clone();
+                            let _ = app.run_on_main_thread(move || {
+                                toggle_tray_flyout(&app_cb, rect);
+                            });
                         }
                         TrayIconEvent::DoubleClick {
                             button: MouseButton::Left,
