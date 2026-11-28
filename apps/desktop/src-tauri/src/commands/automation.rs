@@ -6,17 +6,6 @@ use crate::state::AppState;
 
 const AUTOMATION_SETTING_KEY: &str = "edm_automation_config";
 
-#[cfg(windows)]
-#[link(name = "kernel32")]
-extern "system" {
-    fn GetCurrentProcess() -> *mut std::ffi::c_void;
-    fn SetProcessWorkingSetSize(
-        h_process: *mut std::ffi::c_void,
-        dw_minimum_working_set_size: usize,
-        dw_maximum_working_set_size: usize,
-    ) -> i32;
-}
-
 #[command]
 pub fn get_automation_config(state: State<'_, AppState>) -> Result<AutomationConfig, String> {
     match state.store.get_setting(AUTOMATION_SETTING_KEY) {
@@ -63,14 +52,5 @@ pub async fn test_automation_webhook(url: String) -> Result<u16, String> {
 
 #[command]
 pub fn trim_idle_webview_memory() -> Result<bool, String> {
-    #[cfg(windows)]
-    unsafe {
-        let ok = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0;
-        Ok(ok)
-    }
-
-    #[cfg(not(windows))]
-    {
-        Ok(false)
-    }
+    Ok(crate::os::trim_process_working_set())
 }

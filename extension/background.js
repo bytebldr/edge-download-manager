@@ -1052,7 +1052,9 @@
       sendResponse({
         connectionStatus,
         tasksCount: latestTasks.length,
-        activeTasks: latestTasks.filter((t) => t.status === "downloading").length
+        activeTasks: latestTasks.filter((t) => t.status === "downloading").length,
+        theme: currentTheme,
+        palette: currentPalette
       });
       return true;
     }
@@ -1216,7 +1218,8 @@
     if (msg.action === "media_detected") {
       const tabId = _sender.tab?.id;
       if (tabId && Array.isArray(msg.media)) {
-        detectedMediaByTab.set(tabId, msg.media);
+        const videoOnly = msg.media.filter((m) => m && m.type !== "audio");
+        detectedMediaByTab.set(tabId, videoOnly);
         syncActionBadge();
       }
       sendResponse({ ok: true });

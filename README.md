@@ -20,40 +20,15 @@
 ---
 
 > [!NOTE]
-> **Early Development (`v0.1.3`)**: Evo Download Manager (EDM) `v0.1.3` delivers a self-tuning Auto-Adaptive Concurrency Engine (up to 64 streams), reliable single-concurrency queuing across HTTP/Torrent/YouTube, standalone capture popup, bottom-right Quick Tray, and hardened local IPC security. Feedback and bug reports are welcome via GitHub Issues!
+> **Early Development (`v0.1.3`)**: Evo Download Manager (EDM) `v0.1.3` delivers a self-tuning Auto-Adaptive Concurrency Engine (up to 64 streams), reliable single-concurrency queuing across HTTP/Torrent/YouTube, standalone capture popup, bottom-right Quick Tray, low-RAM background lifecycle, and hardened local IPC security. Feedback and bug reports are welcome via GitHub Issues!
 
-**Evo Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator**. Designed as a high-performance, ad-free alternative to legacy download managers like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader. 
+**Evo Download Manager (EDM)** is a next-generation **open-source download manager, torrent client, and download accelerator** for Windows — built as a fast, ad-free alternative to legacy tools like Internet Download Manager (IDM), Free Download Manager (FDM), and JDownloader.
 
-Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates file transfers up to 10x using dynamic parallel chunking, automatic BitTorrent & magnet handling, 4K/8K media extraction, and seamless browser extension capture.
-
----
-
-## 📸 Application Showcase
-
-### Modern Desktop Dashboard
-Organize, manage, and monitor all your downloads in a distraction-free, high-density interface with instant filtering by videos, music, archives, documents, and programs.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-desktop-dashboard-v0.0.5.png" alt="EDM Download Manager Dashboard" width="900" />
-</p>
-
-### Live Speed Telemetry & Multi-Connection Inspector
-Inspect genuine transfer speeds, real-time throughput graphs, and per-connection worker progress with zero synthetic numbers or fake peaks.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-telemetry-inspector-v0.0.5.png" alt="EDM Download Manager Live Speed Telemetry" width="720" />
-</p>
-
-### Seamless Browser Companion Extension
-Catch downloads instantly from your favorite browser. Check live progress, pause, resume, or open files directly from the browser popup without switching windows.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bytebldr/evo-download-manager/main/assets/screenshots/edm-browser-extension-v0.0.5.png" alt="EDM Download Manager Browser Extension" width="440" />
-</p>
+Engineered with a memory-safe **Rust** core and **Tauri v2**, EDM accelerates file transfers with dynamic parallel chunking, in-process BitTorrent & magnet handling, 4K/8K media extraction, and seamless browser extension capture — while suspending idle UI processes so background memory stays near zero.
 
 ---
 
-## ✨ Why EDM is the Best Download Manager for Windows
+## ✨ Core Capabilities
 
 ### 🚀 Adaptive Multi-Connection Download Accelerator
 - **Up to 64 Adaptive Parallel Streams**: Dynamically scales from `1` up to `64` concurrent byte-range streams per file when the server supports it, saturating high-speed connections.
@@ -99,7 +74,7 @@ Catch downloads instantly from your favorite browser. Check live progress, pause
 | Feature | EDM (Evo Download Manager) | Internet Download Manager (IDM) | Free Download Manager (FDM) | Default Browser Downloader |
 | :--- | :---: | :---: | :---: | :---: |
 | **License & Price** | **100% Free & Open Source (GPL-3.0)** | Paid (\$24.95 / year) | Free (Closed / Ad-Supported) | Free |
-| **User Interface** | **Modern Dark Theme & 3D Glass UI** | 90s-era Windows dialogs | Modern | Basic download shelf |
+| **User Interface** | **Modern Dark & Light Theme (6 Palettes)** | 90s-era Windows dialogs | Modern | Basic download shelf |
 | **Parallel Acceleration** | **Up to 64 Adaptive Streams** | Up to 32 Connections | Multi-segmented | Single connection |
 | **BitTorrent & Magnet** | **Built-in In-Process Swarm Engine** | ❌ No Torrent Support | Supported | ❌ No |
 | **YouTube & Video Downloader** | **Dual-Stream Parallel Pipeline** | Basic video sniffer | Basic video grabber | ❌ No |

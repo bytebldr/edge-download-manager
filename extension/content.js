@@ -65,6 +65,11 @@
   function registerMedia(url, titleHint, type = "video", duration, quality) {
     if (!url || typeof url !== "string") return;
     if (url.startsWith("data:") || url.length < 8) return;
+    if (type === "audio") return;
+    const cleanPath = url.split("?")[0].toLowerCase();
+    if (/\.(mp3|flac|wav|m4a|aac|ogg|opus|wma|png|jpe?g|gif|webp|svg|ico|css|js|ts|json|woff2?|ttf)$/.test(cleanPath)) {
+      return;
+    }
     if (detectedMediaMap.has(url)) return;
     const title = cleanMediaTitle(titleHint || document.title, url);
     const format = detectFormat(url);
@@ -107,24 +112,11 @@
         }
       });
     });
-    document.querySelectorAll("audio").forEach((audio) => {
-      const src = audio.currentSrc || audio.src;
-      const title = audio.getAttribute("title") || audio.getAttribute("aria-label") || document.title;
-      if (src && !src.startsWith("blob:")) {
-        registerMedia(src, title, "audio", audio.duration);
-      }
-      audio.querySelectorAll("source").forEach((source) => {
-        if (source.src && !source.src.startsWith("blob:")) {
-          registerMedia(source.src, title, "audio", audio.duration);
-        }
-      });
-    });
-    const mediaLinkRegex = /\.(mp4|mkv|webm|m3u8|mpd|mp3|flac|wav|aac|m4a|mov|avi|ts)(\?.*)?$/i;
+    const videoLinkRegex = /\.(mp4|mkv|webm|m3u8|mpd|mov|avi)(\?.*)?$/i;
     document.querySelectorAll("a[href]").forEach((link) => {
       const href = link.href;
-      if (mediaLinkRegex.test(href)) {
-        const isAudio = /\.(mp3|flac|wav|aac|m4a)(\?.*)?$/i.test(href);
-        registerMedia(href, link.innerText || link.getAttribute("title") || document.title, isAudio ? "audio" : "video");
+      if (videoLinkRegex.test(href)) {
+        registerMedia(href, link.innerText || link.getAttribute("title") || document.title, "video");
       }
     });
   }

@@ -119,6 +119,9 @@ pub async fn start_ws_server(manager: Arc<WsManager>) {
         let mut last_serialized = String::new();
         loop {
             interval.tick().await;
+            if ticker_mgr.tx_broadcast.receiver_count() == 0 {
+                continue;
+            }
             let snapshot = ticker_mgr.build_snapshot().await;
             if let Ok(json) = serde_json::to_string(&snapshot) {
                 if json != last_serialized {

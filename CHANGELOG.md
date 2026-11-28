@@ -10,6 +10,8 @@ All notable changes to **Evo Download Manager (EDM)** are documented in this fil
 - **Standalone Add Download Popup (`#add-download`)**: Captured external downloads now open a compact `540×430` frameless standalone dialog window (`AddDownloadPopup.tsx`) without showing the main application window behind it.
 - **Tray Flyout Corner Anchoring & Auto-Promotion**: Anchored `#tray-flyout` flush to the bottom-right corner (`12px` margin) and added `promote_windows_tray_icon()` in `os/assets.rs` to keep EDM's Windows 11 system tray icon visible.
 - **Typography Alignment & About Copy**: Fixed 2-column dropdown alignment in `GeneralSettingsTab.tsx` when using fonts like `Poppins`, and updated the About modal description in `App.tsx`.
+- **Low-RAM Background Lifecycle & Deep Sleep Fix**: Destroy hidden WebView2 windows (`main`, `tray-flyout`, `add-download`) on `Warm`/`ListenerSleep`, background/autostart boot, and non-main `app_close`; trim process working-set memory (`SetProcessWorkingSetSize`); treat minimized windows as non-blocking for idle sleep (`is_main_window_open()`); align default `idle_exit_minutes` to `15`; and skip idle WebSocket snapshot/tray tooltip work when no clients or changes exist.
+- **Extension Live Progress, Video-Only Sniffer & Settings UI Parity**: Fixed `patchDownloadCard()` in `extension/src/popup.ts` so live progress bars update through completion without reopening the popup; restricted media detection to video streams/files only while keeping the extension icon badge strictly for active download tasks; and updated `extension/options.html` / `extension/src/options.ts` to match the desktop dark/light theme and 6-palette design system.
 
 ---
 

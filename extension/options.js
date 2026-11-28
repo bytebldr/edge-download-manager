@@ -84,8 +84,16 @@
       "edm_auto_reconnect",
       "edm_notify_complete",
       "edm_notify_fail",
-      "edm_youtube_pill_enabled"
+      "edm_youtube_pill_enabled",
+      "edm_theme",
+      "edm_palette"
     ]);
+    if (stored.edm_palette) {
+      document.documentElement.setAttribute("data-palette", stored.edm_palette);
+    }
+    if (stored.edm_theme) {
+      document.documentElement.setAttribute("data-theme", stored.edm_theme);
+    }
     if (isValidToken(stored.edm_ws_token)) {
       inputToken.value = stored.edm_ws_token.trim();
     } else {
@@ -179,6 +187,12 @@
       if (chrome.runtime.lastError || !resp) {
         updateBadge("disconnected", "Desktop Unreachable");
         return;
+      }
+      if (resp.palette) {
+        document.documentElement.setAttribute("data-palette", resp.palette);
+      }
+      if (resp.theme) {
+        document.documentElement.setAttribute("data-theme", resp.theme);
       }
       if (resp.connectionStatus === "connected") {
         updateBadge("connected", `Connected (${resp.activeTasks || 0} active)`);

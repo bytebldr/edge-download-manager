@@ -1163,6 +1163,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       connectionStatus,
       tasksCount: latestTasks.length,
       activeTasks: latestTasks.filter((t) => t.status === "downloading").length,
+      theme: currentTheme,
+      palette: currentPalette,
     });
     return true;
   }
@@ -1339,7 +1341,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action === "media_detected") {
     const tabId = _sender.tab?.id;
     if (tabId && Array.isArray(msg.media)) {
-      detectedMediaByTab.set(tabId, msg.media);
+      const videoOnly = msg.media.filter((m: any) => m && m.type !== "audio");
+      detectedMediaByTab.set(tabId, videoOnly);
       syncActionBadge();
     }
     sendResponse({ ok: true });

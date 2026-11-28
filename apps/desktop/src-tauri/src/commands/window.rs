@@ -37,6 +37,12 @@ pub async fn app_close(
         std::process::exit(0);
     }
 
+    if window.label() != "main" {
+        let _ = window.destroy();
+        crate::os::trim_process_working_set();
+        return Ok(());
+    }
+
     let close_to_tray = if let Ok(Some(json_str)) = state.store.get_setting("app_settings") {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
             val.get("general")

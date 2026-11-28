@@ -519,8 +519,8 @@
               <line x1="2" y1="12" x2="22" y2="12"></line>
             </svg>
           </div>
-          <div class="empty-title" style="font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">No Media Streams Detected</div>
-          <div class="empty-desc" style="font-size: 11px; color: var(--text-muted); max-width: 280px; margin: 0 auto; line-height: 1.4;">Play any video or audio stream on the active tab to sniff and accelerate via EDM.</div>
+          <div class="empty-title" style="font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">No Video Streams Detected</div>
+          <div class="empty-desc" style="font-size: 11px; color: var(--text-muted); max-width: 280px; margin: 0 auto; line-height: 1.4;">Play any video on the active tab to sniff and accelerate via EDM.</div>
           <button id="btnRescanMedia" class="btn-3d" style="margin-top: 16px; font-size: 11px; padding: 6px 14px;">Rescan Current Tab</button>
         </div>
       `;
@@ -545,7 +545,7 @@
               </div>
             </div>
           </div>
-          <button class="btn-3d btn-primary act-download-media" data-idx="${idx}" style="flex-shrink: 0; padding: 5px 12px; font-size: 11px; background: #2563EB;">
+          <button class="btn-3d btn-primary act-download-media" data-idx="${idx}" style="flex-shrink: 0; padding: 5px 12px; font-size: 11px;">
             Download
           </button>
         </div>
@@ -755,8 +755,10 @@
       const isQueued = item.state === "queued" || item.state === "connecting";
       const isFailed = item.state === "failed" || item.state === "cancelled";
       const expectedClass = isCompleted ? "card-completed" : isQueued ? "card-queued" : isDownloading ? "card-downloading" : "";
-      const hasStateClass = expectedClass ? card.classList.contains(expectedClass) : true;
-      if (!hasStateClass) {
+      const hasExactStateClass = expectedClass ? card.classList.contains(expectedClass) : !card.classList.contains("card-completed") && !card.classList.contains("card-queued") && !card.classList.contains("card-downloading");
+      const prevState = card.getAttribute("data-state");
+      if (!hasExactStateClass || prevState !== item.state) {
+        card.setAttribute("data-state", item.state);
         card.classList.remove("card-completed", "card-queued", "card-downloading");
         if (expectedClass) card.classList.add(expectedClass);
         const actionsEl = card.querySelector(".card-actions-cluster");
@@ -788,19 +790,52 @@
           metaEl.innerHTML = newMeta;
         }
       }
-      let progressEl = card.querySelector(".card-progress-border");
-      if (isDownloading) {
-        if (!progressEl) {
-          progressEl = document.createElement("div");
-          progressEl.className = "card-progress-border";
-          card.appendChild(progressEl);
+      const trackEl = card.querySelector(".card-progress-track");
+      if (trackEl) {
+        if (isQueued && pct === 0) {
+          if (!trackEl.querySelector(".sweep-zinc") || trackEl.querySelector(".card-progress-fill")) {
+            trackEl.innerHTML = `<div class="card-progress-sweep sweep-zinc"></div>`;
+          }
+        } else {
+          const fillColorClass = isCompleted ? "fill-emerald" : isPaused ? "fill-amber" : isFailed ? "fill-rose" : "fill-accent";
+          const targetPct = isCompleted ? 100 : pct;
+          const targetWidth = `${targetPct}%`;
+          let fillEl = trackEl.querySelector(".card-progress-fill");
+          if (!fillEl) {
+            trackEl.innerHTML = `<div class="card-progress-fill ${fillColorClass}" style="width:${targetWidth};"></div>`;
+            fillEl = trackEl.querySelector(".card-progress-fill");
+          } else {
+            if (!fillEl.classList.contains(fillColorClass)) {
+              fillEl.classList.remove("fill-emerald", "fill-amber", "fill-rose", "fill-accent");
+              fillEl.classList.add(fillColorClass);
+            }
+            if (fillEl.style.width !== targetWidth) {
+              fillEl.style.width = targetWidth;
+            }
+          }
+          const shouldSweep = (isDownloading || isPaused) && targetPct < 100;
+          let sweepWin = trackEl.querySelector(".card-sweep-window");
+          if (shouldSweep) {
+            const sweepClass = isPaused ? "sweep-amber" : "sweep-accent";
+            if (!sweepWin) {
+              sweepWin = document.createElement("div");
+              sweepWin.className = "card-sweep-window";
+              sweepWin.innerHTML = `<div class="card-progress-sweep ${sweepClass}"></div>`;
+              trackEl.appendChild(sweepWin);
+            } else {
+              const sweepInner = sweepWin.querySelector(".card-progress-sweep");
+              if (sweepInner && !sweepInner.classList.contains(sweepClass)) {
+                sweepInner.classList.remove("sweep-amber", "sweep-accent", "sweep-zinc");
+                sweepInner.classList.add(sweepClass);
+              }
+            }
+            if (sweepWin.style.left !== targetWidth) {
+              sweepWin.style.left = targetWidth;
+            }
+          } else if (sweepWin) {
+            sweepWin.remove();
+          }
         }
-        const newWidth = `${pct}%`;
-        if (progressEl.style.width !== newWidth) {
-          progressEl.style.width = newWidth;
-        }
-      } else if (progressEl) {
-        progressEl.remove();
       }
     }
     renderTasksListHtml() {

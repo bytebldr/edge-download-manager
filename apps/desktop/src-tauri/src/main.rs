@@ -683,9 +683,10 @@ fn main() {
                     tracing::info!("EDM launched in {:?} mode ({})", runtime_mode, hash);
                 } else if (is_autostart_boot || is_background_boot) && !show_window {
                     tracing::info!(
-                        "EDM started in background mode; keeping window hidden"
+                        "EDM started in background mode; destroying main webview to conserve RAM"
                     );
-                    let _ = window.hide();
+                    let _ = window.destroy();
+                    crate::os::trim_process_working_set();
                 } else {
                     let _ = window.set_resizable(true);
                     let _ = window.set_min_size(Some(tauri::Size::Logical(tauri::LogicalSize {
@@ -805,11 +806,12 @@ fn main() {
                 *lock_unpoisoned(&app_state_ref.tray_handle) = Some(tray.clone());
                 *lock_unpoisoned(&app_state_ref.app_handle) = Some(app.handle().clone());
 
-                // Background dynamic tray tooltip ticker (every 1 second)
+                // Background dynamic tray tooltip ticker (every 2 seconds; only updates on change)
                 let ticker_tasks = app_state_ref.tasks.clone();
                 let ticker_tray = tray.clone();
                 app_state_ref.rt_handle.spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+                    let mut last_tooltip = String::new();
                     loop {
                         interval.tick().await;
                         let (active_count, agg_bps) = {
@@ -837,7 +839,10 @@ fn main() {
                             format!("EDM — {} downloading ({:.1} MB/s)", active_count, mbps)
                         };
 
-                        let _ = ticker_tray.set_tooltip(Some(tooltip));
+                        if tooltip != last_tooltip {
+                            let _ = ticker_tray.set_tooltip(Some(&tooltip));
+                            last_tooltip = tooltip;
+                        }
                     }
                 });
 

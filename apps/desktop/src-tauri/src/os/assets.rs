@@ -99,3 +99,26 @@ if (Test-Path $base) {
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 }
+
+/// Asks the Windows memory manager to trim unused working-set pages from the
+/// current process, reclaiming memory after WebView2 windows are destroyed or
+/// when transitioning into idle/sleep states.
+pub fn trim_process_working_set() -> bool {
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentProcess() -> *mut std::ffi::c_void;
+            fn SetProcessWorkingSetSize(
+                h_process: *mut std::ffi::c_void,
+                dw_minimum_working_set_size: usize,
+                dw_maximum_working_set_size: usize,
+            ) -> i32;
+        }
+        unsafe { SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0 }
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}

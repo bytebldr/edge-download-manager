@@ -44,7 +44,7 @@ pub struct LifecycleManager {
 impl LifecycleManager {
     pub fn new(store: Store, ws_manager: Arc<crate::ws_server::WsManager>) -> Self {
         // Read initial settings
-        let mut exit_mins = Some(30u64); // default 30 mins
+        let mut exit_mins = Some(15u64); // default 15 mins (matches frontend settings.ts)
         let mut keep = false;
 
         if let Ok(Some(s)) = store.get_setting("app_settings") {
@@ -172,15 +172,35 @@ impl LifecycleManager {
         }
     }
 
-    pub async fn destroy_window_if_closed(&self) {
+    fn is_main_window_open(&self) -> bool {
         if let Some(app) = self.get_app_handle() {
             if let Some(window) = app.get_webview_window("main") {
-                if let Ok(is_visible) = window.is_visible() {
-                    if !is_visible {
-                        info!("Main window is closed/hidden; maintaining lightweight background state");
-                        let _ = window.hide();
+                let visible = window.is_visible().unwrap_or(false);
+                let minimized = window.is_minimized().unwrap_or(false);
+                return visible && !minimized;
+            }
+        }
+        false
+    }
+
+    pub async fn destroy_window_if_closed(&self) {
+        if let Some(app) = self.get_app_handle() {
+            let mut destroyed_any = false;
+            for label in ["main", "tray-flyout", "add-download"] {
+                if let Some(window) = app.get_webview_window(label) {
+                    if !window.is_visible().unwrap_or(false) {
+                        info!(
+                            "Destroying hidden '{}' webview window to reclaim WebView2 RAM",
+                            label
+                        );
+                        if window.destroy().is_ok() {
+                            destroyed_any = true;
+                        }
                     }
                 }
+            }
+            if destroyed_any {
+                crate::os::trim_process_working_set();
             }
         }
     }
@@ -193,21 +213,17 @@ impl LifecycleManager {
         // Invariant Guard 1: Never sleep or exit if tasks are downloading/queued, writes pending, or keep-awake set
         let has_active_tasks = active_download_count > 0;
         let is_keep_awake = self.keep_awake.load(Ordering::Relaxed);
-
-        let window_open = if let Some(app) = self.get_app_handle() {
-            if let Some(window) = app.get_webview_window("main") {
-                window.is_visible().unwrap_or(false)
-            } else {
-                false
-            }
-        } else {
-            false
-        };
+        let window_open = self.is_main_window_open();
 
         if has_active_tasks || uncommitted_writes || window_open || is_keep_awake {
+            *self.last_activity_at.write().await = Instant::now();
             if *self.current_state.read().await != LifecycleState::Active {
                 self.transition_to(LifecycleState::Active, "Active tasks or window present")
                     .await;
+            }
+            // Even while background downloads are active, reclaim hidden WebView2 RAM
+            if !window_open {
+                self.destroy_window_if_closed().await;
             }
             return;
         }
@@ -222,11 +238,12 @@ impl LifecycleManager {
                 // Step down from Active to Warm when idle with window closed
                 self.transition_to(LifecycleState::Warm, "No active tasks and window closed")
                     .await;
-                // Destroy window after grace period to reclaim WebView2 RAM
+                // Destroy hidden WebView2 windows to reclaim ~150-200 MB RAM
                 self.destroy_window_if_closed().await;
             }
 
             LifecycleState::Warm => {
+                self.destroy_window_if_closed().await;
                 let warm_limit =
                     Duration::from_secs(self.warm_timeout_secs.load(Ordering::Relaxed));
                 if idle_dur >= warm_limit {
@@ -249,6 +266,7 @@ impl LifecycleManager {
                             "Configured idle exit duration reached in Listener Sleep",
                         )
                         .await;
+                        let _ = self.store.checkpoint();
                         // Clean shutdown
                         info!("EDM entering Deep Sleep (process complete exit)");
                         std::process::exit(0);
@@ -284,8 +302,9 @@ impl LifecycleManager {
             self.ws_manager.broadcast_snapshot().await;
 
             if next == LifecycleState::ListenerSleep {
-                // Drop idle connections, checkpoint SQLite
+                // Drop idle connections, checkpoint SQLite, and trim working set
                 let _ = self.store.checkpoint();
+                crate::os::trim_process_working_set();
             }
         }
     }
@@ -293,15 +312,7 @@ impl LifecycleManager {
     pub async fn get_status(&self, active_tasks: usize) -> LifecycleStatus {
         let state = *self.current_state.read().await;
         let entered_at = *self.state_entered_at.read().await;
-        let window_open = if let Some(app) = self.get_app_handle() {
-            if let Some(window) = app.get_webview_window("main") {
-                window.is_visible().unwrap_or(false)
-            } else {
-                false
-            }
-        } else {
-            false
-        };
+        let window_open = self.is_main_window_open();
 
         LifecycleStatus {
             state,

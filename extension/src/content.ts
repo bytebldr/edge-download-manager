@@ -80,6 +80,12 @@ function detectFormat(url: string): string {
 function registerMedia(url: string, titleHint?: string, type: "video" | "audio" | "stream" = "video", duration?: number, quality?: string) {
   if (!url || typeof url !== "string") return;
   if (url.startsWith("data:") || url.length < 8) return;
+  // Only catch video streams/files (ignore audio-only or non-video assets)
+  if (type === "audio") return;
+  const cleanPath = url.split("?")[0].toLowerCase();
+  if (/\.(mp3|flac|wav|m4a|aac|ogg|opus|wma|png|jpe?g|gif|webp|svg|ico|css|js|ts|json|woff2?|ttf)$/.test(cleanPath)) {
+    return;
+  }
   if (detectedMediaMap.has(url)) return;
 
   const title = cleanMediaTitle(titleHint || document.title, url);
@@ -134,27 +140,12 @@ function scanDOMForMedia() {
     // Floating video player overlay removed permanently per user request
   });
 
-  // B. Scan <audio> elements
-  document.querySelectorAll<HTMLAudioElement>("audio").forEach((audio) => {
-    const src = audio.currentSrc || audio.src;
-    const title = audio.getAttribute("title") || audio.getAttribute("aria-label") || document.title;
-    if (src && !src.startsWith("blob:")) {
-      registerMedia(src, title, "audio", audio.duration);
-    }
-    audio.querySelectorAll<HTMLSourceElement>("source").forEach((source) => {
-      if (source.src && !source.src.startsWith("blob:")) {
-        registerMedia(source.src, title, "audio", audio.duration);
-      }
-    });
-  });
-
-  // C. Scan <a> links that directly point to media
-  const mediaLinkRegex = /\.(mp4|mkv|webm|m3u8|mpd|mp3|flac|wav|aac|m4a|mov|avi|ts)(\?.*)?$/i;
+  // B. Scan <a> links that directly point to video files/streams
+  const videoLinkRegex = /\.(mp4|mkv|webm|m3u8|mpd|mov|avi)(\?.*)?$/i;
   document.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => {
     const href = link.href;
-    if (mediaLinkRegex.test(href)) {
-      const isAudio = /\.(mp3|flac|wav|aac|m4a)(\?.*)?$/i.test(href);
-      registerMedia(href, link.innerText || link.getAttribute("title") || document.title, isAudio ? "audio" : "video");
+    if (videoLinkRegex.test(href)) {
+      registerMedia(href, link.innerText || link.getAttribute("title") || document.title, "video");
     }
   });
 }
