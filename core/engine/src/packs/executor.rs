@@ -255,9 +255,9 @@ impl PackExecutor {
                                 }
                             };
 
-                            let iv = seg
-                                .iv
-                                .unwrap_or_else(|| super::remux::sequence_to_iv(seg.sequence_number));
+                            let iv = seg.iv.unwrap_or_else(|| {
+                                super::remux::sequence_to_iv(seg.sequence_number)
+                            });
                             super::remux::decrypt_aes128_segment(&raw_bytes, &key_bytes, &iv)?
                         } else {
                             raw_bytes.to_vec()
@@ -296,9 +296,7 @@ impl PackExecutor {
                                 live_workers: concurrency as u32,
                                 max_allowed_connections: 32,
                                 mode: AccelerationMode::Optimizing,
-                                eta_seconds: Some(
-                                    (total_segments.saturating_sub(done_now)) as u64,
-                                ),
+                                eta_seconds: Some((total_segments.saturating_sub(done_now)) as u64),
                                 decision_reason: format!(
                                     "M3U8 32-way Parallel Chunk {}/{}",
                                     done_now, total_segments

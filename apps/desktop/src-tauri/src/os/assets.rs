@@ -137,10 +137,21 @@ pub fn trim_process_working_set() -> bool {
                 dw_minimum_working_set_size: usize,
                 dw_maximum_working_set_size: usize,
             ) -> i32;
-            fn CreateToolhelp32Snapshot(dw_flags: u32, th32_process_id: u32) -> *mut std::ffi::c_void;
-            fn Process32FirstW(h_snapshot: *mut std::ffi::c_void, lppe: *mut ProcessEntry32W) -> i32;
-            fn Process32NextW(h_snapshot: *mut std::ffi::c_void, lppe: *mut ProcessEntry32W) -> i32;
-            fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32) -> *mut std::ffi::c_void;
+            fn CreateToolhelp32Snapshot(
+                dw_flags: u32,
+                th32_process_id: u32,
+            ) -> *mut std::ffi::c_void;
+            fn Process32FirstW(
+                h_snapshot: *mut std::ffi::c_void,
+                lppe: *mut ProcessEntry32W,
+            ) -> i32;
+            fn Process32NextW(h_snapshot: *mut std::ffi::c_void, lppe: *mut ProcessEntry32W)
+                -> i32;
+            fn OpenProcess(
+                dw_desired_access: u32,
+                b_inherit_handle: i32,
+                dw_process_id: u32,
+            ) -> *mut std::ffi::c_void;
             fn CloseHandle(h_object: *mut std::ffi::c_void) -> i32;
         }
 
@@ -149,7 +160,8 @@ pub fn trim_process_working_set() -> bool {
         const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
 
         unsafe {
-            let self_ok = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0;
+            let self_ok =
+                SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0;
 
             let my_pid = GetCurrentProcessId();
             let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);

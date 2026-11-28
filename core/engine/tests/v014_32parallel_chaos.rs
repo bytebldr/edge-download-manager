@@ -229,10 +229,7 @@ async fn handle_m3u8_playlist(
 
 async fn handle_hls_segment(AxumPath(seg): AxumPath<String>) -> Response {
     tokio::time::sleep(Duration::from_millis(120)).await;
-    let idx: u8 = seg
-        .trim_end_matches(".ts")
-        .parse::<u64>()
-        .unwrap_or(0) as u8;
+    let idx: u8 = seg.trim_end_matches(".ts").parse::<u64>().unwrap_or(0) as u8;
     // 1 KiB payload tagged with segment index
     let mut data = vec![0x47u8; 1024]; // MPEG-TS sync byte 0x47
     data[1] = idx;
@@ -268,7 +265,7 @@ async fn spawn_v014_server() -> (SocketAddr, ChaosState, tokio::task::JoinHandle
 async fn test_v014_32_parallel_saturation_and_speedup() {
     let (addr, state, _srv) = spawn_v014_server().await;
     let file_size: u64 = 48 * 1024 * 1024; // 48 MiB
-    // Per-socket throttle 512 KiB/s + 15ms TTFB
+                                           // Per-socket throttle 512 KiB/s + 15ms TTFB
     let url = format!(
         "http://{}/file/{}?seed=42&throttle_bps=524288&ttfb_ms=15",
         addr, file_size
@@ -303,7 +300,10 @@ async fn test_v014_32_parallel_saturation_and_speedup() {
     };
 
     let t0 = Instant::now();
-    let out = engine.download(task, Some(cb)).await.expect("32-stream download failed");
+    let out = engine
+        .download(task, Some(cb))
+        .await
+        .expect("32-stream download failed");
     let elapsed = t0.elapsed();
     let speed_mbs = (file_size as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64();
     let peak = state.peak_conns.load(Ordering::SeqCst);
@@ -316,20 +316,13 @@ async fn test_v014_32_parallel_saturation_and_speedup() {
         peak
     );
 
-    assert!(
-        peak == 32,
-        "Expected server peak_conns == 32, got {}",
-        peak
-    );
+    assert!(peak == 32, "Expected server peak_conns == 32, got {}", peak);
     assert!(
         speed_mbs >= 3.5,
         "Expected >= 3.5 MiB/s (>= 7x single-stream in debug build) under 512 KiB/s per-socket throttle, got {:.2} MiB/s",
         speed_mbs
     );
-    assert_eq!(
-        actual_file_sha256(&out),
-        expected_sha256_hex(file_size, 42)
-    );
+    assert_eq!(actual_file_sha256(&out), expected_sha256_hex(file_size, 42));
 }
 
 #[tokio::test]
@@ -373,7 +366,10 @@ async fn test_v014_pre_rename_hash_quarantine_and_repr_digest() {
         cancelled: Arc::new(AtomicBool::new(false)),
         ..Default::default()
     };
-    let ok_path = engine.download(good_task, None).await.expect("Repr-Digest download failed");
+    let ok_path = engine
+        .download(good_task, None)
+        .await
+        .expect("Repr-Digest download failed");
     assert_eq!(
         actual_file_sha256(&ok_path),
         expected_sha256_hex(file_size, 11)

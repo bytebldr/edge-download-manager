@@ -975,7 +975,11 @@ mod tests {
             controller.evaluate_sample_at(t1, 10_000_000, Duration::from_secs(1), 0, false, None);
         assert!(matches!(
             d1,
-            AdaptiveDecision::ScaleUp { from: 8, to: 16, .. }
+            AdaptiveDecision::ScaleUp {
+                from: 8,
+                to: 16,
+                ..
+            }
         ));
 
         // +60% gain (>= +8% and >= +50% warmup) expands H2 cap 16 -> 24 and jumps 16 -> 24
@@ -984,7 +988,11 @@ mod tests {
             controller.evaluate_sample_at(t2, 16_000_000, Duration::from_secs(1), 0, false, None);
         assert!(matches!(
             d2,
-            AdaptiveDecision::ScaleUp { from: 16, to: 24, .. }
+            AdaptiveDecision::ScaleUp {
+                from: 16,
+                to: 24,
+                ..
+            }
         ));
     }
 

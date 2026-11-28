@@ -279,7 +279,10 @@ impl FeaturePackManager {
         }
 
         // 3. FTP / FTPS / SFTP
-        if lower.starts_with("ftp://") || lower.starts_with("ftps://") || lower.starts_with("sftp://") {
+        if lower.starts_with("ftp://")
+            || lower.starts_with("ftps://")
+            || lower.starts_with("sftp://")
+        {
             let filename = trimmed.split('/').next_back().map(|s| s.to_string());
             return ParsedPackTarget {
                 pack_id: FeaturePackId::FtpPack,

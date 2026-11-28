@@ -138,9 +138,7 @@ impl AdaptiveEngine {
         for _ in 0..MAX_REDIRECT_HOPS {
             let same_origin = origin_key(&current_url) == initial_origin;
             let mut req = if use_get_range {
-                client
-                    .get(current_url.as_str())
-                    .header(RANGE, "bytes=0-0")
+                client.get(current_url.as_str()).header(RANGE, "bytes=0-0")
             } else {
                 client.head(current_url.as_str())
             };
@@ -1434,11 +1432,7 @@ impl AdaptiveEngine {
         let effective_hash = task.expected_hash.clone().or(probe.repr_digest.clone());
         drop(writer_tx);
         let final_path = tokio::task::spawn_blocking(move || {
-            writer_handle.finish_verified(
-                Some(&url_for_zone),
-                total_size,
-                effective_hash.as_ref(),
-            )
+            writer_handle.finish_verified(Some(&url_for_zone), total_size, effective_hash.as_ref())
         })
         .await
         .map_err(|e| format!("File finalization task failed: {}", e))?
