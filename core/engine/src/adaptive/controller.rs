@@ -4,13 +4,15 @@ use tracing::debug;
 
 use super::types::{AccelerationMode, AdaptiveConfig, AdaptiveDecision, TransportProtocol};
 
-pub const CONNECTION_STEPS: &[u32] = &[1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+pub const CONNECTION_STEPS: &[u32] = &[1, 4, 8, 16, 24, 32, 48, 64];
 
-const HTTP2_DEFAULT_MAX_CONNECTIONS: u32 = 6;
-const HTTP2_THROTTLED_MAX_CONNECTIONS: u32 = 16;
-const HTTP2_PER_STREAM_THROTTLE_GAIN: f64 = 0.25;
+const HTTP2_DEFAULT_MAX_CONNECTIONS: u32 = 16;
+const HTTP2_THROTTLED_MAX_CONNECTIONS: u32 = 32;
+const HTTP2_PER_STREAM_THROTTLE_GAIN: f64 = 0.08;
 const TRANSIENT_ERROR_WINDOW: Duration = Duration::from_secs(10);
 const TRANSIENT_ERROR_THRESHOLD: usize = 3;
+const RTT_BUFFERBLOAT_FLOOR: Duration = Duration::from_millis(30);
+const RTT_BUFFERBLOAT_MULTIPLIER: f64 = 2.5;
 
 pub fn next_step_up(current: u32, max: u32) -> u32 {
     let target = CONNECTION_STEPS
@@ -53,6 +55,9 @@ pub struct AdaptiveController {
     last_adjustment: Instant,
     rolling_throughput_bps: f64,
     previous_baseline_throughput: f64,
+    window_bytes: u64,
+    window_secs: f64,
+    baseline_rtt: Option<Duration>,
     consecutive_failed_probes: u32,
     stable_locked_until: Option<Instant>,
     limited_until: Option<Instant>,
@@ -108,6 +113,9 @@ impl AdaptiveController {
             last_adjustment: Instant::now(),
             rolling_throughput_bps: 0.0,
             previous_baseline_throughput: 0.0,
+            window_bytes: 0,
+            window_secs: 0.0,
+            baseline_rtt: None,
             consecutive_failed_probes: 0,
             stable_locked_until: None,
             limited_until: None,
@@ -234,13 +242,37 @@ impl AdaptiveController {
         has_http_429: bool,
         retry_after: Option<Duration>,
     ) -> AdaptiveDecision {
-        self.evaluate_sample_at(
+        self.evaluate_sample_with_context(
+            bytes_transferred,
+            sample_duration,
+            active_error_count,
+            has_http_429,
+            retry_after,
+            None,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_sample_with_context(
+        &mut self,
+        bytes_transferred: u64,
+        sample_duration: Duration,
+        active_error_count: u32,
+        has_http_429: bool,
+        retry_after: Option<Duration>,
+        sample_rtt: Option<Duration>,
+        gate_contended: bool,
+    ) -> AdaptiveDecision {
+        self.evaluate_sample_with_context_at(
             Instant::now(),
             bytes_transferred,
             sample_duration,
             active_error_count,
             has_http_429,
             retry_after,
+            sample_rtt,
+            gate_contended,
         )
     }
 
@@ -254,17 +286,50 @@ impl AdaptiveController {
         has_http_429: bool,
         retry_after: Option<Duration>,
     ) -> AdaptiveDecision {
+        self.evaluate_sample_with_context_at(
+            now,
+            bytes_transferred,
+            sample_duration,
+            active_error_count,
+            has_http_429,
+            retry_after,
+            None,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_sample_with_context_at(
+        &mut self,
+        now: Instant,
+        bytes_transferred: u64,
+        sample_duration: Duration,
+        active_error_count: u32,
+        has_http_429: bool,
+        retry_after: Option<Duration>,
+        sample_rtt: Option<Duration>,
+        gate_contended: bool,
+    ) -> AdaptiveDecision {
         let secs = sample_duration.as_secs_f64().max(0.001);
         let instant_bps = (bytes_transferred as f64 / secs) * 8.0;
+        self.window_bytes = self.window_bytes.saturating_add(bytes_transferred);
+        self.window_secs += secs;
 
-        // Time-aware exponential moving average:
-        // Adapts smoothing weight based on sample duration (~0.15 for 250ms telemetry, ~0.35 for 1s samples)
+        // Time-aware exponential moving average for telemetry display
         let alpha = (secs * 0.35).clamp(0.12, 0.40);
         if self.rolling_throughput_bps == 0.0 {
             self.rolling_throughput_bps = instant_bps;
         } else {
             self.rolling_throughput_bps =
                 alpha * instant_bps + (1.0 - alpha) * self.rolling_throughput_bps;
+        }
+
+        if let Some(rtt) = sample_rtt {
+            let floored = rtt.max(RTT_BUFFERBLOAT_FLOOR);
+            self.baseline_rtt = Some(match self.baseline_rtt {
+                Some(b) => b.min(floored),
+                None => floored,
+            });
         }
 
         // Single stream fallback invariant: never scale if server cannot handle ranges
@@ -440,6 +505,51 @@ impl AdaptiveController {
             };
         }
 
+        // 4a. Gate-contention freeze: if workers are queued locally on HostConcurrencyGate,
+        // do not misinterpret permit starvation as remote bandwidth plateau or congestion.
+        if gate_contended {
+            let reason = format!(
+                "Host concurrency gate contended across active downloads; holding {} streams",
+                self.current_connections
+            );
+            self.status_reason = reason.clone();
+            return AdaptiveDecision::HoldStable {
+                connections: self.current_connections,
+                reason,
+            };
+        }
+
+        // 4b. RTT bufferbloat guard (only on fresh TTFB samples exceeding 2.5x floored baseline)
+        if let (Some(rtt), Some(base_rtt)) = (sample_rtt, self.baseline_rtt) {
+            if self.current_connections > min_allowed
+                && rtt.as_secs_f64() > base_rtt.as_secs_f64() * RTT_BUFFERBLOAT_MULTIPLIER
+            {
+                let step_from = self.current_connections;
+                let step_to = next_step_down(step_from, min_allowed);
+                self.stable_target = step_to;
+                self.current_connections = step_to;
+                self.mode = AccelerationMode::Stable;
+                self.probe_state = ProbeState::Baseline;
+                self.last_adjustment = now;
+                self.window_bytes = 0;
+                self.window_secs = 0.0;
+                self.stable_locked_until = Some(now + Duration::from_secs(20));
+                let reason = format!(
+                    "Bufferbloat RTT spike ({}ms > {:.0}ms baseline) -> stepping down {} -> {}",
+                    rtt.as_millis(),
+                    base_rtt.as_millis() as f64 * RTT_BUFFERBLOAT_MULTIPLIER,
+                    step_from,
+                    step_to
+                );
+                self.status_reason = reason.clone();
+                return AdaptiveDecision::ScaleDown {
+                    from: step_from,
+                    to: step_to,
+                    reason,
+                };
+            }
+        }
+
         // 4b. Severe throughput collapse guard (e.g. 10 MB/s -> 25 KB/s CDN throttling):
         // Break Stable lock immediately and halve concurrency to relieve server throttling.
         if self.current_connections > min_allowed.max(4)
@@ -500,8 +610,15 @@ impl AdaptiveController {
         if self.mode == AccelerationMode::Auto || self.mode == AccelerationMode::Optimizing {
             match self.probe_state {
                 ProbeState::Baseline | ProbeState::CooldownBeforeRetry => {
-                    // Record fresh baseline at current stable_target before launching probe
-                    self.previous_baseline_throughput = self.rolling_throughput_bps;
+                    // Record fresh baseline using window-mean throughput (no EMA lag) before probing
+                    let baseline_bps = if self.window_secs >= 0.05 && self.window_bytes > 0 {
+                        (self.window_bytes as f64 / self.window_secs) * 8.0
+                    } else {
+                        self.rolling_throughput_bps
+                    };
+                    self.previous_baseline_throughput = baseline_bps;
+                    self.window_bytes = 0;
+                    self.window_secs = 0.0;
                     if self.current_connections < max_allowed {
                         let from = self.current_connections;
                         let to = next_step_up(from, max_allowed);
@@ -548,20 +665,28 @@ impl AdaptiveController {
                     };
                 }
                 ProbeState::Probing { from, to } => {
+                    let window_bps = if self.window_secs >= 0.05 && self.window_bytes > 0 {
+                        (self.window_bytes as f64 / self.window_secs) * 8.0
+                    } else {
+                        self.rolling_throughput_bps
+                    };
+                    self.window_bytes = 0;
+                    self.window_secs = 0.0;
+
                     let delta = if self.previous_baseline_throughput > 0.0 {
-                        (self.rolling_throughput_bps - self.previous_baseline_throughput)
+                        (window_bps - self.previous_baseline_throughput)
                             / self.previous_baseline_throughput
                     } else {
                         0.0
                     };
 
                     if delta >= self.config.throughput_gain_threshold {
-                        // Sustained meaningful gain (>= +10%)
+                        // Sustained meaningful gain (>= +8%)
                         self.consecutive_failed_probes = 0;
-                        self.previous_baseline_throughput = self.rolling_throughput_bps;
+                        self.previous_baseline_throughput = window_bps;
                         self.stable_target = to;
 
-                        // On HTTP/2/3, only expand TCP cap past 6 if per-connection throttling shows >= 25% gain
+                        // On HTTP/2/3, expand cap past 16 up to 32 if per-stream gain >= +8%
                         if self.protocol != TransportProtocol::Http1
                             && to >= self.http2_cap
                             && delta >= HTTP2_PER_STREAM_THROTTLE_GAIN
@@ -576,7 +701,13 @@ impl AdaptiveController {
                         let updated_max = self.effective_max_connections();
                         if self.current_connections < updated_max {
                             let next_from = self.current_connections;
-                            let next_to = next_step_up(next_from, updated_max);
+                            let single_step = next_step_up(next_from, updated_max);
+                            // Multiplicative warmup jump when scaling strongly (>= +50% gain) below 32 streams
+                            let next_to = if delta >= 0.50 && next_from < 32 {
+                                next_step_up(single_step, updated_max)
+                            } else {
+                                single_step
+                            };
                             if next_to > next_from {
                                 self.current_connections = next_to;
                                 self.mode = AccelerationMode::Optimizing;
@@ -734,12 +865,9 @@ mod tests {
 
     #[test]
     fn test_controller_steps_ladder() {
-        assert_eq!(next_step_up(1, 64), 2);
-        assert_eq!(next_step_up(2, 64), 4);
-        assert_eq!(next_step_up(4, 64), 6);
-        assert_eq!(next_step_up(6, 64), 8);
-        assert_eq!(next_step_up(8, 64), 12);
-        assert_eq!(next_step_up(12, 64), 16);
+        assert_eq!(next_step_up(1, 64), 4);
+        assert_eq!(next_step_up(4, 64), 8);
+        assert_eq!(next_step_up(8, 64), 16);
         assert_eq!(next_step_up(16, 64), 24);
         assert_eq!(next_step_up(24, 64), 32);
         assert_eq!(next_step_up(32, 64), 48);
@@ -751,12 +879,9 @@ mod tests {
         assert_eq!(next_step_down(48, 1), 32);
         assert_eq!(next_step_down(32, 1), 24);
         assert_eq!(next_step_down(24, 1), 16);
-        assert_eq!(next_step_down(16, 1), 12);
-        assert_eq!(next_step_down(12, 1), 8);
-        assert_eq!(next_step_down(8, 1), 6);
-        assert_eq!(next_step_down(6, 1), 4);
-        assert_eq!(next_step_down(4, 1), 2);
-        assert_eq!(next_step_down(2, 1), 1);
+        assert_eq!(next_step_down(16, 1), 8);
+        assert_eq!(next_step_down(8, 1), 4);
+        assert_eq!(next_step_down(4, 1), 1);
         assert_eq!(next_step_down(1, 1), 1);
     }
 
@@ -830,12 +955,12 @@ mod tests {
     #[test]
     fn test_controller_http2_protocol_awareness() {
         let config = AdaptiveConfig {
-            initial_connections: 4,
+            initial_connections: 8,
             min_connections: 1,
             max_connections: 32,
             max_connections_per_host: 32,
             cooldown_duration: Duration::from_secs(4),
-            throughput_gain_threshold: 0.10,
+            throughput_gain_threshold: 0.08,
             throughput_drop_threshold: -0.15,
             ..Default::default()
         };
@@ -844,25 +969,23 @@ mod tests {
         let start = Instant::now();
         controller.last_adjustment = start;
 
-        // Probe 4 -> 6
+        // Probe 8 -> 16
         let t1 = start + Duration::from_secs(4);
         let d1 =
             controller.evaluate_sample_at(t1, 10_000_000, Duration::from_secs(1), 0, false, None);
         assert!(matches!(
             d1,
-            AdaptiveDecision::ScaleUp { from: 4, to: 6, .. }
+            AdaptiveDecision::ScaleUp { from: 8, to: 16, .. }
         ));
 
-        // +15% gain (< 25% per-connection throttle threshold): commits 6 and caps at H2 soft ceiling 6
+        // +60% gain (>= +8% and >= +50% warmup) expands H2 cap 16 -> 24 and jumps 16 -> 24
         let t2 = t1 + Duration::from_secs(4);
         let d2 =
             controller.evaluate_sample_at(t2, 16_000_000, Duration::from_secs(1), 0, false, None);
         assert!(matches!(
             d2,
-            AdaptiveDecision::HoldStable { connections: 6, .. }
+            AdaptiveDecision::ScaleUp { from: 16, to: 24, .. }
         ));
-        assert_eq!(controller.mode(), AccelerationMode::Stable);
-        assert_eq!(controller.current_connections(), 6);
     }
 
     #[test]
@@ -879,7 +1002,7 @@ mod tests {
         let start = Instant::now();
         controller.last_adjustment = start;
 
-        // 3 transient errors within 10s trigger ScaleDown -> Limited
+        // 3 transient errors within 10s trigger ScaleDown -> Limited (8 -> 4)
         controller.record_transient_error_at(start + Duration::from_secs(1));
         controller.record_transient_error_at(start + Duration::from_secs(2));
         controller.record_transient_error_at(start + Duration::from_secs(3));
@@ -893,7 +1016,7 @@ mod tests {
         );
         assert!(matches!(
             d_err,
-            AdaptiveDecision::ScaleDown { from: 8, to: 6, .. }
+            AdaptiveDecision::ScaleDown { from: 8, to: 4, .. }
         ));
         assert_eq!(controller.mode(), AccelerationMode::Limited);
 
@@ -908,7 +1031,7 @@ mod tests {
         );
         assert!(matches!(
             d_hold,
-            AdaptiveDecision::HoldStable { connections: 6, .. }
+            AdaptiveDecision::HoldStable { connections: 4, .. }
         ));
         assert_eq!(controller.mode(), AccelerationMode::Limited);
 
@@ -923,7 +1046,7 @@ mod tests {
         );
         assert!(matches!(
             d_rec,
-            AdaptiveDecision::HoldStable { connections: 6, .. }
+            AdaptiveDecision::HoldStable { connections: 4, .. }
         ));
         assert_eq!(controller.mode(), AccelerationMode::Auto);
 
@@ -968,7 +1091,7 @@ mod tests {
         let start = Instant::now();
         controller.last_adjustment = start;
 
-        // Baseline + Probe #1 (8 -> 12)
+        // Baseline + Probe #1 (8 -> 16)
         let t1 = start + Duration::from_secs(4);
         let d1 =
             controller.evaluate_sample_at(t1, 1_000_000, Duration::from_secs(1), 0, false, None);
@@ -976,7 +1099,7 @@ mod tests {
             d1,
             AdaptiveDecision::ScaleUp {
                 from: 8,
-                to: 12,
+                to: 16,
                 ..
             }
         ));
@@ -992,7 +1115,7 @@ mod tests {
         assert!(controller.status_reason().contains("BBR Probe:"));
         assert_eq!(controller.mode(), AccelerationMode::Optimizing);
 
-        // After widened cooldown (8s), must launch a REAL Probe #2 (8 -> 12), NOT lock Stable without probing!
+        // After widened cooldown (8s), must launch a REAL Probe #2 (8 -> 16), NOT lock Stable without probing!
         let t3 = t2 + Duration::from_secs(8);
         let d3 =
             controller.evaluate_sample_at(t3, 1_000_000, Duration::from_secs(1), 0, false, None);
@@ -1000,7 +1123,7 @@ mod tests {
             d3,
             AdaptiveDecision::ScaleUp {
                 from: 8,
-                to: 12,
+                to: 16,
                 ..
             }
         ));
@@ -1217,7 +1340,7 @@ mod tests {
         match dec_probe1 {
             AdaptiveDecision::ScaleUp { from, to, .. } => {
                 assert_eq!(from, 8);
-                assert_eq!(to, 12);
+                assert_eq!(to, 16);
             }
             other => panic!("Expected ScaleUp probe, got {:?}", other),
         }

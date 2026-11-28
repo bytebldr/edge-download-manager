@@ -140,7 +140,7 @@ pub(super) fn resolve_adaptive_and_network(
                 adaptive.max_connections = 1;
             } else {
                 adaptive.auto_scale = true;
-                adaptive.initial_connections = 4.min(ceiling);
+                adaptive.initial_connections = 8.min(ceiling);
                 adaptive.min_connections = 1;
                 adaptive.max_connections = ceiling;
             }
@@ -151,7 +151,7 @@ pub(super) fn resolve_adaptive_and_network(
             adaptive.auto_scale = auto_adaptive_streams && !single_stream_setting;
             adaptive.min_connections = if adaptive.auto_scale { 1 } else { ceiling };
             adaptive.initial_connections = if adaptive.auto_scale {
-                4.min(ceiling)
+                8.min(ceiling)
             } else {
                 ceiling
             };
@@ -166,7 +166,7 @@ pub(super) fn resolve_adaptive_and_network(
                 adaptive.max_connections = 1;
             } else if auto_adaptive_streams {
                 adaptive.auto_scale = true;
-                adaptive.initial_connections = 4.min(settings_ceiling);
+                adaptive.initial_connections = 8.min(settings_ceiling);
                 adaptive.min_connections = 1;
                 adaptive.max_connections = settings_ceiling;
             } else {
@@ -179,6 +179,7 @@ pub(super) fn resolve_adaptive_and_network(
     }
 
     adaptive.max_connections_per_host = adaptive.max_connections;
+    adaptive.request_timeout = std::time::Duration::from_secs(req_timeout_secs.max(5));
     (adaptive, proxy, req_timeout_secs)
 }
 
@@ -576,10 +577,10 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_default_auto_adaptive_starts_at_4_with_ceiling_32() {
+    fn test_default_auto_adaptive_starts_at_8_with_ceiling_32() {
         let (cfg, _, _) = resolve_adaptive_and_network(None, None);
         assert!(cfg.auto_scale);
-        assert_eq!(cfg.initial_connections, 4);
+        assert_eq!(cfg.initial_connections, 8);
         assert_eq!(cfg.min_connections, 1);
         assert_eq!(cfg.max_connections, 32);
         assert_eq!(cfg.max_connections_per_host, 32);
@@ -594,7 +595,7 @@ mod tests {
         });
         let (cfg, _, _) = resolve_adaptive_and_network(Some(&legacy), None);
         assert!(cfg.auto_scale);
-        assert_eq!(cfg.initial_connections, 4);
+        assert_eq!(cfg.initial_connections, 8);
         assert_eq!(cfg.max_connections, 32);
         assert_eq!(cfg.max_connections_per_host, 32);
     }
@@ -610,12 +611,12 @@ mod tests {
 
         let (auto_cfg, _, _) = resolve_adaptive_and_network(Some(&settings), Some(0));
         assert!(auto_cfg.auto_scale);
-        assert_eq!(auto_cfg.initial_connections, 4);
+        assert_eq!(auto_cfg.initial_connections, 8);
         assert_eq!(auto_cfg.max_connections, 48);
 
         let (cap64_cfg, _, _) = resolve_adaptive_and_network(Some(&settings), Some(64));
         assert!(cap64_cfg.auto_scale);
-        assert_eq!(cap64_cfg.initial_connections, 4);
+        assert_eq!(cap64_cfg.initial_connections, 8);
         assert_eq!(cap64_cfg.max_connections, 64);
         assert_eq!(cap64_cfg.max_connections_per_host, 64);
 

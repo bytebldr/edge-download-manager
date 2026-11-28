@@ -325,6 +325,7 @@ fn execute_download_internal(
         user_agent,
         selected_files,
         torrent_power: exec_cfg.torrent_power,
+        ..Default::default()
     };
 
     let engine = state.engine.clone();

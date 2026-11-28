@@ -72,14 +72,12 @@ impl FfmpegSupervisor {
         });
 
         let mut stdout_reader = BufReader::new(stdout).lines();
-        let mut total_microseconds = 0u64;
 
         while let Ok(Some(line)) = stdout_reader.next_line().await {
             let line = line.trim();
             if line.starts_with("out_time_us=") {
                 let us_str = line.trim_start_matches("out_time_us=");
                 if let Ok(us) = us_str.parse::<u64>() {
-                    total_microseconds = us;
                     let seconds = us / 1_000_000;
                     if let Some(ref cb) = telemetry_cb {
                         cb(AdaptiveTelemetry {
@@ -125,8 +123,8 @@ impl FfmpegSupervisor {
 
         let last_stderr = stderr_drain.await.unwrap_or_default();
 
-        if !status.success() && total_microseconds == 0 {
-            return Err(format!("FFmpeg failed: {}", last_stderr));
+        if !status.success() {
+            return Err(format!("FFmpeg failed ({}): {}", status, last_stderr));
         }
 
         Ok(())

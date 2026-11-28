@@ -1,11 +1,16 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
-import { I18nProvider } from "./features/i18n";
-import { LifecycleApp, resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
+import { resolveLifecycleRoute, LifecycleRoute } from "./lifecycle";
 import { tauriWindowClose } from "./services/tauriBridge";
 import "./styles/theme.css";
 
+const App = React.lazy(() => import("./App"));
+const I18nProvider = React.lazy(() =>
+  import("./features/i18n").then((m) => ({ default: m.I18nProvider }))
+);
+const LifecycleApp = React.lazy(() =>
+  import("./lifecycle").then((m) => ({ default: m.LifecycleApp }))
+);
 const TrayFlyout = React.lazy(() => import("./components/TrayFlyout"));
 const AddDownloadPopup = React.lazy(() => import("./components/AddDownloadPopup"));
 
@@ -130,19 +135,23 @@ function Root() {
 
   if (lifecycleRoute) {
     return (
-      <LifecycleApp
-        route={lifecycleRoute}
-        onDone={() => {
-          tauriWindowClose();
-        }}
-      />
+      <React.Suspense fallback={null}>
+        <LifecycleApp
+          route={lifecycleRoute}
+          onDone={() => {
+            tauriWindowClose();
+          }}
+        />
+      </React.Suspense>
     );
   }
 
   return (
-    <I18nProvider>
-      <App />
-    </I18nProvider>
+    <React.Suspense fallback={null}>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </React.Suspense>
   );
 }
 

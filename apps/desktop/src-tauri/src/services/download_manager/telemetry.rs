@@ -165,10 +165,11 @@ pub(super) fn classify_execution_result(
         }
         Err(ref e) if e.contains("cancelled") => (DownloadState::Paused, None, None, None),
         Err(ref e)
-            if e.contains("401")
-                || e.contains("403")
-                || e.contains("410")
-                || e.contains("expired") =>
+            if !e.contains("WAF")
+                && (e.contains("401")
+                    || e.contains("403")
+                    || e.contains("410")
+                    || e.contains("expired")) =>
         {
             (
                 DownloadState::LinkExpired,

@@ -96,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 user_agent: None,
                 selected_files: None,
                 torrent_power: None,
+                ..Default::default()
             };
 
             let telemetry_cb = Arc::new(|telem: AdaptiveTelemetry| {

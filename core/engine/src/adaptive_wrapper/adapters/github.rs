@@ -72,20 +72,20 @@ impl AdaptiveWrapperAdapter for GithubAdapter {
             return Err("GitHub release asset does not exist on disk".to_string());
         }
 
-        // Validate hash if expected hash was registered
+        // Validate hash if expected hash was registered (streaming 64 KiB MultiHasher, zero OOM)
         if let Some((algo, expected)) = ctx.expected_hash {
             if algo.eq_ignore_ascii_case("sha256") {
-                let bytes = tokio::fs::read(&ctx.final_path)
-                    .await
-                    .map_err(|e| format!("Failed to read file for hash check: {}", e))?;
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(&bytes);
-                let computed = format!("{:x}", hasher.finalize());
-                if !computed.eq_ignore_ascii_case(&expected) {
+                let path_clone = ctx.final_path.clone();
+                let checksums = tokio::task::spawn_blocking(move || {
+                    crate::verify::MultiHasher::compute_file(&path_clone)
+                })
+                .await
+                .map_err(|e| format!("Hash task join error: {}", e))?
+                .map_err(|e| format!("Failed to read file for hash check: {}", e))?;
+                if !checksums.sha256.eq_ignore_ascii_case(&expected) {
                     return Err(format!(
                         "GitHub asset SHA-256 mismatch: expected {}, got {}",
-                        expected, computed
+                        expected, checksums.sha256
                     ));
                 }
             }

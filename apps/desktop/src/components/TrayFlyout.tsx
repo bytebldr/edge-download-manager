@@ -9,6 +9,7 @@ import {
   tauriLoadSettings,
   tauriPauseDownload,
   tauriResumeDownload,
+  tauriWindowClose,
 } from "../services/tauriBridge";
 import { loadSettings } from "../types/settings";
 import { applyFontFamily } from "../lib/fonts";
@@ -126,10 +127,9 @@ export default function TrayFlyout() {
   const hideFlyout = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().hide();
+      await tauriWindowClose();
     } catch (err) {
-      console.warn("Failed to hide tray flyout:", err);
+      console.warn("Failed to close tray flyout:", err);
     }
   }, []);
 

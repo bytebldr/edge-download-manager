@@ -278,8 +278,8 @@ impl FeaturePackManager {
             };
         }
 
-        // 3. FTP / FTPS
-        if lower.starts_with("ftp://") || lower.starts_with("ftps://") {
+        // 3. FTP / FTPS / SFTP
+        if lower.starts_with("ftp://") || lower.starts_with("ftps://") || lower.starts_with("sftp://") {
             let filename = trimmed.split('/').next_back().map(|s| s.to_string());
             return ParsedPackTarget {
                 pack_id: FeaturePackId::FtpPack,
@@ -291,8 +291,8 @@ impl FeaturePackManager {
             };
         }
 
-        // 4. M3U8 / HLS Stream
-        if lower.contains(".m3u8") || lower.contains("/hls/") {
+        // 4. M3U8 / HLS & DASH (.mpd) Stream
+        if lower.contains(".m3u8") || lower.contains("/hls/") || clean_path.ends_with(".mpd") {
             return ParsedPackTarget {
                 pack_id: FeaturePackId::M3u8Pack,
                 clean_url: trimmed.to_string(),

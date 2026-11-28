@@ -284,6 +284,7 @@ pub async fn run_diagnostic_matrix_test(
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let res = engine.download(task, None).await;

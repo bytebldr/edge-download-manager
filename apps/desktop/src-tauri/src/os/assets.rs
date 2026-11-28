@@ -69,7 +69,15 @@ pub fn ensure_runtime_environment() {
             self_heal_dll_in_dir(&edm_dir);
         }
 
-        // 3. Ensure EDM's Windows 11 system tray icon is promoted (not hidden in overflow)
+        // 3. Cap WebView2 V8 heap & disk/media caches to keep flyout & main window lean
+        if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_none() {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                "--disable-gpu-shader-disk-cache --disk-cache-size=1048576 --media-cache-size=1048576 --js-flags=--max-old-space-size=64",
+            );
+        }
+
+        // 4. Ensure EDM's Windows 11 system tray icon is promoted (not hidden in overflow)
         std::thread::spawn(promote_windows_tray_icon);
     }
 }
@@ -101,21 +109,75 @@ if (Test-Path $base) {
 }
 
 /// Asks the Windows memory manager to trim unused working-set pages from the
-/// current process, reclaiming memory after WebView2 windows are destroyed or
-/// when transitioning into idle/sleep states.
+/// current process AND its child WebView2 processes, reclaiming memory after
+/// windows are destroyed, minimized, or transitioning into idle/background states.
 pub fn trim_process_working_set() -> bool {
     #[cfg(windows)]
     {
+        #[repr(C)]
+        struct ProcessEntry32W {
+            dw_size: u32,
+            cnt_usage: u32,
+            th32_process_id: u32,
+            th32_default_heap_id: usize,
+            th32_module_id: u32,
+            cnt_threads: u32,
+            th32_parent_process_id: u32,
+            pc_pri_class_base: i32,
+            dw_flags: u32,
+            sz_exe_file: [u16; 260],
+        }
+
         #[link(name = "kernel32")]
         extern "system" {
             fn GetCurrentProcess() -> *mut std::ffi::c_void;
+            fn GetCurrentProcessId() -> u32;
             fn SetProcessWorkingSetSize(
                 h_process: *mut std::ffi::c_void,
                 dw_minimum_working_set_size: usize,
                 dw_maximum_working_set_size: usize,
             ) -> i32;
+            fn CreateToolhelp32Snapshot(dw_flags: u32, th32_process_id: u32) -> *mut std::ffi::c_void;
+            fn Process32FirstW(h_snapshot: *mut std::ffi::c_void, lppe: *mut ProcessEntry32W) -> i32;
+            fn Process32NextW(h_snapshot: *mut std::ffi::c_void, lppe: *mut ProcessEntry32W) -> i32;
+            fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32) -> *mut std::ffi::c_void;
+            fn CloseHandle(h_object: *mut std::ffi::c_void) -> i32;
         }
-        unsafe { SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0 }
+
+        const TH32CS_SNAPPROCESS: u32 = 0x0000_0002;
+        const PROCESS_SET_QUOTA: u32 = 0x0100;
+        const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
+
+        unsafe {
+            let self_ok = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX) != 0;
+
+            let my_pid = GetCurrentProcessId();
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if !snap.is_null() && snap as isize != -1 {
+                let mut pe: ProcessEntry32W = std::mem::zeroed();
+                pe.dw_size = std::mem::size_of::<ProcessEntry32W>() as u32;
+                if Process32FirstW(snap, &mut pe) != 0 {
+                    loop {
+                        if pe.th32_parent_process_id == my_pid {
+                            let h_child = OpenProcess(
+                                PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION,
+                                0,
+                                pe.th32_process_id,
+                            );
+                            if !h_child.is_null() {
+                                let _ = SetProcessWorkingSetSize(h_child, usize::MAX, usize::MAX);
+                                let _ = CloseHandle(h_child);
+                            }
+                        }
+                        if Process32NextW(snap, &mut pe) == 0 {
+                            break;
+                        }
+                    }
+                }
+                let _ = CloseHandle(snap);
+            }
+            self_ok
+        }
     }
     #[cfg(not(windows))]
     {

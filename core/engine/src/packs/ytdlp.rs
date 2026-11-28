@@ -458,6 +458,8 @@ impl YtDlpPack {
             "--progress".to_string(),
             "--force-overwrites".to_string(),
             "--no-playlist".to_string(),
+            "--concurrent-fragments".to_string(),
+            task.config.max_connections.clamp(1, 32).to_string(),
             "--print".to_string(),
             "before_dl:EDM_INFO:%(filesize,filesize_approx)s|%(requested_formats.0.filesize,requested_formats.0.filesize_approx)s|%(requested_formats.1.filesize,requested_formats.1.filesize_approx)s".to_string(),
             "--progress-template".to_string(),

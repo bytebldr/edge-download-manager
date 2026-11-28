@@ -187,6 +187,7 @@ async fn benchmark_baseline_vs_adaptive() {
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let t1 = Instant::now();

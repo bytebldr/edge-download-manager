@@ -7,7 +7,6 @@ use super::ftp::FtpPack;
 use super::m3u8::M3u8Pack;
 use crate::adaptive::{
     AccelerationMode, AdaptiveDownloadTask, AdaptiveEngine, AdaptiveTelemetry, TelemetryCallback,
-    WorkerStatus, WorkerTelemetry,
 };
 use chrono::Utc;
 use reqwest::Client;
@@ -102,8 +101,8 @@ impl PackExecutor {
             .map_err(|e| format!("Failed to create segment temp dir: {}", e))?;
 
         let mut segment_files = Vec::new();
-        let mut key_cache: std::collections::HashMap<String, [u8; 16]> =
-            std::collections::HashMap::new();
+        let key_cache: Arc<tokio::sync::Mutex<std::collections::HashMap<String, [u8; 16]>>> =
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
         // 1. Download initialization segment if present (#EXT-X-MAP)
         if let Some(ref init_url) = playlist.init_segment_url {
@@ -122,6 +121,12 @@ impl PackExecutor {
                 .send()
                 .await
                 .map_err(|e| format!("Init segment download failed: {}", e))?;
+            if !init_resp.status().is_success() {
+                return Err(format!(
+                    "M3U8 init segment returned HTTP {}",
+                    init_resp.status().as_u16()
+                ));
+            }
             let init_bytes = init_resp
                 .bytes()
                 .await
@@ -133,124 +138,198 @@ impl PackExecutor {
             segment_files.push(init_path);
         }
 
-        let mut total_downloaded: u64 = 0;
+        // 2. Download all media segments in parallel (up to 32 concurrent connections)
+        use futures_util::stream::{self, StreamExt};
+        let concurrency = (task.config.max_connections.clamp(1, 32)) as usize;
+        let total_downloaded = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let completed_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let start_time = Utc::now();
 
-        for (i, seg) in playlist.segments.iter().enumerate() {
-            if task.cancelled.load(Ordering::Relaxed) {
-                let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-                return Err("Download cancelled by user".to_string());
-            }
+        let results: Vec<Result<(usize, PathBuf), String>> =
+            stream::iter(playlist.segments.iter().cloned().enumerate())
+                .map(|(i, seg)| {
+                    let client = client.clone();
+                    let task = task.clone();
+                    let temp_dir = temp_dir.clone();
+                    let key_cache = key_cache.clone();
+                    let total_downloaded = total_downloaded.clone();
+                    let completed_count = completed_count.clone();
+                    let telemetry_cb = telemetry_cb.clone();
+                    async move {
+                        if task.cancelled.load(Ordering::Relaxed) {
+                            return Err("Download cancelled by user".to_string());
+                        }
 
-            let mut req = client.get(&seg.url);
-            if let Some(ref ua) = task.user_agent {
-                req = req.header("User-Agent", ua);
-            }
-            if let Some(ref cookies) = task.cookies {
-                req = req.header("Cookie", cookies);
-            }
-            if let Some(ref referer) = task.referer {
-                req = req.header("Referer", referer);
-            }
+                        let mut last_err = String::new();
+                        let mut raw_bytes_opt = None;
+                        for attempt in 0..3u32 {
+                            if task.cancelled.load(Ordering::Relaxed) {
+                                return Err("Download cancelled by user".to_string());
+                            }
+                            let mut req = client.get(&seg.url);
+                            if let Some(ref ua) = task.user_agent {
+                                req = req.header("User-Agent", ua);
+                            }
+                            if let Some(ref cookies) = task.cookies {
+                                req = req.header("Cookie", cookies);
+                            }
+                            if let Some(ref referer) = task.referer {
+                                req = req.header("Referer", referer);
+                            }
 
-            let seg_resp = req
-                .send()
-                .await
-                .map_err(|e| format!("Segment #{} failed: {}", i + 1, e))?;
+                            match req.send().await {
+                                Ok(resp) if resp.status().is_success() => {
+                                    match resp.bytes().await {
+                                        Ok(b) => {
+                                            raw_bytes_opt = Some(b);
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            last_err =
+                                                format!("Segment #{} read error: {}", i + 1, e);
+                                        }
+                                    }
+                                }
+                                Ok(resp) => {
+                                    last_err = format!(
+                                        "Segment #{} returned HTTP {}",
+                                        i + 1,
+                                        resp.status().as_u16()
+                                    );
+                                }
+                                Err(e) => {
+                                    last_err = format!("Segment #{} failed: {}", i + 1, e);
+                                }
+                            }
+                            if attempt < 2 {
+                                tokio::time::sleep(std::time::Duration::from_millis(
+                                    250 * (attempt as u64 + 1),
+                                ))
+                                .await;
+                            }
+                        }
 
-            let raw_bytes = seg_resp
-                .bytes()
-                .await
-                .map_err(|e| format!("Segment #{} read error: {}", i + 1, e))?;
+                        let raw_bytes = raw_bytes_opt.ok_or(last_err)?;
 
-            // AES-128 Decryption if encrypted
-            let final_bytes = if let Some(ref key_url) = seg.key_url {
-                let key_bytes = if let Some(cached) = key_cache.get(key_url) {
-                    *cached
-                } else {
-                    let mut k_req = client.get(key_url);
-                    if let Some(ref ua) = task.user_agent {
-                        k_req = k_req.header("User-Agent", ua);
+                        let final_bytes = if let Some(ref key_url) = seg.key_url {
+                            let key_bytes = {
+                                let mut guard = key_cache.lock().await;
+                                if let Some(cached) = guard.get(key_url) {
+                                    *cached
+                                } else {
+                                    let mut k_req = client.get(key_url);
+                                    if let Some(ref ua) = task.user_agent {
+                                        k_req = k_req.header("User-Agent", ua);
+                                    }
+                                    if let Some(ref cookies) = task.cookies {
+                                        k_req = k_req.header("Cookie", cookies);
+                                    }
+                                    if let Some(ref referer) = task.referer {
+                                        k_req = k_req.header("Referer", referer);
+                                    }
+                                    let k_resp = k_req.send().await.map_err(|e| {
+                                        format!("Failed to fetch HLS key from {}: {}", key_url, e)
+                                    })?;
+                                    if !k_resp.status().is_success() {
+                                        return Err(format!(
+                                            "HLS key {} returned HTTP {}",
+                                            key_url,
+                                            k_resp.status().as_u16()
+                                        ));
+                                    }
+                                    let k_data = k_resp
+                                        .bytes()
+                                        .await
+                                        .map_err(|e| format!("Failed to read HLS key: {}", e))?;
+                                    if k_data.len() != 16 {
+                                        return Err(format!(
+                                            "Invalid AES-128 key length {} from {}",
+                                            k_data.len(),
+                                            key_url
+                                        ));
+                                    }
+                                    let mut arr = [0u8; 16];
+                                    arr.copy_from_slice(&k_data);
+                                    guard.insert(key_url.clone(), arr);
+                                    arr
+                                }
+                            };
+
+                            let iv = seg
+                                .iv
+                                .unwrap_or_else(|| super::remux::sequence_to_iv(seg.sequence_number));
+                            super::remux::decrypt_aes128_segment(&raw_bytes, &key_bytes, &iv)?
+                        } else {
+                            raw_bytes.to_vec()
+                        };
+
+                        let part_seg_path = temp_dir.join(format!("seg_{:05}.part", i));
+                        let seg_file_path = temp_dir.join(format!("seg_{:05}.chunk", i));
+                        tokio::fs::write(&part_seg_path, &final_bytes)
+                            .await
+                            .map_err(|e| format!("Write error on segment #{}: {}", i + 1, e))?;
+                        tokio::fs::rename(&part_seg_path, &seg_file_path)
+                            .await
+                            .map_err(|e| format!("Rename error on segment #{}: {}", i + 1, e))?;
+
+                        let dl_now = total_downloaded
+                            .fetch_add(final_bytes.len() as u64, Ordering::Relaxed)
+                            + final_bytes.len() as u64;
+                        let done_now = completed_count.fetch_add(1, Ordering::Relaxed) + 1;
+
+                        if let Some(ref cb) = telemetry_cb {
+                            let elapsed = (Utc::now() - start_time).num_seconds().max(1) as u64;
+                            let bps = dl_now / elapsed;
+                            let pct = (done_now as f64 / total_segments as f64) * 100.0;
+
+                            cb(AdaptiveTelemetry {
+                                download_id: task.id.to_string(),
+                                total_bytes: None,
+                                downloaded_bytes: dl_now,
+                                progress_pct: pct,
+                                instant_throughput_bps: bps,
+                                rolling_throughput_bps: bps,
+                                upload_throughput_bps: 0,
+                                uploaded_bytes: 0,
+                                active_connections: concurrency as u32,
+                                target_connections: concurrency as u32,
+                                live_workers: concurrency as u32,
+                                max_allowed_connections: 32,
+                                mode: AccelerationMode::Optimizing,
+                                eta_seconds: Some(
+                                    (total_segments.saturating_sub(done_now)) as u64,
+                                ),
+                                decision_reason: format!(
+                                    "M3U8 32-way Parallel Chunk {}/{}",
+                                    done_now, total_segments
+                                ),
+                                phase: Some("Downloading".to_string()),
+                                workers: Vec::new(),
+                                updated_at: Utc::now(),
+                                ..Default::default()
+                            });
+                        }
+
+                        Ok((i, seg_file_path))
                     }
-                    if let Some(ref cookies) = task.cookies {
-                        k_req = k_req.header("Cookie", cookies);
-                    }
-                    if let Some(ref referer) = task.referer {
-                        k_req = k_req.header("Referer", referer);
-                    }
-                    let k_resp = k_req
-                        .send()
-                        .await
-                        .map_err(|e| format!("Failed to fetch HLS key from {}: {}", key_url, e))?;
-                    let k_data = k_resp
-                        .bytes()
-                        .await
-                        .map_err(|e| format!("Failed to read HLS key: {}", e))?;
-                    if k_data.len() != 16 {
-                        return Err(format!(
-                            "Invalid AES-128 key length {} from {}",
-                            k_data.len(),
-                            key_url
-                        ));
-                    }
-                    let mut arr = [0u8; 16];
-                    arr.copy_from_slice(&k_data);
-                    key_cache.insert(key_url.clone(), arr);
-                    arr
-                };
+                })
+                .buffer_unordered(concurrency)
+                .collect()
+                .await;
 
-                let iv = seg
-                    .iv
-                    .unwrap_or_else(|| super::remux::sequence_to_iv(seg.sequence_number));
-                super::remux::decrypt_aes128_segment(&raw_bytes, &key_bytes, &iv)?
-            } else {
-                raw_bytes.to_vec()
-            };
-
-            let seg_file_path = temp_dir.join(format!("seg_{:05}.chunk", i));
-            tokio::fs::write(&seg_file_path, &final_bytes)
-                .await
-                .map_err(|e| format!("Write error on segment #{}: {}", i + 1, e))?;
-
-            segment_files.push(seg_file_path);
-            total_downloaded += final_bytes.len() as u64;
-
-            if let Some(ref cb) = telemetry_cb {
-                let elapsed = (Utc::now() - start_time).num_seconds().max(1) as u64;
-                let bps = total_downloaded / elapsed;
-                let pct = ((i + 1) as f64 / total_segments as f64) * 100.0;
-
-                cb(AdaptiveTelemetry {
-                    download_id: task.id.to_string(),
-                    total_bytes: None,
-                    downloaded_bytes: total_downloaded,
-                    progress_pct: pct,
-                    instant_throughput_bps: bps,
-                    rolling_throughput_bps: bps,
-                    upload_throughput_bps: 0,
-                    uploaded_bytes: 0,
-                    active_connections: 1,
-                    target_connections: 1,
-                    live_workers: 1,
-                    max_allowed_connections: 4,
-                    mode: AccelerationMode::Stable,
-                    eta_seconds: Some((total_segments - i - 1) as u64 * 2),
-                    decision_reason: format!("M3U8 Chunk {}/{}", i + 1, total_segments),
-                    phase: Some("Downloading".to_string()),
-                    workers: vec![WorkerTelemetry {
-                        idx: 0,
-                        start: 0,
-                        end: 0,
-                        pos: total_downloaded,
-                        bytes_downloaded: total_downloaded,
-                        speed_bps: bps,
-                        status: WorkerStatus::Downloading,
-                        retry_count: 0,
-                    }],
-                    updated_at: Utc::now(),
-                    ..Default::default()
-                });
+        let mut indexed_paths = Vec::with_capacity(total_segments);
+        for res in results {
+            match res {
+                Ok(pair) => indexed_paths.push(pair),
+                Err(e) => {
+                    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+                    return Err(e);
+                }
             }
+        }
+        indexed_paths.sort_by_key(|(idx, _)| *idx);
+        for (_, path) in indexed_paths {
+            segment_files.push(path);
         }
 
         let target_ext = target_file
@@ -358,7 +437,6 @@ impl PackExecutor {
         actual_task.url = stream_url;
         if yt.can_extract(&actual_task.url) || actual_task.url.contains("googlevideo.com") {
             actual_task.user_agent = Some("Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/32.0.0.35.485 Chrome/120.0.6099.144 Mobile VR Safari/537.36".to_string());
-            actual_task.config.max_connections = 1;
         }
         if actual_task.filename.is_empty()
             || actual_task.filename == "download"

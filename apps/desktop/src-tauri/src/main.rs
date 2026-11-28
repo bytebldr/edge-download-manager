@@ -92,11 +92,52 @@ fn open_persistent_store() -> Store {
     })
 }
 
+static LAST_FLYOUT_BLUR_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn epoch_ms_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn is_main_window_visible(app: &tauri::AppHandle) -> bool {
+    if let Some(main_win) = app.get_webview_window("main") {
+        let visible = main_win.is_visible().unwrap_or(false);
+        let minimized = main_win.is_minimized().unwrap_or(false);
+        return visible && !minimized;
+    }
+    false
+}
+
 fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
     const FLYOUT_W: f64 = 360.0;
     const FLYOUT_H: f64 = 300.0;
 
+    // Mutual exclusion invariant: never open tray-flyout when main app window is already open
+    if is_main_window_visible(app) {
+        if let Some(existing) = app.get_webview_window("tray-flyout") {
+            let _ = existing.destroy();
+            crate::os::trim_process_working_set();
+        }
+        if let Some(main_win) = app.get_webview_window("main") {
+            let _ = main_win.set_focus();
+        }
+        return;
+    }
+
+    let now_ms = epoch_ms_now();
+    let last_blur = LAST_FLYOUT_BLUR_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last_blur) < 300 && app.get_webview_window("tray-flyout").is_none() {
+        return;
+    }
+
     let win = if let Some(existing) = app.get_webview_window("tray-flyout") {
+        if existing.is_visible().unwrap_or(false) {
+            let _ = existing.destroy();
+            crate::os::trim_process_working_set();
+            return;
+        }
         existing
     } else {
         let builder = tauri::WebviewWindowBuilder::new(
@@ -118,7 +159,9 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
                 let w_clone = w.clone();
                 w.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = w_clone.hide();
+                        LAST_FLYOUT_BLUR_MS.store(epoch_ms_now(), Ordering::Relaxed);
+                        let _ = w_clone.destroy();
+                        crate::os::trim_process_working_set();
                     }
                 });
                 w
@@ -129,11 +172,6 @@ fn toggle_tray_flyout(app: &tauri::AppHandle, rect: tauri::Rect) {
             }
         }
     };
-
-    if win.is_visible().unwrap_or(false) {
-        let _ = win.hide();
-        return;
-    }
 
     let monitors = app.available_monitors().unwrap_or_default();
     let mut chosen_monitor = app.primary_monitor().ok().flatten();
@@ -791,7 +829,8 @@ fn main() {
                             ..
                         } => {
                             if let Some(flyout) = tray.app_handle().get_webview_window("tray-flyout") {
-                                let _ = flyout.hide();
+                                let _ = flyout.destroy();
+                                crate::os::trim_process_working_set();
                             }
                             let state = tray.app_handle().state::<AppState>();
                             let lc = state.lifecycle.clone();

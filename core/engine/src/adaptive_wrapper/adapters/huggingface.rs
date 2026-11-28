@@ -22,13 +22,18 @@ impl AdaptiveWrapperAdapter for HuggingFaceAdapter {
         let mut download_url = task.url.clone();
         let mut expected_hash = None;
 
-        // 1. Probe for Git-LFS pointer stub in the first 1024 bytes
-        if let Ok(resp) = client
-            .get(&task.url)
-            .header("Range", "bytes=0-1024")
-            .send()
-            .await
-        {
+        // 1. Probe for Git-LFS pointer stub in the first 1024 bytes (preserving user headers)
+        let mut lfs_req = client.get(&task.url).header("Range", "bytes=0-1024");
+        if let Some(ref ua) = task.user_agent {
+            lfs_req = lfs_req.header("User-Agent", ua);
+        }
+        if let Some(ref cookies) = task.cookies {
+            lfs_req = lfs_req.header("Cookie", cookies);
+        }
+        if let Some(ref referer) = task.referer {
+            lfs_req = lfs_req.header("Referer", referer);
+        }
+        if let Ok(resp) = lfs_req.send().await {
             if let Ok(text) = resp.text().await {
                 if let Some(pointer) = HuggingFacePack::parse_git_lfs_pointer(&text) {
                     expected_hash = Some(("sha256".to_string(), pointer.oid));
@@ -88,16 +93,17 @@ impl AdaptiveWrapperAdapter for HuggingFaceAdapter {
             return Err("Hugging Face model weight file does not exist".to_string());
         }
 
-        // Validate Git-LFS SHA-256 hash if present
+        // Validate Git-LFS SHA-256 hash if present (streaming 64 KiB MultiHasher, zero OOM on 8-70 GB models)
         if let Some((algo, expected)) = ctx.expected_hash {
             if algo.eq_ignore_ascii_case("sha256") {
-                let bytes = tokio::fs::read(&ctx.final_path)
-                    .await
-                    .map_err(|e| format!("Failed to read model file for hash check: {}", e))?;
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(&bytes);
-                let computed = format!("{:x}", hasher.finalize());
+                let path_clone = ctx.final_path.clone();
+                let checksums = tokio::task::spawn_blocking(move || {
+                    crate::verify::MultiHasher::compute_file(&path_clone)
+                })
+                .await
+                .map_err(|e| format!("Hash task join error: {}", e))?
+                .map_err(|e| format!("Failed to read model file for hash check: {}", e))?;
+                let computed = checksums.sha256;
                 if !computed.eq_ignore_ascii_case(&expected) {
                     return Err(format!(
                         "Git-LFS SHA-256 integrity mismatch: expected {}, got {}",

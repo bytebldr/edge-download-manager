@@ -174,6 +174,7 @@ async fn test_adaptive_download_full_integrity() {
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let completed_path = engine.download(task, None).await.expect("download failed");
@@ -217,6 +218,7 @@ async fn test_single_stream_fallback_norange() {
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let completed_path = engine
@@ -267,13 +269,13 @@ fn test_adaptive_controller_decisions() {
         _ => panic!("Expected ScaleUp probe"),
     }
 
-    // Sample 2: Meaningful sustained gain (+50% throughput = 12 Mbps)
+    // Sample 2: Meaningful sustained gain (+50% throughput = 12 Mbps) -> scales 4 -> 8 (max 8)
     std::thread::sleep(Duration::from_millis(60));
     let dec2 = controller.evaluate_sample(1_500_000, Duration::from_secs(1), 0, false, None);
     match dec2 {
         AdaptiveDecision::ScaleUp { from, to, .. } => {
             assert_eq!(from, 4);
-            assert_eq!(to, 6);
+            assert_eq!(to, 8);
         }
         other => panic!("Expected ScaleUp on gain, got {:?}", other),
     }
@@ -283,7 +285,7 @@ fn test_adaptive_controller_decisions() {
     let dec3 = controller.evaluate_sample(400_000, Duration::from_secs(1), 0, false, None);
     match dec3 {
         AdaptiveDecision::ScaleDown { from, to, .. } => {
-            assert_eq!(from, 6);
+            assert_eq!(from, 8);
             assert_eq!(to, 4);
         }
         other => panic!("Expected ScaleDown on degradation, got {:?}", other),
@@ -332,6 +334,7 @@ async fn test_cancellation_and_persistence() {
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let res = engine.download(task, None).await;
@@ -376,6 +379,7 @@ async fn test_bandwidth_limiter() {
         user_agent: None,
         selected_files: None,
         torrent_power: None,
+        ..Default::default()
     };
 
     let t0 = std::time::Instant::now();

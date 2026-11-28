@@ -9,6 +9,7 @@ pub static IS_QUITTING: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 #[command]
 pub fn app_minimize(window: tauri::WebviewWindow) {
     let _ = window.minimize();
+    crate::os::trim_process_working_set();
 }
 
 #[command]
@@ -57,9 +58,20 @@ pub async fn app_close(
     };
 
     if close_to_tray {
-        tracing::info!("Hiding main window to tray");
-        let _ = window.hide();
-        state.lifecycle.check_lifecycle_step(0, false).await;
+        tracing::info!("Destroying main window on close-to-tray to reclaim WebView2 RAM");
+        let _ = window.destroy();
+        let active_count = {
+            let tasks = state.tasks.lock().unwrap_or_else(|e| e.into_inner());
+            tasks
+                .values()
+                .filter(|h| !h.cancelled.load(Ordering::Relaxed))
+                .count()
+        };
+        state
+            .lifecycle
+            .check_lifecycle_step(active_count, false)
+            .await;
+        crate::os::trim_process_working_set();
     } else {
         trigger_graceful_quit(window.app_handle().clone(), state.inner().clone());
     }

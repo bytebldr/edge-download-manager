@@ -7,6 +7,7 @@ use tokio::sync::{mpsc, Semaphore};
 use tokio::task::{AbortHandle, JoinHandle};
 use tracing::info;
 
+use super::host_gate::HostConcurrencyGate;
 use super::pipeline_writer::PipelinedWriterTx;
 use super::types::{WorkerStatus, WorkerTelemetry};
 use super::worker::{AdaptiveWorker, AdaptiveWorkerEvent};
@@ -49,6 +50,7 @@ pub struct WorkScheduler {
     total_size: Option<u64>,
     paused_until_ms: Arc<AtomicU64>,
     host_semaphore: Option<Arc<Semaphore>>,
+    host_gate: Option<Arc<HostConcurrencyGate>>,
     runtime: HashMap<u32, WorkerRuntime>,
     snapshots: Mutex<HashMap<u32, SnapshotState>>,
     archived_workers: BTreeMap<u32, WorkerTelemetry>,
@@ -72,6 +74,7 @@ impl WorkScheduler {
             total_size: None,
             paused_until_ms: Arc::new(AtomicU64::new(0)),
             host_semaphore: None,
+            host_gate: None,
             runtime: HashMap::new(),
             snapshots: Mutex::new(HashMap::new()),
             archived_workers: BTreeMap::new(),
@@ -118,6 +121,10 @@ impl WorkScheduler {
 
     pub fn set_host_semaphore(&mut self, semaphore: Option<Arc<Semaphore>>) {
         self.host_semaphore = semaphore;
+    }
+
+    pub fn set_host_gate(&mut self, gate: Option<Arc<HostConcurrencyGate>>) {
+        self.host_gate = gate;
     }
 
     pub fn hedged_requests_won(&self) -> u32 {
@@ -211,6 +218,12 @@ impl WorkScheduler {
             .with_total_size(self.total_size)
             .with_paused_until(self.paused_until_ms.clone())
             .with_host_semaphore(self.host_semaphore.clone())
+            .with_host_gate(self.host_gate.clone())
+            .with_spawn_delay(if idx >= 8 && hedged_for.is_none() {
+                Duration::from_millis(((idx % 8) as u64) * 25)
+            } else {
+                Duration::ZERO
+            })
             .with_hedged(hedged_for.is_some()),
         );
         if initial_retries > 0 {
@@ -746,8 +759,10 @@ impl WorkScheduler {
             });
 
             if w.is_writing_disk.load(Ordering::Acquire) {
-                rt.last_progress_at = now;
-                continue;
+                // Bound disk-write stall exemption to 60s so a wedged storage device fails cleanly
+                if now.saturating_duration_since(rt.last_progress_at) <= Duration::from_secs(60) {
+                    continue;
+                }
             }
 
             if cur_pos != rt.last_observed_pos || cur_bytes != rt.last_observed_bytes {

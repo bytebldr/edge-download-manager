@@ -11,12 +11,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore};
 
-const DEFAULT_MAX_BUFFERED_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+const DEFAULT_MAX_BUFFERED_BYTES: usize = 32 * 1024 * 1024; // 32 MiB per task (<= 96 MiB across 3 tasks)
 const STAGING_FLUSH_THRESHOLD_BYTES: usize = 2 * 1024 * 1024; // 2 MiB
-const PERIODIC_SYNC_INTERVAL: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub struct WriteChunk {
@@ -133,6 +131,13 @@ impl PipelinedWriterTx {
 
     pub async fn write_at(&self, offset: u64, data: Vec<u8>) -> io::Result<()> {
         self.write_bytes_at(offset, Bytes::from(data)).await
+    }
+
+    /// Signals cancellation and closes the byte-budget semaphore so any blocked
+    /// `write_bytes_at()` calls wake up and return immediately before `join_all()`.
+    pub fn cancel_and_close_budget(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.byte_budget.close();
     }
 
     pub async fn flush(&self) -> io::Result<()> {
@@ -281,6 +286,13 @@ impl PipelinedWriterHandle {
         self.tx.write_at(offset, data).await
     }
 
+    /// Signals cancellation and closes the byte-budget semaphore so any blocked
+    /// `write_bytes_at()` calls wake up and return immediately before `join_all()`.
+    pub fn cancel_and_close_budget(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.byte_budget.close();
+    }
+
     pub async fn flush(&self) -> io::Result<()> {
         self.tx.flush().await
     }
@@ -298,7 +310,18 @@ impl PipelinedWriterHandle {
         &self.final_path
     }
 
-    pub fn finish(mut self, referer_or_url: Option<&str>) -> io::Result<PathBuf> {
+    pub fn finish(self, referer_or_url: Option<&str>) -> io::Result<PathBuf> {
+        self.finish_verified(referer_or_url, None, None)
+    }
+
+    /// Flushes all writes, verifies optional expected byte size and streaming cryptographic hash
+    /// BEFORE renaming `.edmpart` -> final path (quarantining to `.edmpart.corrupt` on mismatch).
+    pub fn finish_verified(
+        mut self,
+        referer_or_url: Option<&str>,
+        expected_size: Option<u64>,
+        expected_hash: Option<&(String, String)>,
+    ) -> io::Result<PathBuf> {
         if let Some(sender) = self.sender.take() {
             let _ = sender.try_send(WriterCommand::Shutdown);
             drop(sender);
@@ -324,7 +347,46 @@ impl PipelinedWriterHandle {
             ));
         }
 
-        // Apply atomic rename
+        if let Some(exp_size) = expected_size {
+            let actual_size = std::fs::metadata(&self.part_path)?.len();
+            if actual_size != exp_size {
+                let corrupt_path = self.part_path.with_extension("edmpart.corrupt");
+                let _ = std::fs::rename(&self.part_path, &corrupt_path);
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Size mismatch before rename: expected {} bytes, got {} bytes (quarantined to {:?})",
+                        exp_size, actual_size, corrupt_path
+                    ),
+                ));
+            }
+        }
+
+        if let Some((algo, expected_hex)) = expected_hash {
+            let checksums = crate::verify::MultiHasher::compute_file(&self.part_path)?;
+            let actual_hex = match algo.to_ascii_lowercase().as_str() {
+                "sha256" | "sha-256" => Some(checksums.sha256),
+                "sha1" | "sha-1" => Some(checksums.sha1),
+                "md5" => Some(checksums.md5),
+                "crc32" => Some(checksums.crc32),
+                _ => None,
+            };
+            if let Some(actual) = actual_hex {
+                if !actual.eq_ignore_ascii_case(expected_hex.trim()) {
+                    let corrupt_path = self.part_path.with_extension("edmpart.corrupt");
+                    let _ = std::fs::rename(&self.part_path, &corrupt_path);
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "Cryptographic {} mismatch before rename: expected {}, got {} (quarantined to {:?})",
+                            algo, expected_hex, actual, corrupt_path
+                        ),
+                    ));
+                }
+            }
+        }
+
+        // Apply atomic rename only after size + hash verification succeed
         if self.final_path.exists() {
             let _ = std::fs::remove_file(&self.final_path);
         }
@@ -509,12 +571,22 @@ fn writer_loop(
     let mut staging_bytes: usize = 0;
     let mut permits: Vec<OwnedSemaphorePermit> = Vec::new();
     let mut scratch: Vec<u8> = Vec::new();
-    let mut last_sync = Instant::now();
 
     'outer: while let Some(first_cmd) = receiver.blocking_recv() {
         if cancelled.load(Ordering::Acquire) {
             staging.clear();
             permits.clear();
+            let mut aborted_flushes = Vec::new();
+            if let WriterCommand::Flush { ack } = first_cmd {
+                aborted_flushes.push(ack);
+            }
+            while let Ok(cmd) = receiver.try_recv() {
+                if let WriterCommand::Flush { ack } = cmd {
+                    aborted_flushes.push(ack);
+                }
+            }
+            let abort_err = io::Error::new(io::ErrorKind::Interrupted, "pipeline writer aborted");
+            fail_pending_flushes(aborted_flushes, &abort_err);
             return Ok(());
         }
 
@@ -593,13 +665,9 @@ fn writer_loop(
                 fail_pending_flushes(pending_flushes, &err);
                 return Err(err);
             }
-            last_sync = Instant::now();
             for ack in pending_flushes {
                 let _ = ack.send(Ok(()));
             }
-        } else if last_sync.elapsed() >= PERIODIC_SYNC_INTERVAL {
-            let _ = file.sync_data();
-            last_sync = Instant::now();
         }
 
         if shutdown_requested {
@@ -610,6 +678,14 @@ fn writer_loop(
     if cancelled.load(Ordering::Acquire) {
         staging.clear();
         permits.clear();
+        let mut aborted_flushes = Vec::new();
+        while let Ok(cmd) = receiver.try_recv() {
+            if let WriterCommand::Flush { ack } = cmd {
+                aborted_flushes.push(ack);
+            }
+        }
+        let abort_err = io::Error::new(io::ErrorKind::Interrupted, "pipeline writer aborted");
+        fail_pending_flushes(aborted_flushes, &abort_err);
         return Ok(());
     }
 

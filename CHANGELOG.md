@@ -2,6 +2,18 @@
 
 All notable changes to **Evo Download Manager (EDM)** are documented in this file.
 
+## [v0.1.4] - 2026-11-28
+
+### ⚡ 32-Parallel Engine Optimization, Crash-Safe I/O, Feature Pack Parity & Low-RAM Lifecycle
+- **32-Parallel Multi-Socket Transport (`ClientRegistry` & `HostConcurrencyGate`)**: Added LRU-bounded `ClientRegistry` (`http1_only` 32-socket pool + 8-socket `h2_pool` with proxy/timeout propagation) and `HostConcurrencyGate` (RAII `HostPermit`, lost-wakeup-free `Notify`, dynamic ceiling raising, and shared `HostCircuitState`) in `core/engine/src/adaptive/`.
+- **Fast-Start Controller & Bufferbloat Guard**: Updated `AdaptiveConfig::default()` and `download_manager/config.rs` (`initial_connections: 8`, `1200ms` cooldown, `CONNECTION_STEPS = [1, 4, 8, 16, 24, 32, 48, 64]`, H2 `16/32` caps), added window-mean throughput comparison + multiplicative warmup, non-blocking `spawn_delay` jitter, `TtfbMeasured` RTT bufferbloat guard, and `gate_contended` freeze.
+- **Crash-Safe Write Barrier & Pre-Rename Verification**: Reduced per-task `PipelinedWriter` buffer to `32 MiB`, removed hot-loop `sync_data()`, added `cancel_and_close_budget()` + `fail_pending_flushes()` on all abort paths, `60s` disk-write stall watchdog, `Content-Encoding != identity` guard, RFC 9530 `Repr-Digest` SFV base64 parsing, `GET Range` fallback when `size_total.is_none()`, `LinkExpired` segment checkpointing, `403` WAF disambiguation, and `finish_verified()` pre-rename `MultiHasher` check with `.edmpart.corrupt` quarantine.
+- **AdaptiveWrapper & 32-Way Feature Pack Upgrades**: Wired `expected_hash`/`mirror_urls` propagation, `DualParallelStream` `24+8` muxing via `FfmpegSupervisor`, streaming `MultiHasher` in GitHub/HuggingFace adapters (eliminating multi-GB RAM reads), `32`-way parallel `buffer_unordered(32)` HLS segment fetching in `PackExecutor::execute_m3u8`, `--concurrent-fragments` up to 32 in `YtDlpPack` (removing the `max_connections = 1` YouTube clamp), and `.mpd`/`sftp://` routing in `FeaturePackManager::classify_target`.
+- **Tray Flyout Mutual Exclusion & Background RAM Reclamation**: Enforced strict `main` ↔ `tray-flyout` mutual exclusion (flyout will not open when `main` is open, and opening `main` destroys `tray-flyout`), destroyed `main` WebView2 immediately on close-to-tray (`ensure_window_open()` recreates on demand), capped WebView2 V8/cache memory via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, and upgraded `trim_process_working_set()` to trim child `msedgewebview2.exe` processes.
+- **v0.1.4 Automated Chaos & Speedup Verification**: Added `core/engine/tests/v014_32parallel_chaos.rs` verifying 32-connection server saturation, 32-way M3U8 speedup, pre-rename hash quarantine, `Content-Encoding` guard, and `LinkExpired` segment preservation.
+
+---
+
 ## [v0.1.3] - 2026-11-27
 
 ### 🛠️ Queue Reliability, Standalone Capture Popup & Tray Polish Hotfix

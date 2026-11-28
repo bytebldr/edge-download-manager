@@ -108,15 +108,33 @@ impl AdaptiveWrapper {
 
         // 2. Transport Execution
         let chunk_strategy = plan.chunk_strategy;
+        let expected_hash = plan.expected_hash.clone();
+        let fallback_urls = plan.fallback_urls.clone();
         let (final_path, temp_paths) = match plan.execution {
             PreFlightExecution::SingleStream(mut actual_task) => {
                 Self::apply_chunk_strategy(&mut actual_task, &chunk_strategy);
+                if actual_task.expected_hash.is_none() {
+                    actual_task.expected_hash = expected_hash.clone();
+                }
+                if actual_task.mirror_urls.is_empty() && !fallback_urls.is_empty() {
+                    actual_task.mirror_urls = fallback_urls;
+                }
                 let path = engine.download(actual_task, telemetry_cb.clone()).await?;
                 (path, Vec::new())
             }
             PreFlightExecution::DualParallelStream(mut bundle) => {
                 Self::apply_chunk_strategy(&mut bundle.video_task, &chunk_strategy);
                 Self::apply_chunk_strategy(&mut bundle.audio_task, &chunk_strategy);
+                // Partition 32-stream budget across video (24) + audio (8) and use distinct SQLite IDs
+                bundle.video_task.id = uuid::Uuid::new_v4();
+                bundle.audio_task.id = uuid::Uuid::new_v4();
+                bundle.video_task.config.max_connections =
+                    bundle.video_task.config.max_connections.min(24).max(1);
+                bundle.audio_task.config.max_connections =
+                    bundle.audio_task.config.max_connections.min(8).max(1);
+                bundle.video_task.filename = format!(".tmp_{}_video", task.id);
+                bundle.audio_task.filename = format!(".tmp_{}_audio", task.id);
+
                 let v_engine = Arc::clone(&engine);
                 let a_engine = Arc::clone(&engine);
                 let v_task = bundle.video_task;
@@ -136,7 +154,42 @@ impl AdaptiveWrapper {
                     .map_err(|e| format!("Audio download failed: {}", e))?;
 
                 let ext = bundle.output_container;
-                let final_target = task.save_dir.join(format!("{}.{}", task.filename, ext));
+                let final_name = if task
+                    .filename
+                    .to_ascii_lowercase()
+                    .ends_with(&format!(".{}", ext.to_ascii_lowercase()))
+                {
+                    task.filename.clone()
+                } else {
+                    format!("{}.{}", task.filename, ext)
+                };
+                let final_target = task.save_dir.join(final_name);
+                if let Some(ffmpeg_bin) = crate::packs::ytdlp::YtDlpPack::locate_ffmpeg() {
+                    let v_str = video_path.to_string_lossy().to_string();
+                    let a_str = audio_path.to_string_lossy().to_string();
+                    let out_str = final_target.to_string_lossy().to_string();
+                    let args: Vec<String> = vec![
+                        "-y".into(),
+                        "-i".into(),
+                        v_str,
+                        "-i".into(),
+                        a_str,
+                        "-c".into(),
+                        "copy".into(),
+                        "-progress".into(),
+                        "pipe:1".into(),
+                        out_str,
+                    ];
+                    FfmpegSupervisor::transmux_with_telemetry(
+                        &ffmpeg_bin,
+                        &args,
+                        &task.id.to_string(),
+                        telemetry_cb.clone(),
+                    )
+                    .await?;
+                    let _ = tokio::fs::remove_file(&video_path).await;
+                    let _ = tokio::fs::remove_file(&audio_path).await;
+                }
                 (final_target, vec![video_path, audio_path])
             }
             PreFlightExecution::DirectProtocol {
@@ -209,6 +262,7 @@ mod tests {
             user_agent: None,
             selected_files: None,
             torrent_power: None,
+            ..Default::default()
         }
     }
 

@@ -13,7 +13,9 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 use uuid::Uuid;
 
+use super::client_registry::{ClientRegistry, ProxyKey};
 use super::controller::AdaptiveController;
+use super::host_gate::HostRegistry;
 use super::pipeline_writer::PipelinedWriterHandle;
 use super::range_set::RangeSet;
 use super::scheduler::WorkScheduler;
@@ -33,7 +35,7 @@ const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Appl
 const MAX_REDIRECT_HOPS: usize = 15;
 const TAIL_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AdaptiveDownloadTask {
     pub id: Uuid,
     pub url: String,
@@ -47,12 +49,18 @@ pub struct AdaptiveDownloadTask {
     pub user_agent: Option<String>,
     pub selected_files: Option<Vec<usize>>,
     pub torrent_power: Option<crate::adaptive::types::TorrentPowerConfig>,
+    pub proxy_url: Option<String>,
+    pub expected_hash: Option<(String, String)>,
+    pub mirror_urls: Vec<String>,
 }
 
 pub struct AdaptiveEngine {
+    #[allow(dead_code)]
     client: Client,
     store: Store,
     host_semaphores: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+    client_registry: ClientRegistry,
+    host_registry: HostRegistry,
 }
 
 impl AdaptiveEngine {
@@ -73,6 +81,8 @@ impl AdaptiveEngine {
             client,
             store,
             host_semaphores: Arc::new(Mutex::new(HashMap::new())),
+            client_registry: ClientRegistry::default(),
+            host_registry: HostRegistry::default(),
         })
     }
 
@@ -103,8 +113,9 @@ impl AdaptiveEngine {
 
     /// Resolves HTTP redirects manually with `Policy::none()`, stripping `Cookie`/`Referer`
     /// on cross-origin hops and detecting the negotiated HTTP transport protocol.
-    async fn resolve_safe_redirects(
+    async fn resolve_safe_redirects_with_client(
         &self,
+        client: &Client,
         url_str: &str,
         cookies: Option<&str>,
         referer: Option<&str>,
@@ -127,11 +138,11 @@ impl AdaptiveEngine {
         for _ in 0..MAX_REDIRECT_HOPS {
             let same_origin = origin_key(&current_url) == initial_origin;
             let mut req = if use_get_range {
-                self.client
+                client
                     .get(current_url.as_str())
                     .header(RANGE, "bytes=0-0")
             } else {
-                self.client.head(current_url.as_str())
+                client.head(current_url.as_str())
             };
             req = req.header(ACCEPT_ENCODING, "identity");
 
@@ -197,8 +208,19 @@ impl AdaptiveEngine {
     ) -> Result<PathBuf, String> {
         info!("AdaptiveEngine: Probing {}", task.url);
 
+        let proxy_key = task
+            .proxy_url
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(ProxyKey::new);
+        let client_pair = self
+            .client_registry
+            .get_or_build(proxy_key.as_ref(), task.config.request_timeout.as_secs())?;
+        let probe_client = client_pair.probe_client();
+
         let (resolved_url, effective_cookies, effective_referer, initial_proto) = self
-            .resolve_safe_redirects(
+            .resolve_safe_redirects_with_client(
+                &probe_client,
                 &task.url,
                 task.cookies.as_deref(),
                 task.referer.as_deref(),
@@ -208,7 +230,7 @@ impl AdaptiveEngine {
             .await;
 
         let probe = Probe::probe_url_with_headers(
-            &self.client,
+            &probe_client,
             &resolved_url,
             effective_cookies.as_deref(),
             effective_referer.as_deref(),
@@ -245,43 +267,8 @@ impl AdaptiveEngine {
             redacted
         );
 
-        let is_task_name_valid = !task.filename.trim().is_empty()
-            && task.filename != "download"
-            && task.filename != "download.bin";
-
-        let candidate_filename = if is_task_name_valid {
-            task.filename.clone()
-        } else if let Some(ref pf) = probe.filename {
-            pf.clone()
-        } else {
-            task.filename.clone()
-        };
-
-        let sanitized = crate::sanitizer::Sanitizer::sanitize_filename(&candidate_filename);
-        let save_dir_clone = task.save_dir.clone();
-        let sanitized_clone = sanitized.clone();
-        let resolved_path = tokio::task::spawn_blocking(move || {
-            crate::sanitizer::Sanitizer::resolve_duplicate(&save_dir_clone, &sanitized_clone)
-        })
-        .await
-        .map_err(|e| format!("Filename resolution task failed: {}", e))?;
-
-        let filename = resolved_path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or(sanitized);
-
-        let part_path = task.save_dir.join(format!("{}.edmpart", filename));
-        let target_path = task.save_dir.join(&filename);
-        let partial_or_target_exists = tokio::task::spawn_blocking({
-            let part_path = part_path.clone();
-            let target_path = target_path.clone();
-            move || part_path.exists() || target_path.exists()
-        })
-        .await
-        .map_err(|e| format!("Path existence check failed: {}", e))?;
-
-        // 1. Load existing record & segments and run resume invalidation BEFORE touching .edmpart
+        // 1. Load existing record & segments BEFORE resolving duplicate filenames so resume
+        // never renames an existing `.edmpart` target to `file (1).bin`.
         let existing_record = {
             let store = self.store.clone();
             let id = task.id;
@@ -294,6 +281,47 @@ impl AdaptiveEngine {
             .await
             .map_err(|e| format!("Store lookup failed: {}", e))?
         };
+
+        let is_task_name_valid = !task.filename.trim().is_empty()
+            && task.filename != "download"
+            && task.filename != "download.bin";
+
+        let candidate_filename = if let Some(ref existing) = existing_record {
+            existing.filename.clone()
+        } else if is_task_name_valid {
+            task.filename.clone()
+        } else if let Some(ref pf) = probe.filename {
+            pf.clone()
+        } else {
+            task.filename.clone()
+        };
+
+        let sanitized = crate::sanitizer::Sanitizer::sanitize_filename(&candidate_filename);
+        let filename = if existing_record.is_some() {
+            sanitized
+        } else {
+            let save_dir_clone = task.save_dir.clone();
+            let sanitized_clone = sanitized.clone();
+            let resolved_path = tokio::task::spawn_blocking(move || {
+                crate::sanitizer::Sanitizer::resolve_duplicate(&save_dir_clone, &sanitized_clone)
+            })
+            .await
+            .map_err(|e| format!("Filename resolution task failed: {}", e))?;
+            resolved_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or(sanitized)
+        };
+
+        let part_path = task.save_dir.join(format!("{}.edmpart", filename));
+        let target_path = task.save_dir.join(&filename);
+        let partial_or_target_exists = tokio::task::spawn_blocking({
+            let part_path = part_path.clone();
+            let target_path = target_path.clone();
+            move || part_path.exists() || target_path.exists()
+        })
+        .await
+        .map_err(|e| format!("Path existence check failed: {}", e))?;
 
         let mut existing_segments = if is_resumable {
             let store = self.store.clone();
@@ -472,9 +500,26 @@ impl AdaptiveEngine {
         };
         let mut writer_tx = writer_handle.writer();
 
+        let host_key = Url::parse(&probe.final_url)
+            .ok()
+            .map(|u| {
+                format!(
+                    "{}:{}",
+                    u.host_str().unwrap_or("unknown").to_ascii_lowercase(),
+                    u.port_or_known_default().unwrap_or(80)
+                )
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let (host_gate, host_circuit) = self
+            .host_registry
+            .get_or_create(&host_key, task.config.max_connections_per_host);
         let host_semaphore =
             self.host_semaphore_for_url(&probe.final_url, task.config.max_connections_per_host);
-        let paused_until_ms = Arc::new(AtomicU64::new(0));
+        let paused_until_ms = Arc::new(AtomicU64::new(
+            host_circuit.paused_until_ms.load(Ordering::Acquire),
+        ));
+        let active_proto = host_circuit.preferred_protocol().unwrap_or(initial_proto);
+        let worker_client = client_pair.client_for_worker(0, active_proto);
 
         let mut scheduler = WorkScheduler::new(
             task.config.min_chunk_size,
@@ -488,6 +533,7 @@ impl AdaptiveEngine {
             Some(host_semaphore.clone()),
             task.config.request_timeout,
         );
+        scheduler.set_host_gate(Some(host_gate.clone()));
         scheduler.set_tail_hedging(
             task.config.enable_hedged_requests,
             task.config.max_hedged_workers,
@@ -522,7 +568,7 @@ impl AdaptiveEngine {
                             effective_cookies.clone(),
                             effective_referer.clone(),
                             task.user_agent.clone(),
-                            self.client.clone(),
+                            worker_client.clone(),
                             writer_tx.clone(),
                             task.limiter.clone(),
                             event_tx.clone(),
@@ -541,7 +587,7 @@ impl AdaptiveEngine {
                         effective_cookies.clone(),
                         effective_referer.clone(),
                         task.user_agent.clone(),
-                        self.client.clone(),
+                        worker_client.clone(),
                         writer_tx.clone(),
                         task.limiter.clone(),
                         event_tx.clone(),
@@ -557,7 +603,7 @@ impl AdaptiveEngine {
                 effective_cookies.clone(),
                 effective_referer.clone(),
                 task.user_agent.clone(),
-                self.client.clone(),
+                worker_client.clone(),
                 writer_tx.clone(),
                 task.limiter.clone(),
                 event_tx.clone(),
@@ -582,10 +628,13 @@ impl AdaptiveEngine {
         let mut active_etag = probe.etag.clone();
         let mut active_last_modified = probe.last_modified.clone();
 
+        let mut latest_ttfb: Option<Duration> = None;
+
         loop {
             if task.cancelled.load(Ordering::Relaxed) {
                 info!("Download task {} received cancellation signal", task.id);
                 scheduler.cancel_all();
+                writer_tx.cancel_and_close_budget();
                 scheduler.join_all().await;
 
                 while let Ok(ev) = event_rx.try_recv() {
@@ -658,6 +707,12 @@ impl AdaptiveEngine {
                                 scheduler.set_target_connections(controller.current_connections());
                             }
                         }
+                        Some(AdaptiveWorkerEvent::TtfbMeasured { ttfb, .. }) => {
+                            latest_ttfb = Some(match latest_ttfb {
+                                Some(prev) => prev.max(ttfb),
+                                None => ttfb,
+                            });
+                        }
                         Some(AdaptiveWorkerEvent::TransientError { .. }) => {
                             controller.record_transient_error();
                         }
@@ -704,7 +759,7 @@ impl AdaptiveEngine {
                                     effective_cookies.clone(),
                                     effective_referer.clone(),
                                     task.user_agent.clone(),
-                                    self.client.clone(),
+                                    worker_client.clone(),
                                     writer_tx.clone(),
                                     task.limiter.clone(),
                                     event_tx.clone(),
@@ -773,7 +828,7 @@ impl AdaptiveEngine {
                                             effective_cookies.clone(),
                                             effective_referer.clone(),
                                             task.user_agent.clone(),
-                                            self.client.clone(),
+                                            worker_client.clone(),
                                             writer_tx.clone(),
                                             task.limiter.clone(),
                                             event_tx.clone(),
@@ -788,7 +843,7 @@ impl AdaptiveEngine {
                                         effective_cookies.clone(),
                                         effective_referer.clone(),
                                         task.user_agent.clone(),
-                                        self.client.clone(),
+                                        worker_client.clone(),
                                         writer_tx.clone(),
                                         task.limiter.clone(),
                                         event_tx.clone(),
@@ -877,7 +932,7 @@ impl AdaptiveEngine {
                                             effective_cookies.clone(),
                                             effective_referer.clone(),
                                             task.user_agent.clone(),
-                                            self.client.clone(),
+                                            worker_client.clone(),
                                             writer_tx.clone(),
                                             task.limiter.clone(),
                                             event_tx.clone(),
@@ -892,7 +947,7 @@ impl AdaptiveEngine {
                                         effective_cookies.clone(),
                                         effective_referer.clone(),
                                         task.user_agent.clone(),
-                                        self.client.clone(),
+                                        worker_client.clone(),
                                         writer_tx.clone(),
                                         task.limiter.clone(),
                                         event_tx.clone(),
@@ -953,14 +1008,14 @@ impl AdaptiveEngine {
 
                                 if rem_total <= TAIL_THRESHOLD_BYTES {
                                     if scheduler.try_tail_snipe(
-                                        self.client.clone(),
+                                        worker_client.clone(),
                                         writer_tx.clone(),
                                         task.limiter.clone(),
                                         event_tx.clone(),
                                         TAIL_THRESHOLD_BYTES,
                                     ).is_none() {
                                         scheduler.try_hedge_tail(
-                                            self.client.clone(),
+                                            worker_client.clone(),
                                             writer_tx.clone(),
                                             task.limiter.clone(),
                                             event_tx.clone(),
@@ -969,7 +1024,7 @@ impl AdaptiveEngine {
                                     }
                                 } else {
                                     scheduler.try_steal_work(
-                                        self.client.clone(),
+                                        worker_client.clone(),
                                         writer_tx.clone(),
                                         task.limiter.clone(),
                                         event_tx.clone(),
@@ -998,7 +1053,7 @@ impl AdaptiveEngine {
                                                 effective_cookies.clone(),
                                                 effective_referer.clone(),
                                                 task.user_agent.clone(),
-                                                self.client.clone(),
+                                                worker_client.clone(),
                                                 writer_tx.clone(),
                                                 task.limiter.clone(),
                                                 event_tx.clone(),
@@ -1060,7 +1115,7 @@ impl AdaptiveEngine {
                                                     effective_cookies.clone(),
                                                     effective_referer.clone(),
                                                     task.user_agent.clone(),
-                                                    self.client.clone(),
+                                                    worker_client.clone(),
                                                     writer_tx.clone(),
                                                     task.limiter.clone(),
                                                     event_tx.clone(),
@@ -1073,14 +1128,38 @@ impl AdaptiveEngine {
 
                                 scheduler.cancel_all();
                                 scheduler.join_all().await;
+                                while let Ok(ev) = event_rx.try_recv() {
+                                    if let AdaptiveWorkerEvent::Progress {
+                                        range_start,
+                                        range_end,
+                                        ..
+                                    } = ev
+                                    {
+                                        range_set.add(range_start, range_end);
+                                        total_downloaded = range_set.total_covered_bytes();
+                                    }
+                                }
                                 let _ = writer_tx.flush().await;
+                                let seg_records = build_checkpoint_segments(
+                                    task.id,
+                                    &range_set,
+                                    &scheduler,
+                                    total_size,
+                                    true,
+                                );
                                 let _ = tokio::task::spawn_blocking(move || writer_handle.abort()).await;
                                 await_checkpoint(&mut checkpoint_handle).await;
 
-                                let is_expired = reason.contains("expired")
-                                    || reason.contains("401")
-                                    || reason.contains("403")
-                                    || reason.contains("410");
+                                let existing_done = existing_record
+                                    .as_ref()
+                                    .map(|r| r.size_done)
+                                    .unwrap_or(0);
+                                let is_expired = reason.contains("401")
+                                    || reason.contains("410")
+                                    || (reason.contains("403")
+                                        && (total_downloaded > 0
+                                            || existing_done > 0
+                                            || has_expiry_query_params(&task.url)));
                                 let state = if is_expired {
                                     DownloadState::LinkExpired
                                 } else {
@@ -1091,8 +1170,10 @@ impl AdaptiveEngine {
                                 let done = total_downloaded;
                                 let err_reason = reason.clone();
                                 let _ = tokio::task::spawn_blocking(move || {
+                                    let _ = store.save_segment_positions(&seg_records);
                                     let _ = store.update_download_progress(id, done);
                                     let _ = store.update_download_state(id, state, Some(&err_reason));
+                                    let _ = store.checkpoint();
                                 })
                                 .await;
                                 return Err(format!("Workers stopped: {}", reason));
@@ -1108,12 +1189,14 @@ impl AdaptiveEngine {
                     let sample_duration = last_sample_time.elapsed();
                     let error_count = scheduler.active_error_count();
 
-                    let decision = controller.evaluate_sample(
+                    let decision = controller.evaluate_sample_with_context(
                         sample_bytes,
                         sample_duration,
                         error_count,
                         false,
                         None,
+                        latest_ttfb.take(),
+                        host_gate.is_contended(),
                     );
 
                     match decision {
@@ -1128,14 +1211,14 @@ impl AdaptiveEngine {
 
                                     let spawned = if rem_total <= TAIL_THRESHOLD_BYTES {
                                         scheduler.try_tail_snipe(
-                                            self.client.clone(),
+                                            worker_client.clone(),
                                             writer_tx.clone(),
                                             task.limiter.clone(),
                                             event_tx.clone(),
                                             TAIL_THRESHOLD_BYTES,
                                         ).or_else(|| {
                                             scheduler.try_hedge_tail(
-                                                self.client.clone(),
+                                                worker_client.clone(),
                                                 writer_tx.clone(),
                                                 task.limiter.clone(),
                                                 event_tx.clone(),
@@ -1144,7 +1227,7 @@ impl AdaptiveEngine {
                                         })
                                     } else {
                                         scheduler.try_steal_work(
-                                            self.client.clone(),
+                                            worker_client.clone(),
                                             writer_tx.clone(),
                                             task.limiter.clone(),
                                             event_tx.clone(),
@@ -1183,7 +1266,7 @@ impl AdaptiveEngine {
                     let is_tail = total_size.is_some() && rem_total <= TAIL_THRESHOLD_BYTES;
 
                     scheduler.check_stalled_workers_adaptive(
-                        &self.client,
+                        &worker_client,
                         &writer_tx,
                         task.limiter.clone(),
                         &event_tx,
@@ -1196,7 +1279,7 @@ impl AdaptiveEngine {
                         && controller.mode() != AccelerationMode::FallbackSingleStream
                     {
                         scheduler.try_hedge_tail(
-                            self.client.clone(),
+                            worker_client.clone(),
                             writer_tx.clone(),
                             task.limiter.clone(),
                             event_tx.clone(),
@@ -1323,40 +1406,7 @@ impl AdaptiveEngine {
             }
         }
 
-        let coalesced_ops = writer_handle.coalesced_write_ops();
-        let hedged_won = scheduler.hedged_requests_won();
-        let final_workers = scheduler.get_final_telemetry_snapshot();
-        let url_for_zone = task.url.clone();
-        drop(writer_tx);
-        let final_path =
-            tokio::task::spawn_blocking(move || writer_handle.finish(Some(&url_for_zone)))
-                .await
-                .map_err(|e| format!("File finalization task failed: {}", e))?
-                .map_err(|e| format!("Failed to finalize file: {}", e))?;
-
         if let Some(tot) = total_size {
-            let check_path = final_path.clone();
-            let actual_size = tokio::task::spawn_blocking(move || {
-                std::fs::metadata(&check_path).map(|m| m.len()).unwrap_or(0)
-            })
-            .await
-            .unwrap_or(0);
-
-            if actual_size != tot {
-                let err = format!(
-                    "Final file size mismatch: expected {} bytes, got {} bytes on disk",
-                    tot, actual_size
-                );
-                error!("{}", err);
-                let store = self.store.clone();
-                let id = task.id;
-                let err_copy = err.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    let _ = store.update_download_state(id, DownloadState::Failed, Some(&err_copy));
-                })
-                .await;
-                return Err(err);
-            }
             if !range_set.is_complete(tot) {
                 let missing = range_set.missing_ranges(tot);
                 let err = format!(
@@ -1364,6 +1414,8 @@ impl AdaptiveEngine {
                     missing.len()
                 );
                 error!("{}", err);
+                drop(writer_tx);
+                let _ = tokio::task::spawn_blocking(move || writer_handle.abort()).await;
                 let store = self.store.clone();
                 let id = task.id;
                 let err_copy = err.clone();
@@ -1374,6 +1426,23 @@ impl AdaptiveEngine {
                 return Err(err);
             }
         }
+
+        let coalesced_ops = writer_handle.coalesced_write_ops();
+        let hedged_won = scheduler.hedged_requests_won();
+        let final_workers = scheduler.get_final_telemetry_snapshot();
+        let url_for_zone = task.url.clone();
+        let effective_hash = task.expected_hash.clone().or(probe.repr_digest.clone());
+        drop(writer_tx);
+        let final_path = tokio::task::spawn_blocking(move || {
+            writer_handle.finish_verified(
+                Some(&url_for_zone),
+                total_size,
+                effective_hash.as_ref(),
+            )
+        })
+        .await
+        .map_err(|e| format!("File finalization task failed: {}", e))?
+        .map_err(|e| format!("Failed to finalize file: {}", e))?;
 
         let final_completed_bytes = total_size.unwrap_or(total_downloaded);
         if total_size.is_none() && final_completed_bytes == 0 {
@@ -1523,6 +1592,17 @@ fn apply_limit_rate(
     paused_until_ms.fetch_max(until, Ordering::SeqCst);
     scheduler.set_target_connections(target);
     scheduler.retire_excess_workers(target);
+}
+
+pub(crate) fn has_expiry_query_params(url_str: &str) -> bool {
+    let lower = url_str.to_ascii_lowercase();
+    lower.contains("expires=")
+        || lower.contains("x-amz-expires=")
+        || lower.contains("signature=")
+        || lower.contains("x-goog-signature=")
+        || lower.contains("key-pair-id=")
+        || lower.contains("token=")
+        || lower.contains("sig=")
 }
 
 pub(crate) fn is_unexpected_html_response(

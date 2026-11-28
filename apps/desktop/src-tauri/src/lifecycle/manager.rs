@@ -142,6 +142,12 @@ impl LifecycleManager {
 
     pub async fn ensure_window_open(&self) {
         if let Some(app) = self.get_app_handle() {
+            // Mutual exclusion: close & destroy tray-flyout whenever main app window opens
+            if let Some(flyout) = app.get_webview_window("tray-flyout") {
+                let _ = flyout.destroy();
+                crate::os::trim_process_working_set();
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();

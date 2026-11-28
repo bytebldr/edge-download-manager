@@ -14,6 +14,7 @@ use tokio::time::timeout;
 use tracing::{debug, error, warn};
 use url::Url;
 
+use super::host_gate::{HostConcurrencyGate, HostPermit};
 use super::pipeline_writer::PipelinedWriterTx;
 use super::types::{TransportProtocol, WorkerStatus};
 use crate::limiter::TokenBucketLimiter;
@@ -35,6 +36,10 @@ pub enum AdaptiveWorkerEvent {
     ProtocolDetected {
         idx: u32,
         protocol: TransportProtocol,
+    },
+    TtfbMeasured {
+        idx: u32,
+        ttfb: Duration,
     },
     ServerIgnoredRange {
         idx: u32,
@@ -234,6 +239,8 @@ pub struct AdaptiveWorker {
     pub is_writing_disk: Arc<AtomicBool>,
     pub paused_until_ms: Arc<AtomicU64>,
     pub host_semaphore: Option<Arc<Semaphore>>,
+    pub host_gate: Option<Arc<HostConcurrencyGate>>,
+    pub spawn_delay: Duration,
     pub is_hedged: bool,
     pub cookies: Option<String>,
     pub referer: Option<String>,
@@ -275,6 +282,8 @@ impl AdaptiveWorker {
             is_writing_disk: Arc::new(AtomicBool::new(false)),
             paused_until_ms: Arc::new(AtomicU64::new(0)),
             host_semaphore: None,
+            host_gate: None,
+            spawn_delay: Duration::ZERO,
             is_hedged: false,
             cookies,
             referer,
@@ -299,6 +308,16 @@ impl AdaptiveWorker {
 
     pub fn with_host_semaphore(mut self, host_semaphore: Option<Arc<Semaphore>>) -> Self {
         self.host_semaphore = host_semaphore;
+        self
+    }
+
+    pub fn with_host_gate(mut self, host_gate: Option<Arc<HostConcurrencyGate>>) -> Self {
+        self.host_gate = host_gate;
+        self
+    }
+
+    pub fn with_spawn_delay(mut self, delay: Duration) -> Self {
+        self.spawn_delay = delay;
         self
     }
 
@@ -559,6 +578,12 @@ impl AdaptiveWorker {
         let mut expected_last_modified = self.last_modified.clone();
         let mut reported_protocol = false;
 
+        if !self.spawn_delay.is_zero() {
+            if sleep_or_cancel(&self.cancelled, self.spawn_delay).await {
+                return;
+            }
+        }
+
         while retries < max_retries && !self.cancelled.load(Ordering::Relaxed) {
             // Respect host-wide rate-limit pause window before acquiring semaphore or connecting
             let paused_until = self.paused_until_ms.load(Ordering::Relaxed);
@@ -581,11 +606,20 @@ impl AdaptiveWorker {
                 return;
             }
 
-            let _host_permit = if let Some(ref sem) = self.host_semaphore {
+            enum AcquiredPermit {
+                Gate(#[allow(dead_code)] HostPermit),
+                Sem(#[allow(dead_code)] tokio::sync::OwnedSemaphorePermit),
+            }
+            let _host_permit = if let Some(ref gate) = self.host_gate {
+                match gate.acquire(&self.cancelled, request_timeout).await {
+                    Some(p) => Some(AcquiredPermit::Gate(p)),
+                    None => return,
+                }
+            } else if let Some(ref sem) = self.host_semaphore {
                 tokio::select! {
                     _ = wait_for_cancel(&self.cancelled) => return,
                     permit_res = sem.clone().acquire_owned() => match permit_res {
-                        Ok(p) => Some(p),
+                        Ok(p) => Some(AcquiredPermit::Sem(p)),
                         Err(_) => return,
                     }
                 }
@@ -617,11 +651,21 @@ impl AdaptiveWorker {
             });
             let if_range = strong_etag.or(expected_last_modified.as_deref());
 
+            let ttfb_start = Instant::now();
             let resp = match self
                 .send_request_with_safe_redirects(&client, &range_header, if_range, request_timeout)
                 .await
             {
-                Ok(Some(r)) => r,
+                Ok(Some(r)) => {
+                    let ttfb = ttfb_start.elapsed();
+                    let _ = event_tx
+                        .send(AdaptiveWorkerEvent::TtfbMeasured {
+                            idx: self.idx,
+                            ttfb,
+                        })
+                        .await;
+                    r
+                }
                 Ok(None) => return,
                 Err(err_str) => {
                     warn!("Worker {} {}", self.idx, err_str);
@@ -755,6 +799,29 @@ impl AdaptiveWorker {
                     return;
                 }
                 continue;
+            }
+
+            if let Some(ce) = resp
+                .headers()
+                .get(reqwest::header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok())
+            {
+                let ce_norm = ce.trim().to_ascii_lowercase();
+                if !ce_norm.is_empty() && ce_norm != "identity" {
+                    let err_msg = format!(
+                        "Server returned compressed Content-Encoding '{}' on ranged transfer",
+                        ce
+                    );
+                    warn!("Worker {} aborting: {}", self.idx, err_msg);
+                    self.set_status(WorkerStatus::Failed);
+                    let _ = event_tx
+                        .send(AdaptiveWorkerEvent::Failed {
+                            idx: self.idx,
+                            reason: err_msg,
+                        })
+                        .await;
+                    return;
+                }
             }
 
             if let Some(ct) = resp

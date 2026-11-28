@@ -31,6 +31,8 @@ pub struct ProbeResult {
     pub status_code: u16,
     #[serde(default)]
     pub response_headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub repr_digest: Option<(String, String)>,
 }
 
 pub struct Probe;
@@ -201,8 +203,13 @@ impl Probe {
             }
         }
 
-        if !resumable && !tested_range_directly && status.is_success() {
-            // Verify if server supports ranges via a lightweight Range: bytes=0-0 probe
+        let mut repr_digest = headers
+            .get("repr-digest")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_repr_digest);
+
+        if (!resumable || size_total.is_none()) && !tested_range_directly && status.is_success() {
+            // Verify if server supports ranges and/or total size via a lightweight Range: bytes=0-0 probe
             let mut range_test = client
                 .get(&final_url)
                 .header(ACCEPT_ENCODING, "identity")
@@ -219,6 +226,13 @@ impl Probe {
 
             if let Ok(Ok(rt_resp)) = tokio::time::timeout(request_timeout, range_test.send()).await
             {
+                if repr_digest.is_none() {
+                    repr_digest = rt_resp
+                        .headers()
+                        .get("repr-digest")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(parse_repr_digest);
+                }
                 if rt_resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
                     resumable = true;
                     if size_total.is_none() {
@@ -236,6 +250,8 @@ impl Probe {
                         }
                     }
                 }
+                // Drop immediately without draining multi-GB 200 OK body
+                drop(rt_resp);
             }
         }
 
@@ -250,6 +266,7 @@ impl Probe {
             last_modified,
             status_code: status.as_u16(),
             response_headers: header_map,
+            repr_digest,
         })
     }
 
@@ -419,6 +436,64 @@ impl Probe {
         }
         filename
     }
+}
+
+/// Parses RFC 9530 `Repr-Digest` SFV Byte Sequence (e.g. `sha-256=:base64:`) into `("sha256", lowercase_hex)`.
+pub fn parse_repr_digest(header_val: &str) -> Option<(String, String)> {
+    for part in header_val.split(',') {
+        let trimmed = part.trim();
+        let Some((algo_raw, val_raw)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let algo = algo_raw.trim().to_ascii_lowercase();
+        if algo != "sha-256" && algo != "sha-512" && algo != "md5" {
+            continue;
+        }
+        let val = val_raw.trim();
+        if let Some(b64) = val.strip_prefix(':').and_then(|s| s.strip_suffix(':')) {
+            if let Some(bytes) = decode_base64_std(b64) {
+                let norm_algo = match algo.as_str() {
+                    "sha-256" => "sha256",
+                    "sha-512" => "sha512",
+                    other => other,
+                };
+                return Some((norm_algo.to_string(), hex::encode(bytes)));
+            }
+        }
+    }
+    None
+}
+
+fn decode_base64_std(input: &str) -> Option<Vec<u8>> {
+    let clean: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if clean.is_empty() || clean.len() % 4 != 0 {
+        return None;
+    }
+    let val = |c: u8| -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity((clean.len() / 4) * 3);
+    for chunk in clean.chunks_exact(4) {
+        let a = val(chunk[0])?;
+        let b = val(chunk[1])?;
+        out.push((a << 2) | (b >> 4));
+        if chunk[2] != b'=' {
+            let c = val(chunk[2])?;
+            out.push((b << 4) | (c >> 2));
+            if chunk[3] != b'=' {
+                let d = val(chunk[3])?;
+                out.push((c << 6) | d);
+            }
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]

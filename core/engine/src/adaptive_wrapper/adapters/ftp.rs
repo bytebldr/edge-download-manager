@@ -19,8 +19,8 @@ impl AdaptiveWrapperAdapter for FtpAdapter {
         _client: &Client,
     ) -> Result<PreFlightPlan, String> {
         let mut clean_task = task.clone();
-        // Clamp concurrent FTP sockets to 3 to prevent server 421 IP lockouts
-        clean_task.config.max_connections = clean_task.config.max_connections.clamp(1, 3);
+        // Allow up to 32 for SFTP/permissive FTP; legacy FTP servers step down on 421
+        clean_task.config.max_connections = clean_task.config.max_connections.clamp(1, 32);
         let ftp_max_conns = clean_task.config.max_connections as usize;
         let min_chunk_size = clean_task.config.min_chunk_size;
 
